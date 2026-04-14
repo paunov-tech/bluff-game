@@ -16,11 +16,18 @@ const LANGUAGES = [
   { code: "es", flag: "🇪🇸", label: "ES" },
 ];
 
-const CATEGORIES = ["history", "science", "animals", "geography", "food"];
-const CATEGORY_EMOJIS = { history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍", food:"🍷" };
-const ROUND_DIFFICULTY = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
-const TIMER_PER_DIFF = { 1:45, 2:50, 3:60, 4:75, 5:90 };
-const DIFF_LABEL = ["","Warm-up","Tricky","Sneaky","Devious","Diabolical"];
+const CATEGORIES = [
+  "history","internet","animals","science","popculture",
+  "geography","food","culture","sports","history",
+];
+const CATEGORY_EMOJIS = {
+  history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍",
+  food:"🍷", culture:"🎭", internet:"💻", popculture:"🎬", sports:"⚽",
+};
+// Round 1 = difficulty 0 (baby mode), gradual ramp
+const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
+const TIMER_PER_DIFF = { 0:50, 1:50, 2:55, 3:65, 4:80, 5:95 };
+const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
 
 // ── Challenge system ──────────────────────────
@@ -579,7 +586,9 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState(
+    !localStorage.getItem("bluff_played")
+  );
   const [screen, setScreen] = useState("home");
   const [lang, setLang] = useState(()=>localStorage.getItem("bluff_lang")||"en");
   const [stmts, setStmts] = useState([]);
@@ -887,6 +896,7 @@ export default function BluffGame() {
     fontFamily:"'Segoe UI',system-ui,sans-serif",
     display:"flex",flexDirection:"column",alignItems:"center",
     position:"relative",overflow:"hidden",color:"#e8e6e1",
+    paddingTop:"env(safe-area-inset-top)",
     paddingBottom:"max(24px,env(safe-area-inset-bottom))",
   };
 
@@ -894,14 +904,18 @@ export default function BluffGame() {
   const correct = sel===bi && bi!==-1;
   const diff = ROUND_DIFFICULTY[roundIdx]||3;
 
-  if(showIntro) return <><CinematicIntro onComplete={()=>setShowIntro(false)}/><GameStyles/></>;
+  if(showIntro) return <><CinematicIntro onComplete={()=>{
+    setShowIntro(false);
+    localStorage.setItem("bluff_played","1");
+    axiomSpeak("intro","idle");
+  }}/><GameStyles/></>;
 
   // ─── HOME ──────────────────────────────────────────────────
   if(screen==="home") return (
     <div style={wrap}>
       <Particles/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
-      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(48px,env(safe-area-inset-top))"}}>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
         <div style={{textAlign:"center",marginBottom:"clamp(18px,4vw,26px)",animation:"g-fadeUp .5s ease both"}}>
           <div style={{fontSize:"clamp(10px,2.5vw,11px)",letterSpacing:"6px",color:T.dim,marginBottom:14,fontWeight:500}}>SIAL GAMES</div>
           <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(52px,13vw,78px)",fontWeight:900,letterSpacing:-2,margin:"0 0 4px",lineHeight:1,background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.5),#e8c547)",backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"g-shimmer 4s linear infinite",filter:"drop-shadow(0 0 22px rgba(232,197,71,.18))"}}>
@@ -989,14 +1003,14 @@ export default function BluffGame() {
       {confetti&&<Confetti/>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
         {/* Header */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(8px,env(safe-area-inset-top))"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:20}}>{CATEGORY_EMOJIS[category]||"🎯"}</span>
             <div>
               <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
                 <div style={{fontSize:9,color:T.dim}}>Round {roundIdx+1}/{ROUND_DIFFICULTY.length}</div>
-                <div style={{fontSize:9,color:DIFF_COLOR[diff],letterSpacing:"1px"}}>· {DIFF_LABEL[diff]}</div>
+                <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {diff === 0 ? "Baby mode 👶" : DIFF_LABEL[diff]}</div>
               </div>
             </div>
           </div>
@@ -1062,6 +1076,24 @@ export default function BluffGame() {
               </button>
             </div>
           }
+
+          {revealed && !correct && (
+            <div style={{
+              position:"fixed", inset:0, zIndex:100,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              pointerEvents:"none",
+              animation:"g-fadeIn .1s ease both",
+            }}>
+              <div style={{
+                fontSize:"clamp(48px,15vw,80px)",
+                fontFamily:"Georgia,serif", fontWeight:900,
+                color:"#f43f5e", letterSpacing:-2,
+                textShadow:"0 0 40px rgba(244,63,94,.5)",
+                animation:"g-glitchText .6s ease both",
+                opacity:.85,
+              }}>RATIO'D 💀</div>
+            </div>
+          )}
 
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
             <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
@@ -1186,6 +1218,16 @@ function GameStyles(){
     @keyframes g-tapPulse{0%,100%{opacity:.25}50%{opacity:.65}}
     @keyframes hexRotate{to{transform:rotate(360deg)}}
     @keyframes hexRotateCCW{to{transform:rotate(-360deg)}}
+    @keyframes g-fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes g-glitchText{
+      0%{transform:scale(2) rotate(-5deg);opacity:0}
+      40%{transform:scale(1.1) rotate(1deg);opacity:1}
+      60%{transform:scale(1.05) rotate(-1deg)}
+      100%{transform:scale(1) rotate(0);opacity:.85}
+    }
+    @keyframes g-screenFlash{
+      0%{opacity:0} 20%{opacity:.15} 100%{opacity:0}
+    }
     @keyframes scanDown{0%{transform:translateY(-50px)}100%{transform:translateY(220px)}}
     @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
