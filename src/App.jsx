@@ -649,6 +649,27 @@ export default function BluffGame() {
   const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
   const currentSelRef = useRef(null);
 
+  // ── Daily Challenge ──────────────────────────────────────────
+  const [dailyMode, setDailyMode] = useState(false);
+  const [dailyData, setDailyData] = useState(null);
+  const [dailyRank, setDailyRank] = useState(null);
+  const [dailyPlayers, setDailyPlayers] = useState(0);
+  const [dailyAlreadyPlayed, setDailyAlreadyPlayed] = useState(false);
+  const [loadingDaily, setLoadingDaily] = useState(false);
+  const dailyModeRef = useRef(false);
+  const dailyResultsRef = useRef([]);
+  const dailyRoundsRef = useRef(null);
+  const dailyStartTimeRef = useRef(null);
+  const userIdRef = useRef(
+    (() => {
+      const stored = localStorage.getItem("bluff_user_id");
+      if (stored) return stored;
+      const id = Math.random().toString(36).slice(2);
+      localStorage.setItem("bluff_user_id", id);
+      return id;
+    })()
+  );
+
   // Keep refs in sync
   useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
   useEffect(()=>{ currentSelRef.current = sel; },[sel]);
@@ -658,6 +679,72 @@ export default function BluffGame() {
     setLang(code);
     localStorage.setItem("bluff_lang", code);
   },[]);
+
+  // ── DAILY CHALLENGE ─────────────────────────────────────────
+  const loadDailyChallenge = useCallback(async () => {
+    setLoadingDaily(true);
+    try {
+      const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`);
+      const data = await r.json();
+      setDailyData(data);
+      setDailyAlreadyPlayed(!!data.alreadyPlayed);
+      if (data.myRank) setDailyRank(data.myRank);
+      if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
+    } catch { setDailyData(null); }
+    finally { setLoadingDaily(false); }
+  }, []);
+
+  const submitDailyResult = useCallback(async (finalScore, finalTotal) => {
+    try {
+      const timeTakenMs = Date.now() - (dailyStartTimeRef.current || Date.now());
+      const r = await fetch("/api/daily-challenge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: userIdRef.current,
+          score: finalScore,
+          total: finalTotal,
+          timeTakenMs,
+          results: dailyResultsRef.current,
+        }),
+      });
+      const data = await r.json();
+      if (data.rank) setDailyRank(data.rank);
+      if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
+      // Update dailyData so home screen shows completion state on return
+      setDailyAlreadyPlayed(true);
+      setDailyData(prev => prev ? {
+        ...prev,
+        alreadyPlayed: true,
+        myResult: { score: finalScore, total: finalTotal, results: [...dailyResultsRef.current] },
+      } : null);
+    } catch {}
+  }, []);
+
+  const startDailyChallenge = useCallback(() => {
+    if (!dailyData?.rounds) return;
+    dailyModeRef.current = true;
+    dailyResultsRef.current = [];
+    dailyStartTimeRef.current = Date.now();
+    dailyRoundsRef.current = dailyData.rounds;
+    setDailyMode(true);
+    setDailyRank(null);
+    clearInterval(timerRef.current);
+    wrongCountRef.current = 0;
+    setScreen("play");
+    setRoundIdx(0);
+    setSel(null);
+    currentSelRef.current = null;
+    setRevealed(false);
+    setScore(0);
+    setTotal(0);
+    setStreak(0);
+    setConfetti(false);
+    setShareImg(null);
+    setStoriesImg(null);
+    fetchRound(0);
+    axiomSpeak("intro", "idle");
+  }, [dailyData, fetchRound, axiomSpeak]);
 
   // ── AXIOM VOICE ─────────────────────────────────────────────
   const playAxiomVoice = useCallback(async (text, skin) => {
@@ -774,9 +861,32 @@ export default function BluffGame() {
     }
   }, []);
 
+  // Load daily challenge on mount
+  useEffect(() => { loadDailyChallenge(); }, []);
+
   // ── FETCH ROUND ─────────────────────────────────────────────
   const fetchRound = useCallback(async (idx) => {
     setLoadingRound(true);
+
+    // Daily mode: use pre-generated rounds instead of fetching
+    if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
+      const round = dailyRoundsRef.current[idx];
+      const cat = round.category || CATEGORIES[idx % CATEGORIES.length];
+      setCategory(cat);
+      const normalized = (round.statements || []).map(s => ({
+        text: String(s.text || ""),
+        real: s.real === true || s.real === "true",
+      }));
+      const lies = normalized.filter(s => !s.real);
+      if (lies.length === 1) {
+        const shuffled = shuffle(normalized);
+        setStmts(shuffled);
+        currentStmtsRef.current = shuffled;
+      }
+      setLoadingRound(false);
+      return;
+    }
+
     const diff = ROUND_DIFFICULTY[idx]||3;
     const cat = CATEGORIES[idx % CATEGORIES.length];
     setCategory(cat);
@@ -887,6 +997,10 @@ export default function BluffGame() {
     setRevealed(true);
     setTotal(t=>t+1);
 
+    if (dailyModeRef.current) {
+      dailyResultsRef.current = [...dailyResultsRef.current, isCorrect];
+    }
+
     if(isCorrect){
       haptic.correct();
       setScore(s=>s+1);
@@ -934,6 +1048,10 @@ export default function BluffGame() {
   const startGame = useCallback(()=>{
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
+    setDailyMode(false);
+    dailyModeRef.current = false;
+    dailyResultsRef.current = [];
+    setDailyRank(null);
     setScreen("play");
     setRoundIdx(0);
     setSel(null);
@@ -952,6 +1070,18 @@ export default function BluffGame() {
   const showResultScreen = useCallback(()=>{
     clearInterval(timerRef.current);
     setScreen("result");
+
+    // Submit daily result before any state mutation
+    if (dailyModeRef.current) {
+      setScore(sc => {
+        setTotal(tt => {
+          submitDailyResult(sc, tt);
+          return tt;
+        });
+        return sc;
+      });
+    }
+
     setScore(sc=>{
       setTotal(tt=>{
         const won = sc>=Math.ceil(tt*.67);
@@ -1000,7 +1130,7 @@ export default function BluffGame() {
         return sc;
       });
     }, 1200);
-  },[axiomSpeak]);
+  },[axiomSpeak, submitDailyResult]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(() => {
@@ -1148,6 +1278,63 @@ export default function BluffGame() {
                 <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Daily Challenge block */}
+        {(loadingDaily || dailyData) && (
+          <div style={{marginBottom:14,animation:"g-fadeUp .5s .38s both"}}>
+            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(232,197,71,.5)",fontWeight:700,marginBottom:8,textTransform:"uppercase"}}>
+              📅 Today's Challenge
+            </div>
+            {loadingDaily ? (
+              <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)",borderRadius:14,padding:14,textAlign:"center",fontSize:13,color:"rgba(255,255,255,.3)"}}>
+                Loading...
+              </div>
+            ) : dailyAlreadyPlayed && dailyData?.myResult ? (
+              <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#2dd4a0"}}>✓ Completed today</div>
+                  {dailyRank && <div style={{fontSize:12,color:"rgba(232,197,71,.7)",fontWeight:600}}>#{dailyRank} / {dailyPlayers}</div>}
+                </div>
+                <div style={{fontSize:22,letterSpacing:3,marginBottom:6,textAlign:"center"}}>
+                  {(dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("")}
+                </div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,.35)",textAlign:"center",marginBottom:10}}>
+                  {dailyData.myResult.score}/{dailyData.myResult.total} correct
+                  {dailyData.myResult.timeTakenMs ? ` · ${Math.round(dailyData.myResult.timeTakenMs/1000)}s` : ""}
+                </div>
+                <button
+                  onClick={() => {
+                    const grid = (dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("");
+                    const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
+                    const text = `BLUFF™ Daily #${dailyData.dayNum}\n${grid}\n${dailyData.myResult.score}/${dailyData.myResult.total}${rankStr}\nplaybluff.games`;
+                    if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
+                    else navigator.clipboard?.writeText(text).then(() => alert("Copied!")).catch(() => alert(text));
+                  }}
+                  style={{width:"100%",minHeight:40,padding:"8px 14px",fontSize:12,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.25)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
+                  📤 Share result
+                </button>
+              </div>
+            ) : dailyData?.rounds ? (
+              <div style={{background:"rgba(232,197,71,.06)",border:"1px solid rgba(232,197,71,.25)",borderRadius:14,padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#e8c547",marginBottom:2}}>Same puzzle for everyone</div>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>
+                      {dailyData.totalPlayers > 0 ? `${dailyData.totalPlayers} player${dailyData.totalPlayers !== 1 ? "s" : ""} today` : "Be the first today!"}
+                    </div>
+                  </div>
+                  <div style={{fontSize:11,color:"rgba(232,197,71,.4)",letterSpacing:"1px"}}>#{dailyData.dayNum}</div>
+                </div>
+                <button
+                  onClick={startDailyChallenge}
+                  style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
+                  <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
+                  <span style={{position:"relative"}}>📅 Play today's challenge</span>
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
 
@@ -1408,6 +1595,38 @@ export default function BluffGame() {
             ))}
           </div>
         </div>
+        {/* Daily result summary */}
+        {dailyMode && (
+          <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px",marginBottom:16,animation:"g-fadeUp .5s .35s both"}}>
+            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(45,212,160,.7)",fontWeight:700,marginBottom:10,textTransform:"uppercase"}}>
+              📅 Daily Challenge Complete
+            </div>
+            <div style={{fontSize:24,letterSpacing:3,textAlign:"center",marginBottom:10}}>
+              {dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")}
+            </div>
+            {dailyRank ? (
+              <div style={{textAlign:"center",fontSize:14,color:"rgba(255,255,255,.55)",marginBottom:10}}>
+                You ranked{" "}
+                <span style={{color:"#e8c547",fontWeight:800,fontSize:20,fontFamily:"Georgia,serif"}}>#{dailyRank}</span>
+                {dailyPlayers > 0 && <span style={{color:"rgba(255,255,255,.35)"}}> of {dailyPlayers} players</span>}
+              </div>
+            ) : (
+              <div style={{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.3)",marginBottom:10}}>Submitting score...</div>
+            )}
+            <button
+              onClick={() => {
+                const grid = dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("");
+                const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
+                const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${score}/${total}${rankStr}\nplaybluff.games`;
+                if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
+                else navigator.clipboard?.writeText(text).then(() => alert("Copied! 📋")).catch(() => alert(text));
+              }}
+              style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
+              📤 Share daily result
+            </button>
+          </div>
+        )}
+
         {/* Share section */}
         <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .5s both" }}>
 

@@ -6,7 +6,8 @@
     "api/*.js": { "maxDuration": 60 }
   },
   "crons": [
-    { "path": "/api/pre-generate", "schedule": "0 */6 * * *" }
+    { "path": "/api/pre-generate", "schedule": "0 */6 * * *" },
+    { "path": "/api/cron-daily", "schedule": "0 23 * * *" }
   ],
   "headers": [
     { "source": "/api/(.*)", "headers": [{ "key": "Cache-Control", "value": "no-store" }] }
