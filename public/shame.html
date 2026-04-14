@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hall of Shame — BLUFF™</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#04060f;font-family:'Segoe UI',system-ui,sans-serif;
+    color:#e8e6e1;min-height:100vh;padding:24px 16px 48px}
+  .wrap{max-width:480px;margin:0 auto}
+  .logo{font-family:Georgia,serif;font-size:32px;font-weight:900;
+    background:linear-gradient(135deg,#e8c547,#fff,#e8c547);
+    background-size:200% auto;-webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;margin-bottom:4px}
+  h1{font-size:13px;letter-spacing:4px;color:rgba(244,63,94,.7);
+    text-transform:uppercase;margin-bottom:32px;font-weight:500}
+  .entry{background:#0f0f1a;border:1px solid rgba(244,63,94,.2);
+    border-radius:14px;padding:16px;margin-bottom:12px}
+  .entry-text{font-size:15px;line-height:1.6;margin-bottom:8px}
+  .meta{display:flex;gap:12px;font-size:11px;color:rgba(255,255,255,.3)}
+  .badge{background:rgba(244,63,94,.1);color:rgba(244,63,94,.7);
+    padding:2px 8px;border-radius:10px;font-size:11px;letter-spacing:1px}
+  .play-btn{display:block;width:100%;padding:16px;margin-top:32px;
+    background:linear-gradient(135deg,#e8c547,#d4a830);color:#04060f;
+    border-radius:16px;text-align:center;font-weight:700;font-size:15px;
+    letter-spacing:2px;text-decoration:none;text-transform:uppercase}
+  .loading{text-align:center;padding:40px;color:rgba(255,255,255,.3)}
+  .reset{font-size:11px;color:rgba(255,255,255,.2);text-align:center;
+    margin-bottom:24px;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="logo">BLUFF™</div>
+  <h1>Hall of Shame 💀</h1>
+  <div class="reset">Resets every Monday · Anonymous</div>
+  <div id="entries"><div class="loading">Loading shame...</div></div>
+  <a href="/" class="play-btn">⚔️ Challenge AXIOM</a>
+</div>
+<script>
+fetch('/api/hall-of-shame')
+  .then(r=>r.json())
+  .then(data=>{
+    var el=document.getElementById('entries');
+    if(!data.entries||!data.entries.length){
+      el.innerHTML='<div class="loading">No shame yet. Be the first. 💀</div>';
+      return;
+    }
+    el.innerHTML=data.entries.map(function(e){
+      var ago=Math.floor((Date.now()-e.ts)/3600000);
+      return '<div class="entry">'+
+        '<div class="entry-text">'+e.writeup+'</div>'+
+        '<div class="meta">'+
+        '<span class="badge">'+e.category+'</span>'+
+        '<span>'+e.views+' views</span>'+
+        '<span>'+(ago<1?'just now':ago+'h ago')+'</span>'+
+        '</div></div>';
+    }).join('');
+  })
+  .catch(function(){
+    document.getElementById('entries').innerHTML=
+      '<div class="loading">Failed to load. AXIOM is embarrassed.</div>';
+  });
+</script>
+</body>
+</html>

@@ -360,7 +360,7 @@ function generateShareCard(score,total,best,speech,won) {
   } catch(e) { console.error("[share-card]",e); return null; }
 }
 
-function generateStoriesCard(score, total, best, axiomSpeech, won, lieText) {
+function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine) {
   try {
     const W = 540, H = 960; // 1:1.77 = 9:16 portrait
     const c = document.createElement("canvas");
@@ -506,11 +506,12 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText) {
     ctx.moveTo(60, cy + 295); ctx.lineTo(W - 60, cy + 295); ctx.stroke();
 
     // AXIOM quote
-    if (axiomSpeech && axiomSpeech !== "...") {
+    const displayQuote = roastLine || axiomSpeech;
+    if (displayQuote && displayQuote !== "...") {
       ctx.fillStyle = "rgba(34,211,238,.55)";
       ctx.font = "italic 500 13px system-ui";
       const maxW = W - 80;
-      const words = `"${axiomSpeech}"`.split(" ");
+      const words = `"${displayQuote}"`.split(" ");
       let line = "", lines = [], y = cy + 322;
       words.forEach(word => {
         const test = line + word + " ";
@@ -610,6 +611,17 @@ export default function BluffGame() {
   const [storiesImg, setStoriesImg] = useState(null);
   const [challengeURL, setChallengeURL] = useState(null);
   const [challenge, setChallenge] = useState(null);
+  const [activeSkin, setActiveSkin] = useState(
+    () => localStorage.getItem("bluff_skin") || "default"
+  );
+  const [ownedSkins, setOwnedSkins] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("bluff_owned_skins") || '["default"]'); }
+    catch { return ["default"]; }
+  });
+  const [showShop, setShowShop] = useState(false);
+  const [lastWrongStmt, setLastWrongStmt] = useState(null);
+  const [shameSent, setShameSent] = useState(false);
+  const [lastAxiomLine, setLastAxiomLine] = useState("");
   const timerRef = useRef(null);
   const axiomBusyRef = useRef(false); // prevents concurrent AXIOM calls
   const wrongCountRef = useRef(0); // tracks consecutive wrongs for escalating taunts
@@ -636,10 +648,11 @@ export default function BluffGame() {
       const res = await fetch("/api/axiom-speak",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ context, lang }),
+        body: JSON.stringify({ context, lang, skin: activeSkin }),
       });
       const data = await res.json();
       setAxiomSpeech(data.speech||"...");
+      setLastAxiomLine(data.speech||"");
     } catch {
       const fb={idle:"Your confidence is endearing.",taunting:"Predictable.",shocked:"Impossible.",amused:"Delightful.",defeated:"I concede."};
       setAxiomSpeech(fb[mood]||"...");
@@ -661,6 +674,36 @@ export default function BluffGame() {
       setChallenge(ch);
       // Clean URL without reload
       window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Verify Stripe skin purchase after redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const skinPurchased = params.get("skin_purchased");
+    const sessionId = params.get("session_id");
+    if (skinPurchased && sessionId) {
+      window.history.replaceState({}, "", window.location.pathname);
+      const userId = localStorage.getItem("bluff_user_id") || "anon";
+      fetch("/api/shop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setOwnedSkins(prev => {
+            const next = [...new Set([...prev, skinPurchased])];
+            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
+            return next;
+          });
+          setActiveSkin(skinPurchased);
+          localStorage.setItem("bluff_skin", skinPurchased);
+          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
+        }
+      })
+      .catch(() => {});
     }
   }, []);
 
@@ -787,6 +830,9 @@ export default function BluffGame() {
       });
     } else {
       wrongCountRef.current++;
+      const lieStmt = stmtsCurrent.find(s => !s.real);
+      setLastWrongStmt(lieStmt?.text || null);
+      setShameSent(false);
       setStreak(prev=>{
         if(prev>0) axiomSpeak("streak_broken","amused"); // broke their streak
         else if(wrongCountRef.current>=2) axiomSpeak("wrong_celebrate","amused"); // consecutive wrongs
@@ -868,7 +914,7 @@ export default function BluffGame() {
               const won = sc >= Math.ceil(tt * .67);
               const lieStmt = currentStmtsRef.current.find(s => !s.real);
               const lieText = lieStmt?.text || "";
-              const img = generateStoriesCard(sc, tt, b, speech, won, lieText);
+              const img = generateStoriesCard(sc, tt, b, speech, won, lieText, lastAxiomLine);
               setStoriesImg(img);
               setChallengeURL(buildChallengeURL(sc, tt));
               return speech;
@@ -990,8 +1036,120 @@ export default function BluffGame() {
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
           <span style={{position:"relative"}}>{total>0?"⚔️ Challenge AXIOM again":"⚔️ Challenge AXIOM"}</span>
         </button>
+        <button
+          onClick={() => setShowShop(true)}
+          style={{width:"100%",minHeight:48,padding:"13px",marginTop:10,
+            fontSize:"clamp(12px,3.5vw,14px)",fontWeight:600,letterSpacing:"1px",
+            textTransform:"uppercase",background:"rgba(255,255,255,.03)",
+            color:"#5a5a68",border:"1px solid rgba(255,255,255,.07)",
+            borderRadius:16,fontFamily:"inherit",cursor:"pointer",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <span style={{fontSize:16}}>🎭</span>
+          <span>AXIOM Skins</span>
+          {ownedSkins.length <= 1 &&
+            <span style={{fontSize:10,padding:"2px 7px",background:"rgba(232,197,71,.12)",
+              color:"#e8c547",borderRadius:10,letterSpacing:"1px"}}>NEW</span>
+          }
+        </button>
         <div style={{marginTop:20,textAlign:"center",fontSize:10,color:"rgba(255,255,255,.1)",letterSpacing:"1px"}}>playbluff.games · SIAL Consulting d.o.o.</div>
       </div>
+
+      {showShop && (
+        <div style={{position:"fixed",inset:0,zIndex:500,
+          background:"rgba(4,6,15,.95)",backdropFilter:"blur(8px)",
+          overflowY:"auto",padding:"24px 16px 48px"}}>
+          <div style={{maxWidth:460,margin:"0 auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",
+              alignItems:"center",marginBottom:20,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
+              <div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:900,color:"#e8c547"}}>AXIOM Skins</div>
+                <div style={{fontSize:11,color:"#5a5a68",letterSpacing:"2px"}}>Choose your villain's voice</div>
+              </div>
+              <button onClick={()=>setShowShop(false)}
+                style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.06)",
+                  border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",fontSize:16,
+                  cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            </div>
+
+            {[
+              {id:"default",  emoji:"🤖", name:"Default AXIOM",   desc:"Chaotic Gen Z energy. Ships with the game.",           price:null,    preview:'"ratio 💀"'},
+              {id:"balkan",   emoji:"🇧🇦", name:"Balkan AXIOM",    desc:"Brate, majke mi humor. Roastuje na srpsko-hrvatskom.", price:"€2.99", preview:'"jbg brate 😂"'},
+              {id:"anime",    emoji:"🎌", name:"Anime AXIOM",     desc:"Dramatic villain arc. NANI energy.",                  price:"€2.99", preview:'"OMAE WA MOU SHINDEIRU 💀"'},
+              {id:"corporate",emoji:"💼", name:"Corporate AXIOM", desc:"Passive-aggressive LinkedIn energy.",                 price:"€2.99", preview:'"This is not a culture fit, answer-wise."'},
+              {id:"british",  emoji:"🎩", name:"British AXIOM",   desc:"Devastatingly polite. Dry sarcasm.",                 price:"€2.99", preview:'"Oh. Oh dear."'},
+              {id:"bundle",   emoji:"⚡", name:"All Skins Bundle", desc:"Balkan + Anime + Corporate + British. Best value.",  price:"€9.99", preview:null},
+            ].map(skin => {
+              const allFour = ["balkan","anime","corporate","british"].every(s => ownedSkins.includes(s));
+              const isOwned = skin.id === "default" || ownedSkins.includes(skin.id) ||
+                (skin.id === "bundle" && allFour);
+              const isActive = activeSkin === skin.id;
+              return (
+                <div key={skin.id} style={{
+                  background: isActive ? "rgba(232,197,71,.08)" : "rgba(15,15,26,.9)",
+                  border: isActive ? "1.5px solid rgba(232,197,71,.4)" : "1px solid rgba(255,255,255,.07)",
+                  borderRadius:16, padding:"16px", marginBottom:10,
+                }}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:28}}>{skin.emoji}</span>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:700,fontSize:15,color:"#e8e6e1",marginBottom:2}}>{skin.name}</div>
+                      <div style={{fontSize:12,color:"#5a5a68",lineHeight:1.4}}>{skin.desc}</div>
+                      {skin.preview && <div style={{fontSize:12,color:"rgba(34,211,238,.5)",marginTop:4,fontStyle:"italic"}}>{skin.preview}</div>}
+                    </div>
+                    <div style={{flexShrink:0}}>
+                      {isOwned ? (
+                        <button
+                          onClick={() => {
+                            if (skin.id !== "bundle") {
+                              setActiveSkin(skin.id);
+                              localStorage.setItem("bluff_skin", skin.id);
+                            }
+                          }}
+                          style={{padding:"8px 14px",fontSize:12,fontWeight:700,
+                            background: isActive ? "rgba(232,197,71,.2)" : "rgba(45,212,160,.1)",
+                            color: isActive ? "#e8c547" : "#2dd4a0",
+                            border: isActive ? "1px solid rgba(232,197,71,.3)" : "1px solid rgba(45,212,160,.2)",
+                            borderRadius:10,cursor:skin.id!=="bundle"?"pointer":"default",fontFamily:"inherit"}}>
+                          {isActive ? "✓ Active" : skin.id==="bundle" ? "Owned" : "Use"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const userId = localStorage.getItem("bluff_user_id") ||
+                              Math.random().toString(36).slice(2);
+                            localStorage.setItem("bluff_user_id", userId);
+                            fetch("/api/shop", {
+                              method:"POST",
+                              headers:{"Content-Type":"application/json"},
+                              body: JSON.stringify({action:"checkout", skinId:skin.id, userId}),
+                            })
+                            .then(r=>r.json())
+                            .then(data=>{ if(data.url) window.location.href = data.url; })
+                            .catch(()=>alert("Shop unavailable. Try again."));
+                          }}
+                          style={{padding:"8px 14px",fontSize:12,fontWeight:700,
+                            background:"linear-gradient(135deg,#e8c547,#d4a830)",
+                            color:"#04060f",border:"none",borderRadius:10,
+                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                          {skin.price}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <a href="/shame.html" target="_blank"
+              style={{display:"block",textAlign:"center",marginTop:16,
+                fontSize:12,color:"rgba(244,63,94,.5)",textDecoration:"none",
+                letterSpacing:"2px"}}>
+              💀 Hall of Shame →
+            </a>
+          </div>
+        </div>
+      )}
+
       <GameStyles/>
     </div>
   );
@@ -1187,6 +1345,54 @@ export default function BluffGame() {
             </div>
           )}
         </div>
+        {lastWrongStmt && !shameSent && (
+          <div style={{
+            background:"rgba(244,63,94,.06)",
+            border:"1px solid rgba(244,63,94,.2)",
+            borderRadius:14, padding:"14px 16px", marginBottom:16,
+            animation:"g-fadeUp .6s .7s both",
+          }}>
+            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(244,63,94,.6)",
+              fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
+              💀 Submit to Hall of Shame?
+            </div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:10,lineHeight:1.5}}>
+              AXIOM will write an anonymous funny entry about your mistake.
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button
+                onClick={() => {
+                  fetch("/api/hall-of-shame", {
+                    method: "POST",
+                    headers: {"Content-Type":"application/json"},
+                    body: JSON.stringify({ wrongStatement: lastWrongStmt, category, roundNum: roundIdx + 1 }),
+                  }).then(() => setShameSent(true));
+                }}
+                style={{flex:2,minHeight:44,padding:"10px 14px",fontSize:13,
+                  fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",
+                  background:"rgba(244,63,94,.15)",color:"#f43f5e",
+                  border:"1px solid rgba(244,63,94,.3)",borderRadius:10,
+                  fontFamily:"inherit",cursor:"pointer"}}>
+                💀 Submit
+              </button>
+              <button
+                onClick={() => setLastWrongStmt(null)}
+                style={{flex:1,minHeight:44,padding:10,fontSize:13,fontWeight:600,
+                  background:"transparent",color:"#5a5a68",
+                  border:"1px solid rgba(255,255,255,.07)",borderRadius:10,
+                  fontFamily:"inherit",cursor:"pointer"}}>
+                Nope
+              </button>
+            </div>
+          </div>
+        )}
+        {shameSent && (
+          <div style={{textAlign:"center",fontSize:13,color:"rgba(244,63,94,.5)",
+            marginBottom:16,padding:"12px",animation:"g-fadeUp .3s ease both"}}>
+            💀 Submitted. playbluff.games/shame
+          </div>
+        )}
+
         <div style={{display:"flex",gap:10,animation:"g-fadeUp .6s .6s both"}}>
           <button onClick={()=>setScreen("home")} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
           <button onClick={startGame} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
