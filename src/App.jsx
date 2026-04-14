@@ -623,9 +623,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
 export default function BluffGame() {
   const haptic = useHaptic();
   const tg = useTelegram();
-  const [showIntro, setShowIntro] = useState(
-    !localStorage.getItem("bluff_played")
-  );
+  const [showIntro, setShowIntro] = useState(true);
   const [screen, setScreen] = useState("home");
   const [lang, setLang] = useState(()=>localStorage.getItem("bluff_lang")||"en");
   const [stmts, setStmts] = useState([]);
