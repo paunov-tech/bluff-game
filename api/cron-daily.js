@@ -39,17 +39,25 @@ async function generateRound(category, difficulty) {
   return parsed.statements;
 }
 
-export default async function handler(req, res) {
-  const tomorrowKey = getTomorrowKey();
-  const kvKey = `bluff:daily:${tomorrowKey}`;
+function getTodayKey() {
+  const d = new Date();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+}
 
-  // Skip if already generated
-  try {
-    const existing = await kv.get(kvKey);
-    if (existing) {
-      return res.status(200).json({ status: "already_generated", date: tomorrowKey });
-    }
-  } catch {}
+export default async function handler(req, res) {
+  const useToday = req.query.today === "1";
+  const dateKey = useToday ? getTodayKey() : getTomorrowKey();
+  const kvKey = `bluff:daily:${dateKey}`;
+
+  // Skip if already generated (unless force=1)
+  if (req.query.force !== "1") {
+    try {
+      const existing = await kv.get(kvKey);
+      if (existing) {
+        return res.status(200).json({ status: "already_generated", date: dateKey });
+      }
+    } catch {}
+  }
 
   const rounds = [];
   const errors = [];
@@ -78,5 +86,5 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "KV save failed", detail: e.message });
   }
 
-  return res.status(200).json({ status: "ok", date: tomorrowKey, rounds: rounds.length, errors });
+  return res.status(200).json({ status: "ok", date: dateKey, rounds: rounds.length, errors });
 }

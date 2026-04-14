@@ -710,8 +710,10 @@ export default function BluffGame() {
   async function loadDailyChallenge() {
     console.log("[daily] loading...");
     setLoadingDaily(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`);
+      const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`, { signal: controller.signal });
       console.log("[daily] response status:", r.status);
       const data = await r.json();
       console.log("[daily] data:", data);
@@ -719,8 +721,14 @@ export default function BluffGame() {
       setDailyAlreadyPlayed(!!data.alreadyPlayed);
       if (data.myRank) setDailyRank(data.myRank);
       if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
-    } catch(e) { console.error("[daily] error:", e); setDailyData(null); }
-    finally { setLoadingDaily(false); }
+    } catch(e) {
+      if (e.name === "AbortError") console.warn("[daily] timeout after 8s");
+      else console.error("[daily] error:", e);
+      setDailyData(null);
+    } finally {
+      clearTimeout(timeout);
+      setLoadingDaily(false);
+    }
   }
 
   async function submitDailyResult(finalScore, finalTotal) {
