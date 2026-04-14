@@ -13,42 +13,159 @@ const LANG_NAMES = {
 };
 
 const DIFFICULTY_RULES = {
+
   0: `DIFFICULTY 0 — BABY MODE (Round 1 only):
-This must be IMPOSSIBLE to get wrong for any adult.
-The lie must be something a 6-year-old would know is false.
-Examples of acceptable lies: "The Sun orbits the Earth",
-"Humans have 4 legs", "Paris is the capital of Germany",
-"Water is made of fire", "Dogs can fly naturally".
-The 4 truths must be genuinely interesting surprising facts
-that feel rewarding to learn. Player must feel SMART and CURIOUS.
-This round exists only to hook the player. Make it fun, not challenging.`,
+
+GOAL: The player MUST win immediately. This is a dopamine hit,
+not a challenge. If the player gets this wrong, they will quit.
+
+LIE RULE:
+The lie must be something EVERY 8-YEAR-OLD KNOWS is false.
+Completely absurd, impossible claim that sounds wrong at first glance.
+No subtlety, no tricks.
+
+GOOD LIE EXAMPLES for difficulty 0:
+- "The Earth orbits the Moon"
+- "The Eiffel Tower is located in Berlin"
+- "Humans have 4 legs"
+- "Water is made of fire and air"
+- "The Sun rises in the west"
+- "Cows can fly naturally"
+- "China is located in Europe"
+- "Napoleon was American"
+
+4 TRUTHS RULE:
+Must be BRILLIANT, UNBELIEVABLE, FASCINATING.
+Player must think "WOW, really?!" for each one.
+This is the reward for playing — they learn something amazing.
+Avoid boring, well-known facts.
+
+GOOD TRUTH EXAMPLES for difficulty 0:
+- Octopuses have three hearts and blue blood
+- Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid
+- Honey never spoils — 3000-year-old edible honey was found in Egyptian tombs
+- A group of flamingos is called a "flamboyance"
+
+FORMAT: The lie must be CLEARLY the most obviously wrong of the five statements.
+
+TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie? If not, make the lie more obvious.`,
+
 
   1: `DIFFICULTY 1 — WARM-UP:
-The lie should be something most adults would catch within seconds.
-Use one obviously wrong detail — wrong continent, wrong century,
-clearly impossible number. Example lie style: saying the Eiffel Tower
-is 8000 meters tall, or that Shakespeare was American.
-The 4 truths should be surprising and fun — things that make you say
-"wait really?!" Player should feel confident but slightly challenged.`,
+
+GOAL: Almost everyone should get this right. 85%+ of players must
+pass. Warm-up, not a challenge. The player feels smart.
+
+LIE RULE:
+One obviously incorrect piece of information that every adult knows.
+Wrong country, wrong continent, wrong century, or a bizarrely wrong number.
+The lie must NOT be subtle. It must "click" as wrong immediately.
+
+GOOD LIE EXAMPLES for difficulty 1:
+- Wrong country: "The Eiffel Tower was built in London in 1889."
+- Wrong continent: "The Amazon River flows through Africa"
+- Wrong century: "Christopher Columbus discovered America in 1992."
+- Bizarre number: "The average person has 8 fingers on their hands"
+- Famous error: "Shakespeare wrote in French"
+
+WHAT TO AVOID:
+- Subtle date errors (1776 vs 1766)
+- Errors that require specific knowledge
+- Lies that sound possible
+- Anything that would confuse an average adult
+
+4 TRUTHS RULE:
+Interesting, a little surprising, but not too hard.
+The player should be able to easily verify each one mentally.
+
+TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie? If not, make the lie more obvious.`,
+
 
   2: `DIFFICULTY 2 — EASY:
-The lie requires basic school-level knowledge to detect.
-One wrong detail that's incorrect but sounds almost plausible.
-Example: wrong country for a famous invention, wrong decade for an event.
-The truths should be genuinely surprising. Player should feel smart for catching it.`,
+
+GOAL: Most adults (70%) should get this right.
+Requires a little thinking but not too much.
+
+LIE RULE:
+One incorrect piece of information that requires basic school-level knowledge.
+One wrong detail that ALMOST sounds right but something is "off".
+Wrong country for a famous invention, wrong decade for a famous event,
+a number that is close to correct but isn't.
+
+GOOD LIE EXAMPLES for difficulty 2:
+- "Penicillin was discovered by Alexander Graham Bell in 1928."
+  (wrong name — it was Fleming)
+- "The Berlin Wall fell in 1991."
+  (wrong year — it fell in 1989)
+- "The Olympic Games were revived in 1906 in Athens."
+  (wrong year — 1896)
+- "The DNA structure was discovered by Watson, Crick and Einstein."
+  (wrong name — Franklin, not Einstein)
+
+4 TRUTHS RULE:
+Must be surprising and educational.
+The player should learn something new from each round.`,
+
 
   3: `DIFFICULTY 3 — SNEAKY:
-The lie is very plausible. ONE specific detail is wrong in an otherwise
-true-sounding statement. The truths should be counterintuitive.`,
+
+GOAL: Half the players get it right (50%). Requires attention.
+
+LIE RULE:
+One specific detail is wrong in an otherwise believable statement.
+The lie sounds completely plausible. Change: precise dates, specific names,
+exact numbers, locations that are close to the correct ones.
+
+The lie must be the same length and style as the truths.
+Specific details (names, numbers, dates) make it convincing.
+It must not be easily googleable in 5 seconds.
+
+4 TRUTHS RULE:
+Should be counterintuitive — things that sound false but are real.
+The player should doubt the truths.`,
+
 
   4: `DIFFICULTY 4 — DEVIOUS:
-The lie exploits common misconceptions — things most people THINK are
-true. The truths should sound completely fake but be real.`,
+
+GOAL: Fewer than 35% of players get it right. Serious challenge.
+
+LIE RULE:
+Exploit a popular misconception — something most people THINK is
+true but isn't. The lie must be a "common myth" that circulates as truth.
+
+EXAMPLES of popular misconceptions for the lie:
+- "Goldfish have a 3-second memory" (MYTH — they remember for months)
+- "Napoleon was exceptionally short" (MYTH — he was average height for his era)
+- "Humans only use 10% of their brain" (MYTH — we use all of it)
+- "The Great Wall of China is visible from space with the naked eye" (MYTH — it isn't)
+- "Lightning never strikes the same place twice" (MYTH — it does)
+
+4 TRUTHS RULE:
+Must sound FAKE but be real.
+The player must doubt every statement.`,
+
 
   5: `DIFFICULTY 5 — DIABOLICAL:
-ALL 4 truths must be so bizarre they sound made up.
-The lie must be the most normal-sounding statement.
-Maximum psychological confusion.`,
+
+GOAL: Fewer than 15% of players get it right. Maximum confusion.
+
+LIE RULE:
+The lie MUST be the most normal, accessible, believable
+statement of all five. The lie should sound like a textbook fact.
+
+4 TRUTHS RULE:
+ALL FOUR truths must sound like made-up nonsense.
+The more bizarre, the better. The player must doubt everything.
+The truths should be so strange that the player thinks:
+"This CANNOT possibly be true."
+
+PERFECT TRUTH EXAMPLES for difficulty 5:
+- Octopuses have three hearts, two of which stop beating when they swim
+- Cleopatra lived closer in time to the iPhone than to the Great Pyramid
+- Wombats are the only animals that produce cube-shaped droppings
+- On Saturn's moon Titan, liquid methane rains down instead of water
+- Ant colonies can survive a nuclear blast`,
+
 };
 
 const CATEGORY_HINTS = {
@@ -200,25 +317,39 @@ function extractJSON(raw) {
 function getFallback(cat) {
   const map = {
     history: { category:"history", difficulty:1, statements:[
-      {text:"Napoleon was once attacked by a horde of rabbits during a hunting party.",real:true},
-      {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid.",real:true},
-      {text:"The French army used 600 Paris taxis to rush troops to the Battle of the Marne.",real:true},
-      {text:"Ancient Romans built steam-powered mechanisms making temple doors open by 'divine force.'",real:true},
-      {text:"Queen Victoria kept a diary in Urdu for the last 13 years of her reign.",real:false},
+      {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
+      {text:"Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.",real:true},
+      {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne in 1914.",real:true},
+      {text:"Ancient Romans built steam-powered door mechanisms that made temple doors appear to open by divine force.",real:true},
+      {text:"The Eiffel Tower was built in Brussels in 1889 as a symbol of Belgium.",real:false},
+    ]},
+    science: { category:"science", difficulty:1, statements:[
+      {text:"Honey never spoils — archaeologists have found 3,000-year-old edible honey in Egyptian tombs.",real:true},
+      {text:"A teaspoon of neutron star material would weigh around 6 billion tons on Earth.",real:true},
+      {text:"Bananas are mildly radioactive due to their potassium-40 content.",real:true},
+      {text:"Hot water can freeze faster than cold water under certain conditions — the Mpemba effect — and is still not fully explained.",real:true},
+      {text:"The Sun rises in the west and sets in the east, opposite to the direction of clock hands.",real:false},
+    ]},
+    animals: { category:"animals", difficulty:1, statements:[
+      {text:"A group of flamingos is officially called a 'flamboyance'.",real:true},
+      {text:"Octopuses have three hearts and blue blood.",real:true},
+      {text:"Crows can recognize individual human faces and remember grudges for years.",real:true},
+      {text:"The mimic octopus can imitate over 15 marine species including lionfish and sea snakes.",real:true},
+      {text:"Elephants are the only animals that cannot jump due to their weight, but can fly short distances by flapping their ears.",real:false},
     ]},
     internet: { category:"internet", difficulty:1, statements:[
-      {text:"The first YouTube video ever uploaded was called 'Me at the zoo' and is 18 seconds long.",real:true},
-      {text:"'E' is the most common letter used in English internet text.",real:true},
+      {text:"The first YouTube video ever uploaded was called 'Me at the zoo' and lasts 18 seconds.",real:true},
       {text:"The original Space Jam website from 1996 is still live and unchanged.",real:true},
       {text:"Wikipedia has over 6.7 million articles in English alone.",real:true},
-      {text:"Google's original name was 'Backrub' before it was changed in 1997.",real:false},
+      {text:"The domain sex.com was sold in 2010 for $13 million — a record for a domain sale at the time.",real:true},
+      {text:"Google was originally founded in Japan in 1995 under the name 'SearchMaster'.",real:false},
     ]},
     popculture: { category:"popculture", difficulty:1, statements:[
-      {text:"Eminem can rap approximately 11 syllables per second at his fastest.",real:true},
-      {text:"The Netflix show Squid Game became the platform's most-watched series ever within 28 days.",real:true},
+      {text:"Eminem can rap around 11 syllables per second at his fastest.",real:true},
+      {text:"Squid Game became Netflix's most-watched series ever within just 28 days.",real:true},
       {text:"Billie Eilish recorded her debut album entirely in her childhood bedroom.",real:true},
-      {text:"The Minecraft soundtrack was composed in just 3 days.",real:true},
-      {text:"Among Us was originally designed as a battle royale game before changing concept.",real:false},
+      {text:"The score for the film Titanic was composed under extreme time pressure in just five days.",real:true},
+      {text:"The Harry Potter books were originally written in Latin and only later translated into English.",real:false},
     ]},
   };
   return map[cat] || map.history;
