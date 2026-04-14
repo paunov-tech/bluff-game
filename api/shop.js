@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ url: session.url });
     } catch (err) {
       console.error("[shop] checkout error:", err.message);
-      return res.status(500).json({ error: "Checkout failed", detail: err.message });
+      return res.status(500).json({ error: "Checkout failed" });
     }
   }
 
