@@ -22,12 +22,15 @@ export default async function handler(req, res) {
     if (!SKIN_PRICES[skinId])
       return res.status(400).json({ error: "Invalid skin" });
 
+    const baseUrl = req.headers.origin ||
+      (req.headers.host ? `https://${req.headers.host}` : "https://playbluff.games");
+
     try {
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
         line_items: [{ price: SKIN_PRICES[skinId], quantity: 1 }],
-        success_url: `${req.headers.origin}?skin_purchased=${skinId}&session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${req.headers.origin}?shop=1`,
+        success_url: `${baseUrl}?skin_purchased=${skinId}&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${baseUrl}?shop=1`,
         metadata: { skinId, userId: userId || "anonymous" },
       });
       return res.status(200).json({ url: session.url });
