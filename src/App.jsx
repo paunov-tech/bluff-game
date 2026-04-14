@@ -708,15 +708,18 @@ export default function BluffGame() {
 
   // ── DAILY CHALLENGE ─────────────────────────────────────────
   async function loadDailyChallenge() {
+    console.log("[daily] loading...");
     setLoadingDaily(true);
     try {
       const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`);
+      console.log("[daily] response status:", r.status);
       const data = await r.json();
+      console.log("[daily] data:", data);
       setDailyData(data);
       setDailyAlreadyPlayed(!!data.alreadyPlayed);
       if (data.myRank) setDailyRank(data.myRank);
       if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
-    } catch { setDailyData(null); }
+    } catch(e) { console.error("[daily] error:", e); setDailyData(null); }
     finally { setLoadingDaily(false); }
   }
 
@@ -1164,8 +1167,11 @@ export default function BluffGame() {
     });
   }, []);
 
-  // Load daily challenge on mount
+  // Load daily challenge on mount and on return to home
   useEffect(() => { loadDailyChallenge(); }, []);
+  useEffect(() => {
+    if (screen === "home") loadDailyChallenge();
+  }, [screen]);
 
   // Auto-reveal at 0
   useEffect(()=>{
@@ -1243,6 +1249,21 @@ export default function BluffGame() {
         audioRef.current.pause();
         URL.revokeObjectURL(audioRef.current.src);
       }
+    };
+  }, []);
+
+  // Unlock audio on first user gesture (iOS/mobile requirement)
+  useEffect(() => {
+    function unlockAudio() {
+      haptic.tap();
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
+    }
+    document.addEventListener("click", unlockAudio);
+    document.addEventListener("touchstart", unlockAudio);
+    return () => {
+      document.removeEventListener("click", unlockAudio);
+      document.removeEventListener("touchstart", unlockAudio);
     };
   }, []);
 
