@@ -622,7 +622,13 @@ export default function BluffGame() {
   const [lastWrongStmt, setLastWrongStmt] = useState(null);
   const [shameSent, setShameSent] = useState(false);
   const [lastAxiomLine, setLastAxiomLine] = useState("");
+  const [voiceEnabled, setVoiceEnabled] = useState(
+    () => localStorage.getItem("bluff_voice") !== "off"
+  );
   const timerRef = useRef(null);
+  const audioRef = useRef(null);
+  const audioQueueRef = useRef([]);
+  const isPlayingRef = useRef(false);
   const axiomBusyRef = useRef(false); // prevents concurrent AXIOM calls
   const wrongCountRef = useRef(0); // tracks consecutive wrongs for escalating taunts
   const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
@@ -638,6 +644,48 @@ export default function BluffGame() {
     localStorage.setItem("bluff_lang", code);
   },[]);
 
+  // ── AXIOM VOICE ─────────────────────────────────────────────
+  const playAxiomVoice = useCallback(async (text, skin) => {
+    if (!voiceEnabled || !text || text === "...") return;
+
+    audioQueueRef.current.push({ text, skin });
+    if (isPlayingRef.current) return;
+
+    const playNext = async () => {
+      if (audioQueueRef.current.length === 0) {
+        isPlayingRef.current = false;
+        return;
+      }
+      isPlayingRef.current = true;
+      const { text: t, skin: s } = audioQueueRef.current.shift();
+      try {
+        const r = await fetch("/api/axiom-voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: t, skin: s }),
+        });
+        if (!r.ok) { isPlayingRef.current = false; playNext(); return; }
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        if (audioRef.current) {
+          audioRef.current.pause();
+          URL.revokeObjectURL(audioRef.current.src);
+        }
+        const audio = new Audio(url);
+        audioRef.current = audio;
+        audio.onended = () => { URL.revokeObjectURL(url); isPlayingRef.current = false; playNext(); };
+        audio.onerror = () => { isPlayingRef.current = false; playNext(); };
+        const p = audio.play();
+        if (p !== undefined) p.catch(() => { isPlayingRef.current = false; });
+      } catch {
+        isPlayingRef.current = false;
+        playNext();
+      }
+    };
+
+    playNext();
+  }, [voiceEnabled]);
+
   // ── AXIOM SPEAK ─────────────────────────────────────────────
   const axiomSpeak = useCallback(async (context, mood) => {
     if(axiomBusyRef.current) return;
@@ -651,11 +699,15 @@ export default function BluffGame() {
         body: JSON.stringify({ context, lang, skin: activeSkin }),
       });
       const data = await res.json();
-      setAxiomSpeech(data.speech||"...");
-      setLastAxiomLine(data.speech||"");
+      const speechText = data.speech || "...";
+      setAxiomSpeech(speechText);
+      setLastAxiomLine(speechText);
+      playAxiomVoice(speechText, activeSkin);
     } catch {
       const fb={idle:"Your confidence is endearing.",taunting:"Predictable.",shocked:"Impossible.",amused:"Delightful.",defeated:"I concede."};
-      setAxiomSpeech(fb[mood]||"...");
+      const fallbackText = fb[mood] || "...";
+      setAxiomSpeech(fallbackText);
+      playAxiomVoice(fallbackText, activeSkin);
     } finally {
       setAxiomLoading(false);
       axiomBusyRef.current = false;
@@ -929,6 +981,14 @@ export default function BluffGame() {
   },[axiomSpeak]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        URL.revokeObjectURL(audioRef.current.src);
+      }
+    };
+  }, []);
 
   // ── THEME ────────────────────────────────────────────────────
   const T = {
@@ -971,6 +1031,45 @@ export default function BluffGame() {
         </div>
 
         <LangPicker lang={lang} onChange={changeLang}/>
+
+        <div style={{
+          display:"flex", alignItems:"center", justifyContent:"space-between",
+          background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
+          borderRadius:12, padding:"10px 14px", marginBottom:12,
+        }}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:16}}>{voiceEnabled ? "🔊" : "🔇"}</span>
+            <div>
+              <div style={{fontSize:13,fontWeight:500,color:"#e8e6e1"}}>AXIOM Voice</div>
+              <div style={{fontSize:11,color:"#5a5a68"}}>{voiceEnabled ? "ElevenLabs TTS active" : "Text only"}</div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              const next = !voiceEnabled;
+              setVoiceEnabled(next);
+              localStorage.setItem("bluff_voice", next ? "on" : "off");
+              if (!next && audioRef.current) {
+                audioRef.current.pause();
+                isPlayingRef.current = false;
+                audioQueueRef.current = [];
+              }
+            }}
+            style={{
+              width:44, height:24, borderRadius:12, cursor:"pointer",
+              background: voiceEnabled ? "rgba(45,212,160,.3)" : "rgba(255,255,255,.08)",
+              border: voiceEnabled ? "1px solid rgba(45,212,160,.5)" : "1px solid rgba(255,255,255,.1)",
+              position:"relative", transition:"all .25s",
+            }}>
+            <div style={{
+              width:16, height:16, borderRadius:"50%",
+              background: voiceEnabled ? "#2dd4a0" : "#5a5a68",
+              position:"absolute", top:3,
+              left: voiceEnabled ? 22 : 4,
+              transition:"all .25s",
+            }}/>
+          </button>
+        </div>
 
         {challenge && (
           <div style={{
