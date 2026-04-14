@@ -1497,7 +1497,12 @@ export default function BluffGame() {
           </div>
         )}
 
-        <button onClick={startGame} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
+        <button onClick={() => {
+            userInteractedRef.current = true;
+            const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARAAAAAgABAAIAZGF0YQQAAAAAAA==");
+            silent.play().catch(()=>{});
+            startGame();
+          }} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
