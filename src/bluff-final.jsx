@@ -2,36 +2,16 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
-  const supported = typeof navigator !== "undefined" && "vibrate" in navigator;
-  const tgH = () => window.Telegram?.WebApp?.HapticFeedback;
+  const supported = typeof navigator !== "undefined" &&
+    "vibrate" in navigator;
   return {
-    tap:          () => { tgH()?.selectionChanged(); if (supported) navigator.vibrate(8); },
-    lockIn:       () => { tgH()?.impactOccurred("medium"); if (supported) navigator.vibrate([12, 60, 12]); },
-    correct:      () => { tgH()?.notificationOccurred("success"); if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
-    wrong:        () => { tgH()?.notificationOccurred("error"); if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
-    timerWarning: () => { tgH()?.impactOccurred("light"); if (supported) navigator.vibrate(20); },
-    victory:      () => { tgH()?.notificationOccurred("success"); if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
+    tap:          () => { if (supported) navigator.vibrate(8); },
+    lockIn:       () => { if (supported) navigator.vibrate([12, 60, 12]); },
+    correct:      () => { if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
+    wrong:        () => { if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
+    timerWarning: () => { if (supported) navigator.vibrate(20); },
+    victory:      () => { if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
   };
-}
-
-// ── Telegram Mini App ─────────────────────
-function useTelegram() {
-  const tg = window.Telegram?.WebApp;
-  const isInsideTelegram = !!tg?.initData;
-  const tgUser = tg?.initDataUnsafe?.user || null;
-
-  function sendResult(data) {
-    if (!tg) return;
-    try { tg.sendData(JSON.stringify(data)); } catch {}
-  }
-
-  function shareToChat(text, url) {
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
-    if (tg) tg.openTelegramLink(shareUrl);
-    else window.open(shareUrl, "_blank");
-  }
-
-  return { isInsideTelegram, tgUser, sendResult, shareToChat };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -622,7 +602,6 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
   const haptic = useHaptic();
-  const tg = useTelegram();
   const [showIntro, setShowIntro] = useState(
     !localStorage.getItem("bluff_played")
   );
@@ -670,34 +649,6 @@ export default function BluffGame() {
   const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
   const currentSelRef = useRef(null);
 
-  // ── Daily Challenge ──────────────────────────────────────────
-  const [dailyMode, setDailyMode] = useState(false);
-  const [dailyData, setDailyData] = useState(null);
-  const [dailyRank, setDailyRank] = useState(null);
-  const [dailyPlayers, setDailyPlayers] = useState(0);
-  const [dailyAlreadyPlayed, setDailyAlreadyPlayed] = useState(false);
-  const [loadingDaily, setLoadingDaily] = useState(false);
-  const dailyModeRef = useRef(false);
-  const dailyResultsRef = useRef([]);
-  const dailyRoundsRef = useRef(null);
-  const dailyStartTimeRef = useRef(null);
-  const userIdRef = useRef(
-    (() => {
-      // Prefer Telegram user ID when running inside Mini App
-      const tgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
-      if (tgId) {
-        const id = `tg_${tgId}`;
-        localStorage.setItem("bluff_user_id", id);
-        return id;
-      }
-      const stored = localStorage.getItem("bluff_user_id");
-      if (stored) return stored;
-      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
-      localStorage.setItem("bluff_user_id", id);
-      return id;
-    })()
-  );
-
   // Keep refs in sync
   useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
   useEffect(()=>{ currentSelRef.current = sel; },[sel]);
@@ -707,72 +658,6 @@ export default function BluffGame() {
     setLang(code);
     localStorage.setItem("bluff_lang", code);
   },[]);
-
-  // ── DAILY CHALLENGE ─────────────────────────────────────────
-  const loadDailyChallenge = useCallback(async () => {
-    setLoadingDaily(true);
-    try {
-      const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`);
-      const data = await r.json();
-      setDailyData(data);
-      setDailyAlreadyPlayed(!!data.alreadyPlayed);
-      if (data.myRank) setDailyRank(data.myRank);
-      if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
-    } catch { setDailyData(null); }
-    finally { setLoadingDaily(false); }
-  }, []);
-
-  const submitDailyResult = useCallback(async (finalScore, finalTotal) => {
-    try {
-      const timeTakenMs = Date.now() - (dailyStartTimeRef.current || Date.now());
-      const r = await fetch("/api/daily-challenge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId: userIdRef.current,
-          score: finalScore,
-          total: finalTotal,
-          timeTakenMs,
-          results: dailyResultsRef.current,
-        }),
-      });
-      const data = await r.json();
-      if (data.rank) setDailyRank(data.rank);
-      if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
-      // Update dailyData so home screen shows completion state on return
-      setDailyAlreadyPlayed(true);
-      setDailyData(prev => prev ? {
-        ...prev,
-        alreadyPlayed: true,
-        myResult: { score: finalScore, total: finalTotal, results: [...dailyResultsRef.current] },
-      } : null);
-    } catch {}
-  }, []);
-
-  const startDailyChallenge = useCallback(() => {
-    if (!dailyData?.rounds) return;
-    dailyModeRef.current = true;
-    dailyResultsRef.current = [];
-    dailyStartTimeRef.current = Date.now();
-    dailyRoundsRef.current = dailyData.rounds;
-    setDailyMode(true);
-    setDailyRank(null);
-    clearInterval(timerRef.current);
-    wrongCountRef.current = 0;
-    setScreen("play");
-    setRoundIdx(0);
-    setSel(null);
-    currentSelRef.current = null;
-    setRevealed(false);
-    setScore(0);
-    setTotal(0);
-    setStreak(0);
-    setConfetti(false);
-    setShareImg(null);
-    setStoriesImg(null);
-    fetchRound(0);
-    axiomSpeak("intro", "idle");
-  }, [dailyData, fetchRound, axiomSpeak]);
 
   // ── AXIOM VOICE ─────────────────────────────────────────────
   const playAxiomVoice = useCallback(async (text, skin) => {
@@ -864,85 +749,34 @@ export default function BluffGame() {
     const params = new URLSearchParams(window.location.search);
     const skinPurchased = params.get("skin_purchased");
     const sessionId = params.get("session_id");
-    const openShop = params.get("shop");
-
-    // User cancelled checkout
-    if (openShop === "1") {
+    if (skinPurchased && sessionId) {
       window.history.replaceState({}, "", window.location.pathname);
-      setShowShop(true);
-      return;
-    }
-
-    if (!skinPurchased || !sessionId) return;
-    window.history.replaceState({}, "", window.location.pathname);
-
-    const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
-    console.log(`[shop] Verifying ${skinPurchased} session=${sessionId} user=${currentUserId}`);
-
-    fetch("/api/shop", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId: currentUserId, sessionId }),
-    })
-    .then(r => r.json())
-    .then(data => {
-      console.log("[shop] Verify result:", data);
-      if (data.success) {
-        const toUnlock = data.skinsUnlocked || [skinPurchased];
-        setOwnedSkins(prev => {
-          const merged = [...new Set([...prev, ...toUnlock])];
-          localStorage.setItem("bluff_owned_skins", JSON.stringify(merged));
-          return merged;
-        });
-        if (skinPurchased !== "bundle") {
+      const userId = localStorage.getItem("bluff_user_id") || "anon";
+      fetch("/api/shop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setOwnedSkins(prev => {
+            const next = [...new Set([...prev, skinPurchased])];
+            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
+            return next;
+          });
           setActiveSkin(skinPurchased);
           localStorage.setItem("bluff_skin", skinPurchased);
-        } else {
-          setActiveSkin("balkan");
-          localStorage.setItem("bluff_skin", "balkan");
+          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
         }
-        setShowShop(true);
-        setTimeout(() => {
-          const names = { balkan:"Balkan", anime:"Anime", corporate:"Corporate", british:"British", bundle:"All" };
-          alert(`✅ ${names[skinPurchased] || skinPurchased} AXIOM unlocked! 🎉`);
-        }, 300);
-      } else {
-        console.warn("[shop] Not verified:", data);
-        alert("⚠️ Could not verify purchase. Contact support if charged.");
-      }
-    })
-    .catch(err => {
-      console.error("[shop] Verify fetch error:", err);
-      alert("⚠️ Network error verifying purchase. Refresh the page.");
-    });
+      })
+      .catch(() => {});
+    }
   }, []);
-
-  // Load daily challenge on mount
-  useEffect(() => { loadDailyChallenge(); }, []);
 
   // ── FETCH ROUND ─────────────────────────────────────────────
   const fetchRound = useCallback(async (idx) => {
     setLoadingRound(true);
-
-    // Daily mode: use pre-generated rounds instead of fetching
-    if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
-      const round = dailyRoundsRef.current[idx];
-      const cat = round.category || CATEGORIES[idx % CATEGORIES.length];
-      setCategory(cat);
-      const normalized = (round.statements || []).map(s => ({
-        text: String(s.text || ""),
-        real: s.real === true || s.real === "true",
-      }));
-      const lies = normalized.filter(s => !s.real);
-      if (lies.length === 1) {
-        const shuffled = shuffle(normalized);
-        setStmts(shuffled);
-        currentStmtsRef.current = shuffled;
-      }
-      setLoadingRound(false);
-      return;
-    }
-
     const diff = ROUND_DIFFICULTY[idx]||3;
     const cat = CATEGORIES[idx % CATEGORIES.length];
     setCategory(cat);
@@ -1021,50 +855,6 @@ export default function BluffGame() {
     }
   }, [loadingRound]);
 
-  // ── TELEGRAM MAIN BUTTON sync ───────────────────────────────
-  useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-    if (!webApp?.MainButton) return;
-    if (screen !== "play") { webApp.MainButton.hide(); return; }
-
-    webApp.MainButton.offClick();
-    if (!revealed) {
-      if (sel !== null) {
-        webApp.MainButton.setText("🔒 LOCK IN ANSWER");
-        webApp.MainButton.setParams({ color: "#e8c547", text_color: "#04060f", is_active: true, is_visible: true });
-        webApp.MainButton.onClick(doReveal);
-      } else {
-        webApp.MainButton.setText("SELECT AN ANSWER FIRST");
-        webApp.MainButton.setParams({ color: "#2a2a2a", text_color: "#555555", is_active: false, is_visible: true });
-      }
-      webApp.MainButton.show();
-    } else {
-      const isLast = roundIdx + 1 >= ROUND_DIFFICULTY.length;
-      webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
-      webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
-      webApp.MainButton.onClick(isLast ? showResultScreen : nextRound);
-      webApp.MainButton.show();
-    }
-  }, [screen, sel, revealed, roundIdx, doReveal, nextRound, showResultScreen]);
-
-  // ── TELEGRAM BACK BUTTON ────────────────────────────────────
-  useEffect(() => {
-    const webApp = window.Telegram?.WebApp;
-    if (!webApp?.BackButton) return;
-    if (screen === "play") {
-      webApp.BackButton.offClick();
-      webApp.BackButton.onClick(() => {
-        clearInterval(timerRef.current);
-        webApp.BackButton.hide();
-        webApp.MainButton.hide();
-        setScreen("home");
-      });
-      webApp.BackButton.show();
-    } else {
-      webApp.BackButton.hide();
-    }
-  }, [screen]);
-
   // ── CARD SELECT — psychological warfare ─────────────────────
   const handleCardSelect = useCallback((i) => {
     if(revealed) return;
@@ -1096,10 +886,6 @@ export default function BluffGame() {
 
     setRevealed(true);
     setTotal(t=>t+1);
-
-    if (dailyModeRef.current) {
-      dailyResultsRef.current = [...dailyResultsRef.current, isCorrect];
-    }
 
     if(isCorrect){
       haptic.correct();
@@ -1148,10 +934,6 @@ export default function BluffGame() {
   const startGame = useCallback(()=>{
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
-    setDailyMode(false);
-    dailyModeRef.current = false;
-    dailyResultsRef.current = [];
-    setDailyRank(null);
     setScreen("play");
     setRoundIdx(0);
     setSel(null);
@@ -1170,18 +952,6 @@ export default function BluffGame() {
   const showResultScreen = useCallback(()=>{
     clearInterval(timerRef.current);
     setScreen("result");
-
-    // Submit daily result before any state mutation
-    if (dailyModeRef.current) {
-      setScore(sc => {
-        setTotal(tt => {
-          submitDailyResult(sc, tt);
-          return tt;
-        });
-        return sc;
-      });
-    }
-
     setScore(sc=>{
       setTotal(tt=>{
         const won = sc>=Math.ceil(tt*.67);
@@ -1230,7 +1000,7 @@ export default function BluffGame() {
         return sc;
       });
     }, 1200);
-  },[axiomSpeak, submitDailyResult]);
+  },[axiomSpeak]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(() => {
@@ -1381,69 +1151,6 @@ export default function BluffGame() {
           </div>
         )}
 
-        {/* Daily Challenge block */}
-        {(loadingDaily || dailyData) && (
-          <div style={{marginBottom:14,animation:"g-fadeUp .5s .38s both"}}>
-            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(232,197,71,.5)",fontWeight:700,marginBottom:8,textTransform:"uppercase"}}>
-              📅 Today's Challenge
-            </div>
-            {loadingDaily ? (
-              <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)",borderRadius:14,padding:14,textAlign:"center",fontSize:13,color:"rgba(255,255,255,.3)"}}>
-                Loading...
-              </div>
-            ) : dailyAlreadyPlayed && dailyData?.myResult ? (
-              <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#2dd4a0"}}>✓ Completed today</div>
-                  {dailyRank && <div style={{fontSize:12,color:"rgba(232,197,71,.7)",fontWeight:600}}>#{dailyRank} / {dailyPlayers}</div>}
-                </div>
-                <div style={{fontSize:22,letterSpacing:3,marginBottom:6,textAlign:"center"}}>
-                  {(dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("")}
-                </div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,.35)",textAlign:"center",marginBottom:10}}>
-                  {dailyData.myResult.score}/{dailyData.myResult.total} correct
-                  {dailyData.myResult.timeTakenMs ? ` · ${Math.round(dailyData.myResult.timeTakenMs/1000)}s` : ""}
-                </div>
-                <button
-                  onClick={() => {
-                    const grid = (dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("");
-                    const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
-                    const text = `BLUFF™ Daily #${dailyData.dayNum}\n${grid}\n${dailyData.myResult.score}/${dailyData.myResult.total}${rankStr}\nplaybluff.games`;
-                    if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
-                    else navigator.clipboard?.writeText(text).then(() => alert("Copied!")).catch(() => alert(text));
-                  }}
-                  style={{width:"100%",minHeight:40,padding:"8px 14px",fontSize:12,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.25)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-                  📤 Share result
-                </button>
-              </div>
-            ) : dailyData?.rounds ? (
-              <div style={{background:"rgba(232,197,71,.06)",border:"1px solid rgba(232,197,71,.25)",borderRadius:14,padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:"#e8c547",marginBottom:2}}>Same puzzle for everyone</div>
-                    <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>
-                      {dailyData.totalPlayers > 0 ? `${dailyData.totalPlayers} player${dailyData.totalPlayers !== 1 ? "s" : ""} today` : "Be the first today!"}
-                    </div>
-                  </div>
-                  <div style={{fontSize:11,color:"rgba(232,197,71,.4)",letterSpacing:"1px"}}>#{dailyData.dayNum}</div>
-                </div>
-                <button
-                  onClick={startDailyChallenge}
-                  style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                  <span style={{position:"relative"}}>📅 Play today's challenge</span>
-                </button>
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {tg.isInsideTelegram && (
-          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginBottom:12,fontSize:11,color:"rgba(41,182,246,.45)",letterSpacing:"1px"}}>
-            <span>✈️</span><span>Running inside Telegram</span>
-          </div>
-        )}
-
         <button onClick={startGame} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
@@ -1529,31 +1236,23 @@ export default function BluffGame() {
                       ) : (
                         <button
                           onClick={() => {
-                            const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
-                            console.log(`[shop] Checkout ${skin.id} user=${currentUserId}`);
+                            const userId = localStorage.getItem("bluff_user_id") ||
+                              Math.random().toString(36).slice(2);
+                            localStorage.setItem("bluff_user_id", userId);
                             fetch("/api/shop", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "checkout", skinId: skin.id, userId: currentUserId }),
+                              method:"POST",
+                              headers:{"Content-Type":"application/json"},
+                              body: JSON.stringify({action:"checkout", skinId:skin.id, userId}),
                             })
-                            .then(r => r.json())
-                            .then(data => {
-                              if (data.url) {
-                                window.location.href = data.url;
-                              } else {
-                                console.error("[shop] No URL:", data);
-                                alert(`❌ ${data.error || "Shop unavailable. Try again."}`);
-                              }
-                            })
-                            .catch(err => {
-                              console.error("[shop] Checkout error:", err);
-                              alert("❌ Network error. Check connection and try again.");
-                            });
+                            .then(r=>r.json())
+                            .then(data=>{ if(data.url) window.location.href = data.url; })
+                            .catch(()=>alert("Shop unavailable. Try again."));
                           }}
-                          style={{padding:"8px 14px",fontSize:12,fontWeight:700,
+                          style={{padding:"12px 20px",fontSize:14,fontWeight:700,
                             background:"linear-gradient(135deg,#e8c547,#d4a830)",
                             color:"#04060f",border:"none",borderRadius:10,
-                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
+                            minHeight:"44px",minWidth:"80px",display:"block",width:"100%"}}>
                           {skin.price}
                         </button>
                       )}
@@ -1569,37 +1268,6 @@ export default function BluffGame() {
                 letterSpacing:"2px"}}>
               💀 Hall of Shame →
             </a>
-
-            <button
-              onClick={async () => {
-                const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
-                try {
-                  const r = await fetch("/api/shop", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ action: "owned", userId: currentUserId }),
-                  });
-                  const data = await r.json();
-                  if (data.skins?.length > 0) {
-                    setOwnedSkins(prev => {
-                      const merged = [...new Set([...prev, ...data.skins])];
-                      localStorage.setItem("bluff_owned_skins", JSON.stringify(merged));
-                      return merged;
-                    });
-                    alert(`✅ Restored: ${data.skins.join(", ")}`);
-                  } else {
-                    alert("No purchases found for this account.");
-                  }
-                } catch {
-                  alert("❌ Restore failed. Try again.");
-                }
-              }}
-              style={{display:"block",width:"100%",textAlign:"center",marginTop:10,
-                padding:"10px",fontSize:12,color:"rgba(255,255,255,.2)",
-                background:"transparent",border:"1px solid rgba(255,255,255,.06)",
-                borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-              Restore purchases
-            </button>
           </div>
         </div>
       )}
@@ -1741,38 +1409,6 @@ export default function BluffGame() {
             ))}
           </div>
         </div>
-        {/* Daily result summary */}
-        {dailyMode && (
-          <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px",marginBottom:16,animation:"g-fadeUp .5s .35s both"}}>
-            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(45,212,160,.7)",fontWeight:700,marginBottom:10,textTransform:"uppercase"}}>
-              📅 Daily Challenge Complete
-            </div>
-            <div style={{fontSize:24,letterSpacing:3,textAlign:"center",marginBottom:10}}>
-              {dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")}
-            </div>
-            {dailyRank ? (
-              <div style={{textAlign:"center",fontSize:14,color:"rgba(255,255,255,.55)",marginBottom:10}}>
-                You ranked{" "}
-                <span style={{color:"#e8c547",fontWeight:800,fontSize:20,fontFamily:"Georgia,serif"}}>#{dailyRank}</span>
-                {dailyPlayers > 0 && <span style={{color:"rgba(255,255,255,.35)"}}> of {dailyPlayers} players</span>}
-              </div>
-            ) : (
-              <div style={{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.3)",marginBottom:10}}>Submitting score...</div>
-            )}
-            <button
-              onClick={() => {
-                const grid = dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("");
-                const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
-                const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${score}/${total}${rankStr}\nplaybluff.games`;
-                if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
-                else navigator.clipboard?.writeText(text).then(() => alert("Copied! 📋")).catch(() => alert(text));
-              }}
-              style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-              📤 Share daily result
-            </button>
-          </div>
-        )}
-
         {/* Share section */}
         <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .5s both" }}>
 
@@ -1830,33 +1466,6 @@ export default function BluffGame() {
               Generating...
             </div>
           )}
-
-          {/* Telegram share */}
-          {tg.isInsideTelegram && (
-            <button
-              onClick={() => {
-                tg.sendResult({
-                  score, total, won,
-                  dayNum: dailyData?.dayNum,
-                  isDaily: dailyMode,
-                  emojiGrid: dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join(""),
-                });
-              }}
-              style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"linear-gradient(135deg,rgba(34,171,238,.25),rgba(34,171,238,.12))", color:"#29b6f6", border:"1px solid rgba(34,171,238,.4)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
-              ✈️ Share in Telegram chat
-            </button>
-          )}
-          <button
-            onClick={() => {
-              const grid = dailyResultsRef.current.length > 0
-                ? "\n" + dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")
-                : "";
-              const text = `🎭 I scored ${score}/${total} against AXIOM in BLUFF!${grid}\nCan you beat me?`;
-              tg.shareToChat(text, "https://playbluff.games");
-            }}
-            style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"rgba(255,255,255,.03)", color:"#5a5a68", border:"1px solid rgba(255,255,255,.07)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
-            ✈️ Send to Telegram
-          </button>
         </div>
         {lastWrongStmt && !shameSent && (
           <div style={{
