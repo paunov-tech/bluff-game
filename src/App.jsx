@@ -663,6 +663,7 @@ export default function BluffGame() {
   );
   const timerRef = useRef(null);
   const audioRef = useRef(null);
+  const userInteractedRef = useRef(false);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
   const axiomBusyRef = useRef(false); // prevents concurrent AXIOM calls
@@ -814,6 +815,11 @@ export default function BluffGame() {
         audioRef.current = audio;
         audio.onended = () => { URL.revokeObjectURL(url); isPlayingRef.current = false; playNext(); };
         audio.onerror = () => { isPlayingRef.current = false; playNext(); };
+        if (!userInteractedRef.current) {
+          isPlayingRef.current = false;
+          audioQueueRef.current.unshift({ text: t, skin: s });
+          return;
+        }
         const p = audio.play();
         if (p !== undefined) p.catch(() => { isPlayingRef.current = false; });
       } catch {
@@ -1010,6 +1016,7 @@ export default function BluffGame() {
 
   // ── START ────────────────────────────────────────────────────
   function startGame() {
+    userInteractedRef.current = true;
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
     setDailyMode(false);
@@ -1097,6 +1104,19 @@ export default function BluffGame() {
   }
 
   // ── USEEFFECTS ───────────────────────────────────────────────
+
+  // Track first user interaction for audio unlock
+  useEffect(() => {
+    function markInteracted() {
+      userInteractedRef.current = true;
+    }
+    document.addEventListener("click", markInteracted, { once: true });
+    document.addEventListener("touchstart", markInteracted, { once: true });
+    return () => {
+      document.removeEventListener("click", markInteracted);
+      document.removeEventListener("touchstart", markInteracted);
+    };
+  }, []);
 
   // Keep refs in sync
   useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
