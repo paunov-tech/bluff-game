@@ -226,7 +226,7 @@ function CinematicIntro({ onComplete }) {
         transition:phase===1?"all .75s cubic-bezier(.34,1.56,.64,1)":"all .55s ease",
         display:"flex",flexDirection:"column",alignItems:"center"}}>
         <div style={{width:ss,height:ss,borderRadius:"50%",border:"3px solid rgba(232,197,71,.4)",
-          display:"flex",alignItems:"center",justifyContent:"center",
+          display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
           boxShadow:"0 0 36px rgba(232,197,71,.1),inset 0 0 20px rgba(232,197,71,.05)"}}>
           <div style={{width:sp(175),height:sp(175),borderRadius:"50%",border:"1.5px solid rgba(232,197,71,.2)",
             display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
@@ -236,6 +236,21 @@ function CinematicIntro({ onComplete }) {
             <div style={{fontSize:sp(12),letterSpacing:sp(6),fontWeight:600,color:"rgba(232,197,71,.55)"}}>GAMES</div>
             <div style={{fontSize:sp(10),letterSpacing:sp(8),color:"rgba(232,197,71,.4)",marginTop:sp(5)}}>★ ★ ★</div>
           </div>
+          <svg width={ss} height={ss} viewBox={`0 0 ${ss} ${ss}`}
+            style={{position:"absolute",top:0,left:0,animation:"hexRotate 18s linear infinite"}}>
+            <defs>
+              <path id="seal-ring"
+                d={`M ${ss/2},${ss/2} m -${ss*.42},0 a ${ss*.42},${ss*.42} 0 1,1 ${ss*.84},0 a ${ss*.42},${ss*.42} 0 1,1 -${ss*.84},0`}/>
+            </defs>
+            <text fill="rgba(232,197,71,.28)"
+              fontSize={Math.round(ss*.058)}
+              letterSpacing={Math.round(ss*.032)}
+              fontFamily="Georgia,serif">
+              <textPath href="#seal-ring">
+                · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · SIAL DIGITAL FACTORY · MADE IN SLOVENIA ·
+              </textPath>
+            </text>
+          </svg>
         </div>
         <div style={{marginTop:sp(16),fontSize:sp(11),letterSpacing:sp(6),color:"rgba(232,197,71,.4)",fontWeight:500,opacity:phase>=1?1:0,transition:"opacity .5s ease .3s"}}>PRESENTS</div>
       </div>
