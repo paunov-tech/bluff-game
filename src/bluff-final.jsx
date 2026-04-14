@@ -2,16 +2,36 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
-  const supported = typeof navigator !== "undefined" &&
-    "vibrate" in navigator;
+  const supported = typeof navigator !== "undefined" && "vibrate" in navigator;
+  const tgH = () => window.Telegram?.WebApp?.HapticFeedback;
   return {
-    tap:          () => { if (supported) navigator.vibrate(8); },
-    lockIn:       () => { if (supported) navigator.vibrate([12, 60, 12]); },
-    correct:      () => { if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
-    wrong:        () => { if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
-    timerWarning: () => { if (supported) navigator.vibrate(20); },
-    victory:      () => { if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
+    tap:          () => { tgH()?.selectionChanged(); if (supported) navigator.vibrate(8); },
+    lockIn:       () => { tgH()?.impactOccurred("medium"); if (supported) navigator.vibrate([12, 60, 12]); },
+    correct:      () => { tgH()?.notificationOccurred("success"); if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
+    wrong:        () => { tgH()?.notificationOccurred("error"); if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
+    timerWarning: () => { tgH()?.impactOccurred("light"); if (supported) navigator.vibrate(20); },
+    victory:      () => { tgH()?.notificationOccurred("success"); if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
   };
+}
+
+// ── Telegram Mini App ─────────────────────
+function useTelegram() {
+  const tg = window.Telegram?.WebApp;
+  const isInsideTelegram = !!tg?.initData;
+  const tgUser = tg?.initDataUnsafe?.user || null;
+
+  function sendResult(data) {
+    if (!tg) return;
+    try { tg.sendData(JSON.stringify(data)); } catch {}
+  }
+
+  function shareToChat(text, url) {
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(text)}`;
+    if (tg) tg.openTelegramLink(shareUrl);
+    else window.open(shareUrl, "_blank");
+  }
+
+  return { isInsideTelegram, tgUser, sendResult, shareToChat };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -602,6 +622,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
   const haptic = useHaptic();
+  const tg = useTelegram();
   const [showIntro, setShowIntro] = useState(
     !localStorage.getItem("bluff_played")
   );
@@ -662,9 +683,16 @@ export default function BluffGame() {
   const dailyStartTimeRef = useRef(null);
   const userIdRef = useRef(
     (() => {
+      // Prefer Telegram user ID when running inside Mini App
+      const tgId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+      if (tgId) {
+        const id = `tg_${tgId}`;
+        localStorage.setItem("bluff_user_id", id);
+        return id;
+      }
       const stored = localStorage.getItem("bluff_user_id");
       if (stored) return stored;
-      const id = Math.random().toString(36).slice(2);
+      const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
       localStorage.setItem("bluff_user_id", id);
       return id;
     })()
@@ -964,6 +992,50 @@ export default function BluffGame() {
       }, 1000);
     }
   }, [loadingRound]);
+
+  // ── TELEGRAM MAIN BUTTON sync ───────────────────────────────
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp?.MainButton) return;
+    if (screen !== "play") { webApp.MainButton.hide(); return; }
+
+    webApp.MainButton.offClick();
+    if (!revealed) {
+      if (sel !== null) {
+        webApp.MainButton.setText("🔒 LOCK IN ANSWER");
+        webApp.MainButton.setParams({ color: "#e8c547", text_color: "#04060f", is_active: true, is_visible: true });
+        webApp.MainButton.onClick(doReveal);
+      } else {
+        webApp.MainButton.setText("SELECT AN ANSWER FIRST");
+        webApp.MainButton.setParams({ color: "#2a2a2a", text_color: "#555555", is_active: false, is_visible: true });
+      }
+      webApp.MainButton.show();
+    } else {
+      const isLast = roundIdx + 1 >= ROUND_DIFFICULTY.length;
+      webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
+      webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
+      webApp.MainButton.onClick(isLast ? showResultScreen : nextRound);
+      webApp.MainButton.show();
+    }
+  }, [screen, sel, revealed, roundIdx, doReveal, nextRound, showResultScreen]);
+
+  // ── TELEGRAM BACK BUTTON ────────────────────────────────────
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp?.BackButton) return;
+    if (screen === "play") {
+      webApp.BackButton.offClick();
+      webApp.BackButton.onClick(() => {
+        clearInterval(timerRef.current);
+        webApp.BackButton.hide();
+        webApp.MainButton.hide();
+        setScreen("home");
+      });
+      webApp.BackButton.show();
+    } else {
+      webApp.BackButton.hide();
+    }
+  }, [screen]);
 
   // ── CARD SELECT — psychological warfare ─────────────────────
   const handleCardSelect = useCallback((i) => {
@@ -1338,6 +1410,12 @@ export default function BluffGame() {
           </div>
         )}
 
+        {tg.isInsideTelegram && (
+          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginBottom:12,fontSize:11,color:"rgba(41,182,246,.45)",letterSpacing:"1px"}}>
+            <span>✈️</span><span>Running inside Telegram</span>
+          </div>
+        )}
+
         <button onClick={startGame} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
@@ -1684,6 +1762,33 @@ export default function BluffGame() {
               Generating...
             </div>
           )}
+
+          {/* Telegram share */}
+          {tg.isInsideTelegram && (
+            <button
+              onClick={() => {
+                tg.sendResult({
+                  score, total, won,
+                  dayNum: dailyData?.dayNum,
+                  isDaily: dailyMode,
+                  emojiGrid: dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join(""),
+                });
+              }}
+              style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"linear-gradient(135deg,rgba(34,171,238,.25),rgba(34,171,238,.12))", color:"#29b6f6", border:"1px solid rgba(34,171,238,.4)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
+              ✈️ Share in Telegram chat
+            </button>
+          )}
+          <button
+            onClick={() => {
+              const grid = dailyResultsRef.current.length > 0
+                ? "\n" + dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")
+                : "";
+              const text = `🎭 I scored ${score}/${total} against AXIOM in BLUFF!${grid}\nCan you beat me?`;
+              tg.shareToChat(text, "https://playbluff.games");
+            }}
+            style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"rgba(255,255,255,.03)", color:"#5a5a68", border:"1px solid rgba(255,255,255,.07)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
+            ✈️ Send to Telegram
+          </button>
         </div>
         {lastWrongStmt && !shameSent && (
           <div style={{
