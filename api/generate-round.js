@@ -1,12 +1,13 @@
-// api/generate-round.js — Generate a BLUFF round via Claude Sonnet
-// POST { category, difficulty, lang }
-// Returns { roundId, statements: [{text}], category, difficulty }
-// SECURITY: "real" flags are stored server-side only, never sent to client
+// api/generate-round.js — BLUFF v2 — Difficulty 1-5 + Firestore cache
+// POST { category, difficulty: 1-5, lang }
+// Returns { roundId, statements: [{text}], category, difficulty, level }
+// SECURITY: "real" flags stored server-side only, never sent to client
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const FB_KEY        = process.env.FIREBASE_API_KEY;
 const FB_PROJECT    = "molty-portal";
-const COLLECTION    = "bluff_rounds";
+const ROUNDS_COL    = "bluff_rounds";
+const CACHE_COL     = "bluff_cache";
 
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);
@@ -22,26 +23,42 @@ const CAT_DESCS = {
   sports:     "sports, athletes, and competitions",
 };
 
-function buildPrompt(category, difficulty, lang) {
-  const catDesc = CAT_DESCS[category] || category;
-  const diffGuide = {
-    easy:   "Make the lie somewhat detectable — plausible but has a subtle inconsistency a curious person might catch.",
-    medium: "Balance it — the lie should fool about 50% of players. Both true and false should sound equally credible.",
-    hard:   "Make the lie extremely subtle. True facts should be bizarre and counterintuitive. The lie must be indistinguishable from truth.",
-  }[difficulty] || "Balance it evenly.";
+const LEVEL_RULES = {
+  1: `LEVEL 1 — WARM-UP: The lie should be obvious to anyone with basic general knowledge.
+      Use clearly wrong details: wrong country, obviously wrong date, implausible number.
+      Example: "The Eiffel Tower was built in 1820" (wrong era is obvious).`,
+  2: `LEVEL 2 — TRICKY: The lie sounds plausible but has one wrong specific detail.
+      A curious person might catch it. About 60% of players should get it wrong.
+      Example: Wrong by a factor of 2, or a plausible-sounding but wrong person.`,
+  3: `LEVEL 3 — SNEAKY: Take a real fact structure and change ONE precise detail
+      (a number, a name, a date) to make it false. The lie should fool most people on first read.
+      True facts should also be surprising. About 50/50 correct.`,
+  4: `LEVEL 4 — DEVIOUS: The lie exploits a common misconception — something most people THINK
+      is true but isn't. The 4 true statements should sound counterintuitive or unbelievable.
+      Most players will choose a true statement thinking it's the lie.`,
+  5: `LEVEL 5 — DIABOLICAL: ALL 4 TRUE statements must be so bizarre, unexpected, and
+      counterintuitive that they sound completely fabricated.
+      The lie must be the most NORMAL-SOUNDING statement of the five.
+      This is maximum cognitive warfare. Players will doubt every true fact.`,
+};
 
+// ── Build prompt ──────────────────────────────────────────────
+function buildPrompt(category, level, lang) {
+  const catDesc  = CAT_DESCS[category] || category;
+  const rules    = LEVEL_RULES[level]  || LEVEL_RULES[3];
   const langNote = lang !== "en"
-    ? `Respond in ${lang === "hr" ? "Croatian" : lang === "de" ? "German" : lang === "it" ? "Italian" : "English"}.`
+    ? `\nRespond in ${lang === "hr" ? "Croatian" : lang === "de" ? "German" : lang === "it" ? "Italian" : "English"}.`
     : "";
 
-  return `Generate 5 fascinating, highly specific statements about ${catDesc}.
-EXACTLY 4 must be 100% verifiably true.
-EXACTLY 1 must be a convincing fabrication — plausible but factually false.
+  return `Generate a BLUFF game round. Category: ${catDesc}.
 
-Difficulty: ${diffGuide}
+${rules}
+
+Create EXACTLY 5 statements: 4 TRUE + 1 FALSE.
+Randomize which position (1–5) contains the lie — NOT always second.
 ${langNote}
 
-Respond ONLY with valid JSON (no markdown fences, no explanation outside JSON):
+Respond ONLY with valid JSON, no markdown fences:
 {
   "statements": [
     {"text": "...", "real": true},
@@ -54,19 +71,105 @@ Respond ONLY with valid JSON (no markdown fences, no explanation outside JSON):
 }
 
 Rules:
-- Randomize which of the 5 positions contains the lie (not always the same)
-- Each statement: 1-3 sentences, specific details (numbers, names, dates when applicable)
+- Each statement: 1-2 sentences, specific (names, numbers, dates)
 - No "Did you know" or "Interestingly" openers
-- True facts should be genuinely surprising — not common knowledge
-- The false fact must sound completely plausible to an educated adult`;
+- The false statement must SOUND completely plausible`;
 }
 
-// ── Firestore: save round (with real flags) ──────────────────
+// ── Firestore helpers ─────────────────────────────────────────
+async function fsGet(col, id) {
+  if (!FB_KEY) return null;
+  const r = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`,
+    { signal: AbortSignal.timeout(5000) }
+  );
+  if (!r.ok) return null;
+  return r.json();
+}
+
+async function fsPatch(col, id, fields) {
+  if (!FB_KEY) return;
+  await fetch(
+    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`,
+    {
+      method:  "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ fields }),
+      signal:  AbortSignal.timeout(6000),
+    }
+  );
+}
+
+async function fsQuery(col, filters) {
+  if (!FB_KEY) return [];
+  const body = {
+    structuredQuery: {
+      from: [{ collectionId: col }],
+      where: {
+        compositeFilter: {
+          op: "AND",
+          filters: filters.map(([field, op, val]) => ({
+            fieldFilter: {
+              field: { fieldPath: field },
+              op,
+              value: typeof val === "boolean"
+                ? { booleanValue: val }
+                : typeof val === "number"
+                  ? { integerValue: String(val) }
+                  : { stringValue: val },
+            },
+          })),
+        },
+      },
+      orderBy: [{ field: { fieldPath: "ts" }, direction: "ASCENDING" }],
+      limit: 1,
+    },
+  };
+  const r = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents:runQuery?key=${FB_KEY}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(6000) }
+  );
+  if (!r.ok) return [];
+  const data = await r.json();
+  return data.filter(d => d.document).map(d => d.document);
+}
+
+// ── Try to pop a pre-generated round from cache ───────────────
+async function popFromCache(category, level) {
+  if (!FB_KEY) return null;
+  try {
+    const docs = await fsQuery(CACHE_COL, [
+      ["category", "EQUAL", category],
+      ["level",    "EQUAL", level],
+      ["used",     "EQUAL", false],
+    ]);
+    if (!docs.length) return null;
+
+    const doc    = docs[0];
+    const docId  = doc.name.split("/").pop();
+    const f      = doc.fields || {};
+    const stmts  = (f.statements?.arrayValue?.values || []).map(v => ({
+      text: v.mapValue.fields.text.stringValue,
+      real: v.mapValue.fields.real.booleanValue,
+    }));
+    if (stmts.length !== 5 || !stmts.some(s => !s.real)) return null;
+
+    // Mark as used (fire and forget)
+    fsPatch(CACHE_COL, docId, { used: { booleanValue: true } }).catch(() => {});
+
+    return {
+      statements:       stmts,
+      bluffExplanation: f.bluffExplanation?.stringValue || "",
+    };
+  } catch { return null; }
+}
+
+// ── Save round to bluff_rounds (with real flags) ──────────────
 async function saveRound(id, data) {
-  if (!FB_KEY) return; // dev mode — skip persistence
+  if (!FB_KEY) return;
   const fields = {
     category:         { stringValue:  data.category },
-    difficulty:       { stringValue:  data.difficulty },
+    level:            { integerValue: String(data.level) },
     lang:             { stringValue:  data.lang },
     bluffExplanation: { stringValue:  data.bluffExplanation || "" },
     answered:         { booleanValue: false },
@@ -74,95 +177,101 @@ async function saveRound(id, data) {
     statements: {
       arrayValue: {
         values: data.statements.map(s => ({
-          mapValue: {
-            fields: {
-              text: { stringValue:  s.text },
-              real: { booleanValue: s.real },
-            },
-          },
+          mapValue: { fields: {
+            text: { stringValue:  s.text },
+            real: { booleanValue: s.real },
+          }},
         })),
       },
     },
   };
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${COLLECTION}/${id}?key=${FB_KEY}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields }),
-      signal: AbortSignal.timeout(8000),
-    }
+    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${ROUNDS_COL}/${id}?key=${FB_KEY}`,
+    { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields && { fields }), signal: AbortSignal.timeout(8000) }
   );
 }
 
-// ── Handler ──────────────────────────────────────────────────
+// ── Generate via Claude ───────────────────────────────────────
+async function generateWithClaude(category, level, lang) {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key":         ANTHROPIC_KEY,
+      "anthropic-version": "2023-06-01",
+      "content-type":      "application/json",
+    },
+    body: JSON.stringify({
+      model:      "claude-sonnet-4-20250514",
+      max_tokens: 1024,
+      messages:   [{ role: "user", content: buildPrompt(category, level, lang) }],
+    }),
+    signal: AbortSignal.timeout(28000),
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error(`AI ${resp.status}: ${t.slice(0, 100)}`);
+  }
+
+  const data  = await resp.json();
+  const raw   = data.content?.[0]?.text || "";
+  const match = raw.match(/\{[\s\S]*\}/);
+  if (!match) throw new Error("No JSON from AI: " + raw.slice(0, 80));
+  const parsed = JSON.parse(match[0]);
+
+  if (!Array.isArray(parsed.statements) || parsed.statements.length !== 5)
+    throw new Error("AI returned invalid structure");
+  if (!parsed.statements.some(s => s.real === false))
+    throw new Error("AI returned no bluff");
+
+  return {
+    statements:       parsed.statements,
+    bluffExplanation: parsed.bluffExplanation || "",
+  };
+}
+
+// ── Handler ───────────────────────────────────────────────────
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
-  const allowOrigin = CORS.includes(origin) ? origin : (CORS[0] || "*");
-  res.setHeader("Access-Control-Allow-Origin",  allowOrigin);
+  res.setHeader("Access-Control-Allow-Origin",  CORS.includes(origin) ? origin : (CORS[0] || "*"));
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST")   return res.status(405).json({ error: "POST only" });
   if (!ANTHROPIC_KEY)          return res.status(503).json({ error: "AI not configured" });
 
-  const { category = "history", difficulty = "medium", lang = "en" } = req.body || {};
+  const {
+    category  = "history",
+    difficulty = 3,   // 1-5
+    lang      = "en",
+  } = req.body || {};
 
-  let parsed;
-  try {
-    const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key":         ANTHROPIC_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type":      "application/json",
-      },
-      body: JSON.stringify({
-        model:      "claude-sonnet-4-20250514",
-        max_tokens: 1024,
-        messages:   [{ role: "user", content: buildPrompt(category, difficulty, lang) }],
-      }),
-      signal: AbortSignal.timeout(28000),
-    });
+  const level = Math.max(1, Math.min(5, parseInt(difficulty) || 3));
 
-    if (!aiResp.ok) {
-      const t = await aiResp.text();
-      return res.status(502).json({ error: "AI error " + aiResp.status + ": " + t.slice(0, 120) });
+  // 1. Try cache first (instant response)
+  let round = await popFromCache(category, level);
+  let source = "cache";
+
+  // 2. Fallback to live Claude generation
+  if (!round) {
+    source = "live";
+    try {
+      round = await generateWithClaude(category, level, lang);
+    } catch (e) {
+      return res.status(502).json({ error: "AI error: " + e.message });
     }
-
-    const aiData = await aiResp.json();
-    const raw    = aiData.content?.[0]?.text || "";
-    const match  = raw.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("No JSON from AI: " + raw.slice(0, 100));
-    parsed = JSON.parse(match[0]);
-  } catch (e) {
-    return res.status(502).json({ error: "AI parse error: " + e.message });
   }
 
-  if (!Array.isArray(parsed.statements) || parsed.statements.length !== 5) {
-    return res.status(502).json({ error: "AI returned invalid structure" });
-  }
-  if (!parsed.statements.some(s => s.real === false)) {
-    return res.status(502).json({ error: "AI returned no bluff" });
-  }
-
-  // Unique round ID
   const roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-  // Save to Firestore (includes real flags — never sent to client)
-  try {
-    await saveRound(roundId, {
-      category, difficulty, lang,
-      statements:       parsed.statements,
-      bluffExplanation: parsed.bluffExplanation || "",
-    });
-  } catch (_) { /* non-fatal — game still works without persistence */ }
+  // Save to bluff_rounds (real flags, never sent to client)
+  saveRound(roundId, { category, level, lang, ...round }).catch(() => {});
 
-  // Return to client: only text, no real flags
   return res.status(200).json({
     roundId,
-    statements: parsed.statements.map(s => ({ text: s.text })),
+    statements: round.statements.map(s => ({ text: s.text })),
     category,
-    difficulty,
+    level,
+    source, // "cache" or "live" — for analytics only
   });
 }
