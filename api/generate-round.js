@@ -8,11 +8,15 @@ const client = new Anthropic();
 
 const DIFFICULTY_RULES = {
   1: `DIFFICULTY 1 — WARM-UP:
-The lie should be obviously wrong to anyone with basic general knowledge.
-Use wrong dates, wrong countries, or wrong numbers that feel clearly "off".`,
-  2: `DIFFICULTY 2 — TRICKY:
-The lie sounds plausible but has one wrong specific detail (wrong number, name, or date).
-The truths should be a bit surprising.`,
+This must be VERY easy. The lie should be something almost everyone knows is false.
+Examples of lie style: wrong capital city, wrong continent, obvious wrong number (saying
+Eiffel Tower is in Berlin, saying humans have 3 legs, saying the Sun orbits the Earth).
+The 4 truths should be simple, well-known facts. No tricks. Player must feel smart.`,
+  2: `DIFFICULTY 2 — EASY:
+Still easy, but requires basic school-level knowledge.
+The lie has one clearly wrong detail that most people would catch if they think for a moment.
+Example: wrong country for a famous landmark, wrong century for a famous invention.
+The truths should be mildly interesting but familiar. Player should still feel confident.`,
   3: `DIFFICULTY 3 — SNEAKY:
 The lie is very plausible. Change ONE specific detail in an otherwise true fact.
 The truths should be genuinely surprising and counterintuitive.`,
@@ -36,6 +40,7 @@ const CATEGORY_HINTS = {
 
 const LANG_NAMES = {
   en: "English", de: "German", sr: "Serbian", fr: "French", es: "Spanish",
+  hr: "Croatian", sl: "Slovenian", bs: "Bosnian",
 };
 
 export default async function handler(req, res) {

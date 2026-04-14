@@ -9,6 +9,9 @@ const LANGUAGES = [
   { code: "en", flag: "🇬🇧", label: "EN" },
   { code: "de", flag: "🇩🇪", label: "DE" },
   { code: "sr", flag: "🇷🇸", label: "SR" },
+  { code: "hr", flag: "🇭🇷", label: "HR" },
+  { code: "sl", flag: "🇸🇮", label: "SL" },
+  { code: "bs", flag: "🇧🇦", label: "BS" },
   { code: "fr", flag: "🇫🇷", label: "FR" },
   { code: "es", flag: "🇪🇸", label: "ES" },
 ];
@@ -16,7 +19,7 @@ const LANGUAGES = [
 const CATEGORIES = ["history", "science", "animals", "geography", "food"];
 const CATEGORY_EMOJIS = { history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍", food:"🍷" };
 const ROUND_DIFFICULTY = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
-const TIMER_PER_DIFF = { 1:30, 2:35, 3:45, 4:60, 5:75 };
+const TIMER_PER_DIFF = { 1:45, 2:50, 3:60, 4:75, 5:90 };
 const DIFF_LABEL = ["","Warm-up","Tricky","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
 
@@ -431,6 +434,24 @@ export default function BluffGame() {
     if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
   },[time,revealed,screen]);
 
+  // Timer starts only after round finishes loading
+  useEffect(() => {
+    if (!loadingRound && screen === "play" && stmts.length > 0) {
+      clearInterval(timerRef.current);
+      const diff = ROUND_DIFFICULTY[roundIdx] || 3;
+      const maxT = TIMER_PER_DIFF[diff] || 60;
+      setTime(maxT);
+      timerRef.current = setInterval(() => {
+        setTime(t => {
+          if (t <= 1) { clearInterval(timerRef.current); return 0; }
+          if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
+          if (t === 10) axiomSpeak("taunt_late", "taunting");
+          return t - 1;
+        });
+      }, 1000);
+    }
+  }, [loadingRound]);
+
   // ── CARD SELECT — psychological warfare ─────────────────────
   const handleCardSelect = useCallback((i) => {
     if(revealed) return;
@@ -498,8 +519,7 @@ export default function BluffGame() {
     setConfetti(false);
     fetchRound(next);
     axiomSpeak("intro","idle");
-    startTimer(ROUND_DIFFICULTY[next]||3);
-  },[roundIdx,fetchRound,axiomSpeak,startTimer]);
+  },[roundIdx,fetchRound,axiomSpeak]);
 
   // ── START ────────────────────────────────────────────────────
   const startGame = useCallback(()=>{
@@ -517,8 +537,7 @@ export default function BluffGame() {
     setShareImg(null);
     fetchRound(0);
     axiomSpeak("intro","idle");
-    startTimer(ROUND_DIFFICULTY[0]||1);
-  },[fetchRound,axiomSpeak,startTimer]);
+  },[fetchRound,axiomSpeak]);
 
   // ── RESULT ───────────────────────────────────────────────────
   const showResultScreen = useCallback(()=>{

@@ -12,6 +12,9 @@ const LANG_NAMES = {
   sr: "Serbian",
   fr: "French",
   es: "Spanish",
+  hr: "Croatian",
+  sl: "Slovenian",
+  bs: "Bosnian",
 };
 
 // Psychological warfare prompts — AXIOM knows too much
