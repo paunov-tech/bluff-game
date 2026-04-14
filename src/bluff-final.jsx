@@ -864,29 +864,57 @@ export default function BluffGame() {
     const params = new URLSearchParams(window.location.search);
     const skinPurchased = params.get("skin_purchased");
     const sessionId = params.get("session_id");
-    if (skinPurchased && sessionId) {
+    const openShop = params.get("shop");
+
+    // User cancelled checkout
+    if (openShop === "1") {
       window.history.replaceState({}, "", window.location.pathname);
-      const userId = localStorage.getItem("bluff_user_id") || "anon";
-      fetch("/api/shop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          setOwnedSkins(prev => {
-            const next = [...new Set([...prev, skinPurchased])];
-            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
-            return next;
-          });
+      setShowShop(true);
+      return;
+    }
+
+    if (!skinPurchased || !sessionId) return;
+    window.history.replaceState({}, "", window.location.pathname);
+
+    const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
+    console.log(`[shop] Verifying ${skinPurchased} session=${sessionId} user=${currentUserId}`);
+
+    fetch("/api/shop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId: currentUserId, sessionId }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      console.log("[shop] Verify result:", data);
+      if (data.success) {
+        const toUnlock = data.skinsUnlocked || [skinPurchased];
+        setOwnedSkins(prev => {
+          const merged = [...new Set([...prev, ...toUnlock])];
+          localStorage.setItem("bluff_owned_skins", JSON.stringify(merged));
+          return merged;
+        });
+        if (skinPurchased !== "bundle") {
           setActiveSkin(skinPurchased);
           localStorage.setItem("bluff_skin", skinPurchased);
-          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
+        } else {
+          setActiveSkin("balkan");
+          localStorage.setItem("bluff_skin", "balkan");
         }
-      })
-      .catch(() => {});
-    }
+        setShowShop(true);
+        setTimeout(() => {
+          const names = { balkan:"Balkan", anime:"Anime", corporate:"Corporate", british:"British", bundle:"All" };
+          alert(`✅ ${names[skinPurchased] || skinPurchased} AXIOM unlocked! 🎉`);
+        }, 300);
+      } else {
+        console.warn("[shop] Not verified:", data);
+        alert("⚠️ Could not verify purchase. Contact support if charged.");
+      }
+    })
+    .catch(err => {
+      console.error("[shop] Verify fetch error:", err);
+      alert("⚠️ Network error verifying purchase. Refresh the page.");
+    });
   }, []);
 
   // Load daily challenge on mount
@@ -1501,17 +1529,26 @@ export default function BluffGame() {
                       ) : (
                         <button
                           onClick={() => {
-                            const userId = localStorage.getItem("bluff_user_id") ||
-                              Math.random().toString(36).slice(2);
-                            localStorage.setItem("bluff_user_id", userId);
+                            const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
+                            console.log(`[shop] Checkout ${skin.id} user=${currentUserId}`);
                             fetch("/api/shop", {
-                              method:"POST",
-                              headers:{"Content-Type":"application/json"},
-                              body: JSON.stringify({action:"checkout", skinId:skin.id, userId}),
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "checkout", skinId: skin.id, userId: currentUserId }),
                             })
-                            .then(r=>r.json())
-                            .then(data=>{ if(data.url) window.location.href = data.url; })
-                            .catch(()=>alert("Shop unavailable. Try again."));
+                            .then(r => r.json())
+                            .then(data => {
+                              if (data.url) {
+                                window.location.href = data.url;
+                              } else {
+                                console.error("[shop] No URL:", data);
+                                alert(`❌ ${data.error || "Shop unavailable. Try again."}`);
+                              }
+                            })
+                            .catch(err => {
+                              console.error("[shop] Checkout error:", err);
+                              alert("❌ Network error. Check connection and try again.");
+                            });
                           }}
                           style={{padding:"8px 14px",fontSize:12,fontWeight:700,
                             background:"linear-gradient(135deg,#e8c547,#d4a830)",
@@ -1532,6 +1569,37 @@ export default function BluffGame() {
                 letterSpacing:"2px"}}>
               💀 Hall of Shame →
             </a>
+
+            <button
+              onClick={async () => {
+                const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
+                try {
+                  const r = await fetch("/api/shop", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "owned", userId: currentUserId }),
+                  });
+                  const data = await r.json();
+                  if (data.skins?.length > 0) {
+                    setOwnedSkins(prev => {
+                      const merged = [...new Set([...prev, ...data.skins])];
+                      localStorage.setItem("bluff_owned_skins", JSON.stringify(merged));
+                      return merged;
+                    });
+                    alert(`✅ Restored: ${data.skins.join(", ")}`);
+                  } else {
+                    alert("No purchases found for this account.");
+                  }
+                } catch {
+                  alert("❌ Restore failed. Try again.");
+                }
+              }}
+              style={{display:"block",width:"100%",textAlign:"center",marginTop:10,
+                padding:"10px",fontSize:12,color:"rgba(255,255,255,.2)",
+                background:"transparent",border:"1px solid rgba(255,255,255,.06)",
+                borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
+              Restore purchases
+            </button>
           </div>
         </div>
       )}
