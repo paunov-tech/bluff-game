@@ -23,6 +23,36 @@ const TIMER_PER_DIFF = { 1:45, 2:50, 3:60, 4:75, 5:90 };
 const DIFF_LABEL = ["","Warm-up","Tricky","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
 
+// ── Challenge system ──────────────────────────
+function encodeChallenge(score, total, roundDifficulties) {
+  const data = {
+    s: score,
+    t: total,
+    d: roundDifficulties, // array of difficulties played
+    ts: Date.now(),
+  };
+  return btoa(JSON.stringify(data)).replace(/=/g, "");
+}
+
+function decodeChallenge(encoded) {
+  try {
+    const padded = encoded + "==".slice(0, (4 - encoded.length % 4) % 4);
+    return JSON.parse(atob(padded));
+  } catch { return null; }
+}
+
+function getChallengeFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  const c = params.get("c");
+  if (!c) return null;
+  return decodeChallenge(c);
+}
+
+function buildChallengeURL(score, total) {
+  const encoded = encodeChallenge(score, total, ROUND_DIFFICULTY);
+  return `${window.location.origin}?c=${encoded}`;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // AXIOM FACE DATA
 // ═══════════════════════════════════════════════════════════════
@@ -308,6 +338,228 @@ function generateShareCard(score,total,best,speech,won) {
   } catch(e) { console.error("[share-card]",e); return null; }
 }
 
+function generateStoriesCard(score, total, best, axiomSpeech, won, lieText) {
+  try {
+    const W = 540, H = 960; // 1:1.77 = 9:16 portrait
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const ctx = c.getContext("2d");
+
+    // Background
+    ctx.fillStyle = "#04060f";
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = "rgba(34,211,238,.04)";
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 30) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 30) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Top glow
+    const topGlow = ctx.createRadialGradient(W/2, 0, 0, W/2, 0, 300);
+    topGlow.addColorStop(0, "rgba(232,197,71,.12)");
+    topGlow.addColorStop(1, "transparent");
+    ctx.fillStyle = topGlow;
+    ctx.fillRect(0, 0, W, H);
+
+    // Bottom glow (AXIOM cyan)
+    const botGlow = ctx.createRadialGradient(W/2, H, 0, W/2, H, 300);
+    botGlow.addColorStop(0, "rgba(34,211,238,.08)");
+    botGlow.addColorStop(1, "transparent");
+    ctx.fillStyle = botGlow;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textAlign = "center";
+
+    // ── Top section ──
+    // SIAL label
+    ctx.fillStyle = "rgba(255,255,255,.2)";
+    ctx.font = "500 10px system-ui";
+    ctx.fillText("SIAL GAMES PRESENTS", W/2, 60);
+
+    // BLUFF logo
+    ctx.font = "900 80px Georgia,serif";
+    const lg = ctx.createLinearGradient(150, 0, 390, 0);
+    lg.addColorStop(0, "#e8c547");
+    lg.addColorStop(.5, "#fff");
+    lg.addColorStop(1, "#e8c547");
+    ctx.fillStyle = lg;
+    ctx.fillText("BLUFF™", W/2, 148);
+
+    // Divider
+    ctx.strokeStyle = "rgba(232,197,71,.25)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(160, 168); ctx.lineTo(380, 168); ctx.stroke();
+
+    ctx.fillStyle = "rgba(255,255,255,.3)";
+    ctx.font = "500 11px system-ui";
+    ctx.fillText("THE AI DECEPTION GAME", W/2, 190);
+
+    // ── AXIOM hex face (SVG-like on canvas) ──
+    const cx = W/2, cy = 360, hr = 90;
+    // Outer hex
+    ctx.strokeStyle = won ? "rgba(45,212,160,.5)" : "rgba(244,63,94,.5)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      const x = cx + hr * Math.cos(a), y = cy + hr * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.stroke();
+
+    // Inner hex fill
+    ctx.fillStyle = "#030810";
+    ctx.beginPath();
+    const ir = 78;
+    for (let i = 0; i < 6; i++) {
+      const a = (Math.PI / 3) * i - Math.PI / 2;
+      const x = cx + ir * Math.cos(a), y = cy + ir * Math.sin(a);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = won ? "rgba(45,212,160,.8)" : "rgba(244,63,94,.8)";
+    ctx.stroke();
+
+    // Eyes
+    const eyeColor = won ? "#2dd4a0" : "#f43f5e";
+    ctx.fillStyle = eyeColor;
+    ctx.shadowColor = eyeColor;
+    ctx.shadowBlur = 10;
+    ctx.beginPath(); ctx.arc(cx - 24, cy - 8, won ? 7 : 9, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 24, cy - 8, won ? 7 : 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#030810";
+    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(cx - 24, cy - 8, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 24, cy - 8, 3, 0, Math.PI * 2); ctx.fill();
+
+    // Mouth
+    ctx.strokeStyle = eyeColor;
+    ctx.shadowColor = eyeColor;
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    if (won) {
+      // Defeated — downward curve
+      ctx.moveTo(cx - 20, cy + 20);
+      ctx.quadraticCurveTo(cx, cy + 28, cx + 20, cy + 20);
+    } else {
+      // Smug — upward curve
+      ctx.moveTo(cx - 20, cy + 22);
+      ctx.quadraticCurveTo(cx, cy + 16, cx + 20, cy + 22);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // AXIOM label under face
+    ctx.fillStyle = "rgba(34,211,238,.45)";
+    ctx.font = "600 10px system-ui";
+    ctx.fillText("A X I O M", W/2, cy + 115);
+
+    // ── Score section ──
+    ctx.fillStyle = won ? "#2dd4a0" : "#f43f5e";
+    ctx.font = "700 18px system-ui";
+    ctx.fillText(won ? "I DEFEATED AXIOM" : "AXIOM DEFEATED ME", W/2, cy + 155);
+
+    ctx.fillStyle = "#e8c547";
+    ctx.font = "900 72px Georgia,serif";
+    ctx.fillText(`${score}/${total}`, W/2, cy + 240);
+
+    ctx.fillStyle = "rgba(255,255,255,.3)";
+    ctx.font = "500 13px system-ui";
+    ctx.fillText(
+      `${total ? Math.round(score/total*100) : 0}% accuracy  ·  ${best}🔥 best streak`,
+      W/2, cy + 272
+    );
+
+    // Divider
+    ctx.strokeStyle = "rgba(255,255,255,.08)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(60, cy + 295); ctx.lineTo(W - 60, cy + 295); ctx.stroke();
+
+    // AXIOM quote
+    if (axiomSpeech && axiomSpeech !== "...") {
+      ctx.fillStyle = "rgba(34,211,238,.55)";
+      ctx.font = "italic 500 13px system-ui";
+      const maxW = W - 80;
+      const words = `"${axiomSpeech}"`.split(" ");
+      let line = "", lines = [], y = cy + 322;
+      words.forEach(word => {
+        const test = line + word + " ";
+        if (ctx.measureText(test).width > maxW && line) {
+          lines.push(line.trim()); line = word + " ";
+        } else { line = test; }
+      });
+      lines.push(line.trim());
+      lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, W/2, y + i * 20));
+    }
+
+    // The lie (if available)
+    if (lieText) {
+      const lieY = cy + 390;
+      ctx.fillStyle = "rgba(244,63,94,.15)";
+      ctx.beginPath();
+      ctx.roundRect(30, lieY - 20, W - 60, 56, 8);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(244,63,94,.3)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#f43f5e";
+      ctx.font = "700 9px system-ui";
+      ctx.fillText("🎭 THE LIE WAS:", W/2, lieY - 3);
+      ctx.fillStyle = "rgba(255,255,255,.7)";
+      ctx.font = "500 11px system-ui";
+      const lw = W - 100;
+      const lwords = lieText.split(" ");
+      let lline = "", llines = [];
+      lwords.forEach(word => {
+        const test = lline + word + " ";
+        if (ctx.measureText(test).width > lw && lline) {
+          llines.push(lline.trim()); lline = word + " ";
+        } else { lline = test; }
+      });
+      llines.push(lline.trim());
+      llines.slice(0, 2).forEach((l, i) => ctx.fillText(l, W/2, lieY + 16 + i * 16));
+    }
+
+    // ── Bottom CTA ──
+    ctx.fillStyle = "rgba(232,197,71,.1)";
+    ctx.beginPath();
+    ctx.roundRect(30, H - 160, W - 60, 50, 10);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(232,197,71,.3)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = "#e8c547";
+    ctx.font = "700 16px system-ui";
+    ctx.fillText("Can you beat me? 🎯", W/2, H - 129);
+
+    ctx.fillStyle = "rgba(255,255,255,.2)";
+    ctx.font = "500 11px system-ui";
+    ctx.fillText("playbluff.games", W/2, H - 100);
+
+    ctx.fillStyle = "rgba(255,255,255,.1)";
+    ctx.font = "500 10px system-ui";
+    ctx.fillText("#BluffGame  #SIAL", W/2, H - 78);
+
+    // Border glow
+    ctx.strokeStyle = "rgba(232,197,71,.08)";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+
+    return c.toDataURL("image/png");
+  } catch (e) {
+    console.error("[stories-card]", e);
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
@@ -331,6 +583,9 @@ export default function BluffGame() {
   const [axiomSpeech, setAxiomSpeech] = useState("Your confidence is endearing. Begin.");
   const [axiomLoading, setAxiomLoading] = useState(false);
   const [shareImg, setShareImg] = useState(null);
+  const [storiesImg, setStoriesImg] = useState(null);
+  const [challengeURL, setChallengeURL] = useState(null);
+  const [challenge, setChallenge] = useState(null);
   const timerRef = useRef(null);
   const axiomBusyRef = useRef(false); // prevents concurrent AXIOM calls
   const wrongCountRef = useRef(0); // tracks consecutive wrongs for escalating taunts
@@ -374,6 +629,16 @@ export default function BluffGame() {
   useEffect(()=>{
     if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
   },[lang]);
+
+  // Detect challenge from URL
+  useEffect(() => {
+    const ch = getChallengeFromURL();
+    if (ch && ch.s !== undefined && ch.t > 0) {
+      setChallenge(ch);
+      // Clean URL without reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   // ── FETCH ROUND ─────────────────────────────────────────────
   const fetchRound = useCallback(async (idx) => {
@@ -569,6 +834,28 @@ export default function BluffGame() {
         return speech;
       });
     },1000);
+
+    // Build Stories card and challenge URL
+    setTimeout(() => {
+      setScore(sc => {
+        setTotal(tt => {
+          setBest(b => {
+            setAxiomSpeech(speech => {
+              const won = sc >= Math.ceil(tt * .67);
+              const lieStmt = currentStmtsRef.current.find(s => !s.real);
+              const lieText = lieStmt?.text || "";
+              const img = generateStoriesCard(sc, tt, b, speech, won, lieText);
+              setStoriesImg(img);
+              setChallengeURL(buildChallengeURL(sc, tt));
+              return speech;
+            });
+            return b;
+          });
+          return tt;
+        });
+        return sc;
+      });
+    }, 1200);
   },[axiomSpeak]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
@@ -609,6 +896,42 @@ export default function BluffGame() {
         </div>
 
         <LangPicker lang={lang} onChange={changeLang}/>
+
+        {challenge && (
+          <div style={{
+            background: "rgba(232,197,71,.08)",
+            border: "1px solid rgba(232,197,71,.3)",
+            borderRadius: 14, padding: "14px 16px",
+            marginBottom: 14, animation: "g-fadeUp .4s ease both",
+          }}>
+            <div style={{ fontSize: 10, letterSpacing: "3px", color: "#e8c547", fontWeight: 700, marginBottom: 6, textTransform: "uppercase" }}>
+              ⚔️ Challenge received
+            </div>
+            <div style={{ fontSize: "clamp(13px,3.5vw,15px)", color: "#e8e6e1", marginBottom: 8 }}>
+              Your friend scored{" "}
+              <span style={{ color: "#e8c547", fontWeight: 700, fontFamily: "Georgia,serif", fontSize: 18 }}>
+                {challenge.s}/{challenge.t}
+              </span>
+              {" "}({challenge.t ? Math.round(challenge.s / challenge.t * 100) : 0}% accuracy).
+              <br/>
+              <span style={{ opacity: .7 }}>Can you beat them?</span>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                onClick={() => { setChallenge(null); startGame(); }}
+                style={{ flex: 2, minHeight: 44, padding: "10px 14px", fontSize: 13, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8c547,#d4a830)", color: "#04060f", borderRadius: 10, fontFamily: "inherit", cursor: "pointer", position: "relative", overflow: "hidden" }}>
+                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)", animation: "g-btnShimmer 2.5s infinite" }}/>
+                <span style={{ position: "relative" }}>Accept challenge</span>
+              </button>
+              <button
+                onClick={() => setChallenge(null)}
+                style={{ flex: 1, minHeight: 44, padding: "10px", fontSize: 13, fontWeight: 600, background: "transparent", color: "#5a5a68", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, fontFamily: "inherit", cursor: "pointer" }}>
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
         <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={false}/>
 
         <div style={{background:T.glass,borderRadius:16,border:`1px solid ${T.gb}`,padding:"clamp(16px,4vw,22px)",marginBottom:14,animation:"g-fadeUp .5s .1s both"}}>
@@ -759,15 +1082,63 @@ export default function BluffGame() {
             ))}
           </div>
         </div>
-        <div style={{marginBottom:16,animation:"g-fadeUp .6s .5s both"}}>
-          <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(255,255,255,.2)",textTransform:"uppercase",marginBottom:10}}>Share card</div>
-          {shareImg
-            ?<>
-              <img src={shareImg} alt="Result" style={{width:"100%",borderRadius:12,border:`1px solid ${T.gb}`,marginBottom:10}}/>
-              <a href={shareImg} download="bluff-result.png" style={{display:"block",width:"100%",minHeight:48,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(34,211,238,.08)",color:"#22d3ee",border:"1px solid rgba(34,211,238,.25)",borderRadius:12,textAlign:"center",textDecoration:"none",fontFamily:"inherit"}}>↓ Download image</a>
-            </>
-            :<div style={{background:"rgba(34,211,238,.05)",border:"1px solid rgba(34,211,238,.12)",borderRadius:12,padding:14,textAlign:"center",fontSize:13,color:"rgba(34,211,238,.4)"}}>Generating share card...</div>
-          }
+        {/* Share section */}
+        <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .5s both" }}>
+
+          {/* Stories card */}
+          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
+            📸 Instagram Stories
+          </div>
+          {storiesImg ? (
+            <div style={{ marginBottom: 14 }}>
+              <img
+                src={storiesImg}
+                alt="Stories card"
+                style={{ width: "50%", maxWidth: 180, borderRadius: 12, border: "1px solid rgba(255,255,255,.07)", marginBottom: 10, display: "block", margin: "0 auto 10px" }}
+              />
+              <a
+                href={storiesImg}
+                download="bluff-story.png"
+                style={{ display: "block", width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,rgba(131,58,180,.5),rgba(253,29,29,.5),rgba(252,176,69,.5))", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, textAlign: "center", textDecoration: "none", fontFamily: "inherit" }}>
+                📸 Save for Stories
+              </a>
+            </div>
+          ) : (
+            <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(255,255,255,.3)", marginBottom: 14 }}>
+              Generating...
+            </div>
+          )}
+
+          {/* Challenge link */}
+          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
+            ⚔️ Challenge a friend
+          </div>
+          {challengeURL ? (
+            <button
+              onClick={() => {
+                if (navigator.share) {
+                  navigator.share({
+                    title: "BLUFF™ — Can you beat me?",
+                    text: `I scored ${score}/${total} against AXIOM. Think you can do better? 🎯`,
+                    url: challengeURL,
+                  }).catch(() => {
+                    navigator.clipboard?.writeText(challengeURL);
+                    alert("Link copied! Share it with a friend.");
+                  });
+                } else {
+                  navigator.clipboard?.writeText(challengeURL)
+                    .then(() => alert("Challenge link copied! 📋"))
+                    .catch(() => alert(challengeURL));
+                }
+              }}
+              style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "rgba(34,211,238,.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,.25)", borderRadius: 12, fontFamily: "inherit", cursor: "pointer" }}>
+              ⚔️ Send challenge link
+            </button>
+          ) : (
+            <div style={{ background: "rgba(34,211,238,.04)", border: "1px solid rgba(34,211,238,.1)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(34,211,238,.3)" }}>
+              Generating...
+            </div>
+          )}
         </div>
         <div style={{display:"flex",gap:10,animation:"g-fadeUp .6s .6s both"}}>
           <button onClick={()=>setScreen("home")} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
