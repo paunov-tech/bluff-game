@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.88.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "stripe": "^17.0.0"

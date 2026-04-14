@@ -1,277 +1,201 @@
-// api/generate-round.js — BLUFF v2 — Difficulty 1-5 + Firestore cache
-// POST { category, difficulty: 1-5, lang }
-// Returns { roundId, statements: [{text}], category, difficulty, level }
-// SECURITY: "real" flags stored server-side only, never sent to client
-
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const FB_KEY        = process.env.FIREBASE_API_KEY;
-const FB_PROJECT    = "molty-portal";
-const ROUNDS_COL    = "bluff_rounds";
-const CACHE_COL     = "bluff_cache";
+// api/generate-round.js
+import Anthropic from "@anthropic-ai/sdk";
 
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);
 
-const CAT_DESCS = {
-  history:    "historical facts, events, and figures",
-  science:    "scientific discoveries, phenomena, and facts",
-  animals:    "animal behavior, biology, and adaptations",
-  geography:  "world geography, places, and landmarks",
-  food:       "food, cuisine, gastronomy, and beverages",
-  technology: "technology, inventions, and computing",
-  culture:    "art, culture, music, and entertainment",
-  sports:     "sports, athletes, and competitions",
+const client = new Anthropic();
+
+const DIFFICULTY_RULES = {
+  1: `DIFFICULTY 1 — WARM-UP:
+The lie should be obviously wrong to anyone with basic general knowledge.
+Use wrong dates, wrong countries, or wrong numbers that feel clearly "off".`,
+  2: `DIFFICULTY 2 — TRICKY:
+The lie sounds plausible but has one wrong specific detail (wrong number, name, or date).
+The truths should be a bit surprising.`,
+  3: `DIFFICULTY 3 — SNEAKY:
+The lie is very plausible. Change ONE specific detail in an otherwise true fact.
+The truths should be genuinely surprising and counterintuitive.`,
+  4: `DIFFICULTY 4 — DEVIOUS:
+The lie exploits a common misconception — something most people THINK is true but isn't.
+The truths should sound fake but be completely real.`,
+  5: `DIFFICULTY 5 — DIABOLICAL:
+ALL 4 truths must be so bizarre they sound completely made up.
+The lie must be the most "normal-sounding" statement of the five.
+Maximum confusion. The lie should be almost indistinguishable from truths.`,
 };
 
-const LEVEL_RULES = {
-  1: `LEVEL 1 — WARM-UP: The lie should be obvious to anyone with basic general knowledge.
-      Use clearly wrong details: wrong country, obviously wrong date, implausible number.
-      Example: "The Eiffel Tower was built in 1820" (wrong era is obvious).`,
-  2: `LEVEL 2 — TRICKY: The lie sounds plausible but has one wrong specific detail.
-      A curious person might catch it. About 60% of players should get it wrong.
-      Example: Wrong by a factor of 2, or a plausible-sounding but wrong person.`,
-  3: `LEVEL 3 — SNEAKY: Take a real fact structure and change ONE precise detail
-      (a number, a name, a date) to make it false. The lie should fool most people on first read.
-      True facts should also be surprising. About 50/50 correct.`,
-  4: `LEVEL 4 — DEVIOUS: The lie exploits a common misconception — something most people THINK
-      is true but isn't. The 4 true statements should sound counterintuitive or unbelievable.
-      Most players will choose a true statement thinking it's the lie.`,
-  5: `LEVEL 5 — DIABOLICAL: ALL 4 TRUE statements must be so bizarre, unexpected, and
-      counterintuitive that they sound completely fabricated.
-      The lie must be the most NORMAL-SOUNDING statement of the five.
-      This is maximum cognitive warfare. Players will doubt every true fact.`,
+const CATEGORY_HINTS = {
+  history: "Surprising historical events, counterintuitive facts about historical figures, little-known events.",
+  science: "Physics, biology, chemistry, astronomy. Include surprising numbers and phenomena.",
+  animals: "Animal behavior, anatomy, and abilities that sound impossible but are real.",
+  geography: "Counterintuitive geography facts, surprising borders, distances, and locations.",
+  food: "Origins, ingredients, and surprising facts about food and drink.",
+  culture: "Traditions, art, music, and cultural practices around the world.",
 };
 
-// ── Build prompt ──────────────────────────────────────────────
-function buildPrompt(category, level, lang) {
-  const catDesc  = CAT_DESCS[category] || category;
-  const rules    = LEVEL_RULES[level]  || LEVEL_RULES[3];
-  const langNote = lang !== "en"
-    ? `\nRespond in ${lang === "hr" ? "Croatian" : lang === "de" ? "German" : lang === "it" ? "Italian" : "English"}.`
-    : "";
-
-  return `Generate a BLUFF game round. Category: ${catDesc}.
-
-${rules}
-
-Create EXACTLY 5 statements: 4 TRUE + 1 FALSE.
-Randomize which position (1–5) contains the lie — NOT always second.
-${langNote}
-
-Respond ONLY with valid JSON, no markdown fences:
-{
-  "statements": [
-    {"text": "...", "real": true},
-    {"text": "...", "real": false},
-    {"text": "...", "real": true},
-    {"text": "...", "real": true},
-    {"text": "...", "real": true}
-  ],
-  "bluffExplanation": "One concise sentence: why the false statement is wrong."
-}
-
-Rules:
-- Each statement: 1-2 sentences, specific (names, numbers, dates)
-- No "Did you know" or "Interestingly" openers
-- The false statement must SOUND completely plausible`;
-}
-
-// ── Firestore helpers ─────────────────────────────────────────
-async function fsGet(col, id) {
-  if (!FB_KEY) return null;
-  const r = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`,
-    { signal: AbortSignal.timeout(5000) }
-  );
-  if (!r.ok) return null;
-  return r.json();
-}
-
-async function fsPatch(col, id, fields) {
-  if (!FB_KEY) return;
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`,
-    {
-      method:  "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ fields }),
-      signal:  AbortSignal.timeout(6000),
-    }
-  );
-}
-
-async function fsQuery(col, filters) {
-  if (!FB_KEY) return [];
-  const body = {
-    structuredQuery: {
-      from: [{ collectionId: col }],
-      where: {
-        compositeFilter: {
-          op: "AND",
-          filters: filters.map(([field, op, val]) => ({
-            fieldFilter: {
-              field: { fieldPath: field },
-              op,
-              value: typeof val === "boolean"
-                ? { booleanValue: val }
-                : typeof val === "number"
-                  ? { integerValue: String(val) }
-                  : { stringValue: val },
-            },
-          })),
-        },
-      },
-      orderBy: [{ field: { fieldPath: "ts" }, direction: "ASCENDING" }],
-      limit: 1,
-    },
-  };
-  const r = await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents:runQuery?key=${FB_KEY}`,
-    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(6000) }
-  );
-  if (!r.ok) return [];
-  const data = await r.json();
-  return data.filter(d => d.document).map(d => d.document);
-}
-
-// ── Try to pop a pre-generated round from cache ───────────────
-async function popFromCache(category, level) {
-  if (!FB_KEY) return null;
-  try {
-    const docs = await fsQuery(CACHE_COL, [
-      ["category", "EQUAL", category],
-      ["level",    "EQUAL", level],
-      ["used",     "EQUAL", false],
-    ]);
-    if (!docs.length) return null;
-
-    const doc    = docs[0];
-    const docId  = doc.name.split("/").pop();
-    const f      = doc.fields || {};
-    const stmts  = (f.statements?.arrayValue?.values || []).map(v => ({
-      text: v.mapValue.fields.text.stringValue,
-      real: v.mapValue.fields.real.booleanValue,
-    }));
-    if (stmts.length !== 5 || !stmts.some(s => !s.real)) return null;
-
-    // Mark as used (fire and forget)
-    fsPatch(CACHE_COL, docId, { used: { booleanValue: true } }).catch(() => {});
-
-    return {
-      statements:       stmts,
-      bluffExplanation: f.bluffExplanation?.stringValue || "",
-    };
-  } catch { return null; }
-}
-
-// ── Save round to bluff_rounds (with real flags) ──────────────
-async function saveRound(id, data) {
-  if (!FB_KEY) return;
-  const fields = {
-    category:         { stringValue:  data.category },
-    level:            { integerValue: String(data.level) },
-    lang:             { stringValue:  data.lang },
-    bluffExplanation: { stringValue:  data.bluffExplanation || "" },
-    answered:         { booleanValue: false },
-    ts:               { stringValue:  new Date().toISOString() },
-    statements: {
-      arrayValue: {
-        values: data.statements.map(s => ({
-          mapValue: { fields: {
-            text: { stringValue:  s.text },
-            real: { booleanValue: s.real },
-          }},
-        })),
-      },
-    },
-  };
-  await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${ROUNDS_COL}/${id}?key=${FB_KEY}`,
-    { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields && { fields }), signal: AbortSignal.timeout(8000) }
-  );
-}
-
-// ── Generate via Claude ───────────────────────────────────────
-async function generateWithClaude(category, level, lang) {
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key":         ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-      "content-type":      "application/json",
-    },
-    body: JSON.stringify({
-      model:      "claude-sonnet-4-20250514",
-      max_tokens: 1024,
-      messages:   [{ role: "user", content: buildPrompt(category, level, lang) }],
-    }),
-    signal: AbortSignal.timeout(28000),
-  });
-
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`AI ${resp.status}: ${t.slice(0, 100)}`);
-  }
-
-  const data  = await resp.json();
-  const raw   = data.content?.[0]?.text || "";
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error("No JSON from AI: " + raw.slice(0, 80));
-  const parsed = JSON.parse(match[0]);
-
-  if (!Array.isArray(parsed.statements) || parsed.statements.length !== 5)
-    throw new Error("AI returned invalid structure");
-  if (!parsed.statements.some(s => s.real === false))
-    throw new Error("AI returned no bluff");
-
-  return {
-    statements:       parsed.statements,
-    bluffExplanation: parsed.bluffExplanation || "",
-  };
-}
-
-// ── Handler ───────────────────────────────────────────────────
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
   res.setHeader("Access-Control-Allow-Origin",  CORS.includes(origin) ? origin : (CORS[0] || "*"));
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST")   return res.status(405).json({ error: "POST only" });
-  if (!ANTHROPIC_KEY)          return res.status(503).json({ error: "AI not configured" });
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const {
-    category  = "history",
-    difficulty = 3,   // 1-5
-    lang      = "en",
-  } = req.body || {};
+  const { category = "history", difficulty = 3, lang = "en" } = req.body;
 
-  const level = Math.max(1, Math.min(5, parseInt(difficulty) || 3));
+  const difficultyRules = DIFFICULTY_RULES[difficulty] || DIFFICULTY_RULES[3];
+  const categoryHint = CATEGORY_HINTS[category] || "Interesting and surprising facts from this topic.";
+  const langInstruction =
+    lang !== "en"
+      ? `Write ALL statements in ${lang}. Content must feel natural and native, not translated.`
+      : "Write all statements in English.";
 
-  // 1. Try cache first (instant response)
-  let round = await popFromCache(category, level);
-  let source = "cache";
+  const prompt = `Generate a BLUFF round for the "${category}" category.
 
-  // 2. Fallback to live Claude generation
-  if (!round) {
-    source = "live";
-    try {
-      round = await generateWithClaude(category, level, lang);
-    } catch (e) {
-      return res.status(502).json({ error: "AI error: " + e.message });
-    }
+${difficultyRules}
+
+Category guidance: ${categoryHint}
+
+${langInstruction}
+
+STRICT RULES:
+- Create exactly 5 statements
+- Exactly 4 must be TRUE — genuinely real, verifiable facts
+- Exactly 1 must be a CONVINCING LIE
+- The lie must match the style and length of the truths
+- The lie must contain specific details (names, numbers, dates) to seem credible
+- Do NOT make the lie about something easily Googleable in 5 seconds
+- Each statement should be 1-2 sentences, clear and specific
+- The lie can be in ANY position — randomize it
+
+CRITICAL JSON RULES:
+- "real" must be a boolean: true or false — NOT a string "true" or "false"
+- Exactly 4 items must have "real": true
+- Exactly 1 item must have "real": false
+- Return ONLY the JSON object, no explanation, no markdown fences
+
+Required format:
+{
+  "statements": [
+    {"text": "A true fact.", "real": true},
+    {"text": "Another true fact.", "real": true},
+    {"text": "The convincing lie.", "real": false},
+    {"text": "Another true fact.", "real": true},
+    {"text": "Another true fact.", "real": true}
+  ]
+}`;
+
+  try {
+    const message = await client.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 1000,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const raw = message.content[0]?.text || "";
+    const parsed = extractJSON(raw);
+    const normalized = normalizeStatements(parsed.statements);
+    validateAndRepair(normalized);
+
+    console.log(
+      `[generate-round] category=${category} diff=${difficulty} lies=${normalized.filter((s) => !s.real).length}`
+    );
+
+    return res.status(200).json({ category, difficulty, statements: normalized });
+  } catch (err) {
+    console.error("[generate-round] error:", err.message);
+    return res.status(200).json(getFallbackRound(category));
+  }
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+
+function normalizeStatements(statements) {
+  if (!Array.isArray(statements)) throw new Error("statements is not an array");
+  return statements.map((s) => ({
+    text: String(s.text || s.t || ""),
+    // Normalize string "true"/"false" → real booleans
+    real: s.real === true || s.real === "true" || s.r === true,
+  }));
+}
+
+function validateAndRepair(statements) {
+  const lieCount = statements.filter((s) => !s.real).length;
+
+  if (lieCount === 0) {
+    console.warn("[generate-round] No lie found — forcing last statement to false");
+    statements[statements.length - 1].real = false;
   }
 
-  const roundId = `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  if (lieCount > 1) {
+    console.warn(`[generate-round] ${lieCount} lies found — keeping only first`);
+    let foundLie = false;
+    statements.forEach((s) => {
+      if (!s.real) {
+        if (foundLie) s.real = true;
+        else foundLie = true;
+      }
+    });
+  }
 
-  // Save to bluff_rounds (real flags, never sent to client)
-  saveRound(roundId, { category, level, lang, ...round }).catch(() => {});
+  if (statements.length !== 5) {
+    throw new Error(`Expected 5 statements, got ${statements.length}`);
+  }
+}
 
-  return res.status(200).json({
-    roundId,
-    statements: round.statements.map(s => ({ text: s.text })),
-    category,
-    level,
-    source, // "cache" or "live" — for analytics only
-  });
+function extractJSON(raw) {
+  if (!raw || !raw.trim()) throw new Error("Empty AI response");
+
+  let clean = raw.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+
+  try {
+    return JSON.parse(clean);
+  } catch {}
+
+  const first = clean.indexOf("{");
+  const last = clean.lastIndexOf("}");
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(clean.slice(first, last + 1));
+    } catch {}
+  }
+
+  throw new Error("Could not parse JSON from AI response");
+}
+
+function getFallbackRound(category) {
+  const fallbacks = {
+    history: {
+      category: "history", difficulty: 3,
+      statements: [
+        { text: "Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.", real: true },
+        { text: "Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.", real: true },
+        { text: "The French army requisitioned over 600 Paris taxis to rush troops to the Battle of the Marne.", real: true },
+        { text: "Ancient Romans built steam-powered mechanisms making temple doors appear to open by divine force.", real: true },
+        { text: "Queen Victoria kept a personal diary written exclusively in Urdu for the last 13 years of her reign.", real: false },
+      ],
+    },
+    science: {
+      category: "science", difficulty: 3,
+      statements: [
+        { text: "Honey never spoils — archaeologists found 3,000-year-old honey in Egyptian tombs still edible.", real: true },
+        { text: "A teaspoon of neutron star material would weigh approximately 6 billion tons on Earth.", real: true },
+        { text: "Bananas are slightly radioactive due to their potassium-40 isotope content.", real: true },
+        { text: "Hot water can freeze faster than cold water under certain conditions — the Mpemba effect.", real: true },
+        { text: "Jupiter's core is a single enormous diamond roughly the size of Earth.", real: false },
+      ],
+    },
+    animals: {
+      category: "animals", difficulty: 3,
+      statements: [
+        { text: "A group of flamingos is officially called a 'flamboyance.'", real: true },
+        { text: "Octopuses have three hearts and blue blood.", real: true },
+        { text: "Crows can recognize individual human faces and hold grudges for years.", real: true },
+        { text: "The mimic octopus can impersonate over 15 marine species including lionfish and sea snakes.", real: true },
+        { text: "Dolphins sleep with both eyes closed but alternate which hemisphere stays awake — 'stereo dreaming.'", real: false },
+      ],
+    },
+  };
+  return fallbacks[category] || fallbacks.history;
 }
