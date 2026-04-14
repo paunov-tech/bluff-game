@@ -1,5 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 
+// ── Haptic feedback ──────────────────────
+function useHaptic() {
+  const supported = typeof navigator !== "undefined" &&
+    "vibrate" in navigator;
+  return {
+    tap:          () => { if (supported) navigator.vibrate(8); },
+    lockIn:       () => { if (supported) navigator.vibrate([12, 60, 12]); },
+    correct:      () => { if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
+    wrong:        () => { if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
+    timerWarning: () => { if (supported) navigator.vibrate(20); },
+    victory:      () => { if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
@@ -587,6 +601,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
+  const haptic = useHaptic();
   const [showIntro, setShowIntro] = useState(
     !localStorage.getItem("bluff_played")
   );
@@ -807,7 +822,9 @@ export default function BluffGame() {
       setTime(t=>{
         if(t<=1){ clearInterval(timerRef.current); return 0; }
         if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting"); // ~45% remaining
-        if(t===10) axiomSpeak("taunt_late","taunting");
+        if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); }
+        if(t===5) haptic.timerWarning();
+        if(t===3) haptic.timerWarning();
         return t-1;
       });
     },1000);
@@ -829,7 +846,9 @@ export default function BluffGame() {
         setTime(t => {
           if (t <= 1) { clearInterval(timerRef.current); return 0; }
           if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
-          if (t === 10) axiomSpeak("taunt_late", "taunting");
+          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
+          if (t === 5) haptic.timerWarning();
+          if (t === 3) haptic.timerWarning();
           return t - 1;
         });
       }, 1000);
@@ -839,6 +858,7 @@ export default function BluffGame() {
   // ── CARD SELECT — psychological warfare ─────────────────────
   const handleCardSelect = useCallback((i) => {
     if(revealed) return;
+    haptic.tap();
     setSel(i);
     currentSelRef.current = i;
     const s = currentStmtsRef.current[i];
@@ -868,6 +888,7 @@ export default function BluffGame() {
     setTotal(t=>t+1);
 
     if(isCorrect){
+      haptic.correct();
       setScore(s=>s+1);
       wrongCountRef.current = 0;
       setStreak(prev=>{
@@ -881,6 +902,7 @@ export default function BluffGame() {
         return next;
       });
     } else {
+      haptic.wrong();
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -934,7 +956,7 @@ export default function BluffGame() {
       setTotal(tt=>{
         const won = sc>=Math.ceil(tt*.67);
         axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
-        if(won) setConfetti(true);
+        if(won){ setConfetti(true); haptic.victory(); }
         return tt;
       });
       return sc;
@@ -1321,7 +1343,7 @@ export default function BluffGame() {
           </div>
 
           {!revealed
-            ?<button onClick={()=>sel!==null&&doReveal()} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
               {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
               <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
             </button>
