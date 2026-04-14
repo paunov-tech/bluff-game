@@ -649,18 +649,16 @@ export default function BluffGame() {
   const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
   const currentSelRef = useRef(null);
 
-  // Keep refs in sync
-  useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
-  useEffect(()=>{ currentSelRef.current = sel; },[sel]);
+  // ── FUNCTIONS ────────────────────────────────────────────────
 
   // Persist language
-  const changeLang = useCallback(code => {
+  function changeLang(code) {
     setLang(code);
     localStorage.setItem("bluff_lang", code);
-  },[]);
+  }
 
   // ── AXIOM VOICE ─────────────────────────────────────────────
-  const playAxiomVoice = useCallback(async (text, skin) => {
+  async function playAxiomVoice(text, skin) {
     if (!voiceEnabled || !text || text === "...") return;
 
     audioQueueRef.current.push({ text, skin });
@@ -699,83 +697,10 @@ export default function BluffGame() {
     };
 
     playNext();
-  }, [voiceEnabled]);
-
-  // ── AXIOM SPEAK ─────────────────────────────────────────────
-  const axiomSpeak = useCallback(async (context, mood) => {
-    if(axiomBusyRef.current) return;
-    axiomBusyRef.current = true;
-    setAxiomMood(mood);
-    setAxiomLoading(true);
-    try {
-      const res = await fetch("/api/axiom-speak",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ context, lang, skin: activeSkin }),
-      });
-      const data = await res.json();
-      const speechText = data.speech || "...";
-      setAxiomSpeech(speechText);
-      setLastAxiomLine(speechText);
-      playAxiomVoice(speechText, activeSkin);
-    } catch {
-      const fb={idle:"Your confidence is endearing.",taunting:"Predictable.",shocked:"Impossible.",amused:"Delightful.",defeated:"I concede."};
-      const fallbackText = fb[mood] || "...";
-      setAxiomSpeech(fallbackText);
-      playAxiomVoice(fallbackText, activeSkin);
-    } finally {
-      setAxiomLoading(false);
-      axiomBusyRef.current = false;
-    }
-  },[lang]);
-
-  // Re-trigger intro speech if language changes on home screen
-  useEffect(()=>{
-    if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
-  },[lang]);
-
-  // Detect challenge from URL
-  useEffect(() => {
-    const ch = getChallengeFromURL();
-    if (ch && ch.s !== undefined && ch.t > 0) {
-      setChallenge(ch);
-      // Clean URL without reload
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  // Verify Stripe skin purchase after redirect
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const skinPurchased = params.get("skin_purchased");
-    const sessionId = params.get("session_id");
-    if (skinPurchased && sessionId) {
-      window.history.replaceState({}, "", window.location.pathname);
-      const userId = localStorage.getItem("bluff_user_id") || "anon";
-      fetch("/api/shop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          setOwnedSkins(prev => {
-            const next = [...new Set([...prev, skinPurchased])];
-            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
-            return next;
-          });
-          setActiveSkin(skinPurchased);
-          localStorage.setItem("bluff_skin", skinPurchased);
-          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
-        }
-      })
-      .catch(() => {});
-    }
-  }, []);
+  }
 
   // ── FETCH ROUND ─────────────────────────────────────────────
-  const fetchRound = useCallback(async (idx) => {
+  async function fetchRound(idx) {
     setLoadingRound(true);
     const diff = ROUND_DIFFICULTY[idx]||3;
     const cat = CATEGORIES[idx % CATEGORIES.length];
@@ -811,10 +736,38 @@ export default function BluffGame() {
     } finally {
       setLoadingRound(false);
     }
-  },[lang]);
+  }
+
+  // ── AXIOM SPEAK ─────────────────────────────────────────────
+  async function axiomSpeak(context, mood) {
+    if(axiomBusyRef.current) return;
+    axiomBusyRef.current = true;
+    setAxiomMood(mood);
+    setAxiomLoading(true);
+    try {
+      const res = await fetch("/api/axiom-speak",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ context, lang, skin: activeSkin }),
+      });
+      const data = await res.json();
+      const speechText = data.speech || "...";
+      setAxiomSpeech(speechText);
+      setLastAxiomLine(speechText);
+      playAxiomVoice(speechText, activeSkin);
+    } catch {
+      const fb={idle:"Your confidence is endearing.",taunting:"Predictable.",shocked:"Impossible.",amused:"Delightful.",defeated:"I concede."};
+      const fallbackText = fb[mood] || "...";
+      setAxiomSpeech(fallbackText);
+      playAxiomVoice(fallbackText, activeSkin);
+    } finally {
+      setAxiomLoading(false);
+      axiomBusyRef.current = false;
+    }
+  }
 
   // ── TIMER ────────────────────────────────────────────────────
-  const startTimer = useCallback((diff) => {
+  function startTimer(diff) {
     clearInterval(timerRef.current);
     const maxT = TIMER_PER_DIFF[diff]||45;
     setTime(maxT);
@@ -828,35 +781,10 @@ export default function BluffGame() {
         return t-1;
       });
     },1000);
-  },[axiomSpeak]);
-
-  // Auto-reveal at 0
-  useEffect(()=>{
-    if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
-  },[time,revealed,screen]);
-
-  // Timer starts only after round finishes loading
-  useEffect(() => {
-    if (!loadingRound && screen === "play" && stmts.length > 0) {
-      clearInterval(timerRef.current);
-      const diff = ROUND_DIFFICULTY[roundIdx] || 3;
-      const maxT = TIMER_PER_DIFF[diff] || 60;
-      setTime(maxT);
-      timerRef.current = setInterval(() => {
-        setTime(t => {
-          if (t <= 1) { clearInterval(timerRef.current); return 0; }
-          if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
-          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
-          if (t === 5) haptic.timerWarning();
-          if (t === 3) haptic.timerWarning();
-          return t - 1;
-        });
-      }, 1000);
-    }
-  }, [loadingRound]);
+  }
 
   // ── CARD SELECT — psychological warfare ─────────────────────
-  const handleCardSelect = useCallback((i) => {
+  function handleCardSelect(i) {
     if(revealed) return;
     haptic.tap();
     setSel(i);
@@ -874,10 +802,10 @@ export default function BluffGame() {
         axiomSpeak("selected_truth","amused");
       }
     },300);
-  },[revealed, axiomSpeak]);
+  }
 
   // ── REVEAL ───────────────────────────────────────────────────
-  const doReveal = useCallback(()=>{
+  function doReveal() {
     clearInterval(timerRef.current);
     const stmtsCurrent = currentStmtsRef.current;
     const selCurrent = currentSelRef.current;
@@ -914,10 +842,10 @@ export default function BluffGame() {
         return 0;
       });
     }
-  },[axiomSpeak]);
+  }
 
   // ── NEXT ROUND ───────────────────────────────────────────────
-  const nextRound = useCallback(()=>{
+  function nextRound() {
     const next = roundIdx+1;
     if(next>=ROUND_DIFFICULTY.length){ showResultScreen(); return; }
     clearInterval(timerRef.current);
@@ -928,10 +856,10 @@ export default function BluffGame() {
     setConfetti(false);
     fetchRound(next);
     axiomSpeak("intro","idle");
-  },[roundIdx,fetchRound,axiomSpeak]);
+  }
 
   // ── START ────────────────────────────────────────────────────
-  const startGame = useCallback(()=>{
+  function startGame() {
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
     setScreen("play");
@@ -946,10 +874,10 @@ export default function BluffGame() {
     setShareImg(null);
     fetchRound(0);
     axiomSpeak("intro","idle");
-  },[fetchRound,axiomSpeak]);
+  }
 
   // ── RESULT ───────────────────────────────────────────────────
-  const showResultScreen = useCallback(()=>{
+  function showResultScreen() {
     clearInterval(timerRef.current);
     setScreen("result");
     setScore(sc=>{
@@ -1000,7 +928,83 @@ export default function BluffGame() {
         return sc;
       });
     }, 1200);
-  },[axiomSpeak]);
+  }
+
+  // ── USEEFFECTS ───────────────────────────────────────────────
+
+  // Keep refs in sync
+  useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
+  useEffect(()=>{ currentSelRef.current = sel; },[sel]);
+
+  // Auto-reveal at 0
+  useEffect(()=>{
+    if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
+  },[time,revealed,screen]);
+
+  // Timer starts only after round finishes loading
+  useEffect(() => {
+    if (!loadingRound && screen === "play" && stmts.length > 0) {
+      clearInterval(timerRef.current);
+      const diff = ROUND_DIFFICULTY[roundIdx] || 3;
+      const maxT = TIMER_PER_DIFF[diff] || 60;
+      setTime(maxT);
+      timerRef.current = setInterval(() => {
+        setTime(t => {
+          if (t <= 1) { clearInterval(timerRef.current); return 0; }
+          if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
+          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
+          if (t === 5) haptic.timerWarning();
+          if (t === 3) haptic.timerWarning();
+          return t - 1;
+        });
+      }, 1000);
+    }
+  }, [loadingRound]);
+
+  // Re-trigger intro speech if language changes on home screen
+  useEffect(()=>{
+    if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
+  },[lang]);
+
+  // Detect challenge from URL
+  useEffect(() => {
+    const ch = getChallengeFromURL();
+    if (ch && ch.s !== undefined && ch.t > 0) {
+      setChallenge(ch);
+      // Clean URL without reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Verify Stripe skin purchase after redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const skinPurchased = params.get("skin_purchased");
+    const sessionId = params.get("session_id");
+    if (skinPurchased && sessionId) {
+      window.history.replaceState({}, "", window.location.pathname);
+      const userId = localStorage.getItem("bluff_user_id") || "anon";
+      fetch("/api/shop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setOwnedSkins(prev => {
+            const next = [...new Set([...prev, skinPurchased])];
+            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
+            return next;
+          });
+          setActiveSkin(skinPurchased);
+          localStorage.setItem("bluff_skin", skinPurchased);
+          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
+        }
+      })
+      .catch(() => {});
+    }
+  }, []);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(() => {
@@ -1248,11 +1252,13 @@ export default function BluffGame() {
                             .then(data=>{ if(data.url) window.location.href = data.url; })
                             .catch(()=>alert("Shop unavailable. Try again."));
                           }}
-                          style={{padding:"12px 20px",fontSize:14,fontWeight:700,
+                          style={{padding:"14px 20px",fontSize:14,fontWeight:700,
                             background:"linear-gradient(135deg,#e8c547,#d4a830)",
-                            color:"#04060f",border:"none",borderRadius:10,
+                            color:"#04060f",border:"none",borderRadius:12,
                             cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                            minHeight:"44px",minWidth:"80px",display:"block",width:"100%"}}>
+                            width:"100%",minHeight:"48px",marginTop:"8px",
+                            boxShadow:"0 0 20px rgba(232,197,71,0.4), 0 4px 12px rgba(232,197,71,0.2)",
+                            display:"block",letterSpacing:"0.5px"}}>
                           {skin.price}
                         </button>
                       )}

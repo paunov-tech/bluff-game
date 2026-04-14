@@ -698,18 +698,16 @@ export default function BluffGame() {
     })()
   );
 
-  // Keep refs in sync
-  useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
-  useEffect(()=>{ currentSelRef.current = sel; },[sel]);
+  // ── FUNCTIONS ────────────────────────────────────────────────
 
   // Persist language
-  const changeLang = useCallback(code => {
+  function changeLang(code) {
     setLang(code);
     localStorage.setItem("bluff_lang", code);
-  },[]);
+  }
 
   // ── DAILY CHALLENGE ─────────────────────────────────────────
-  const loadDailyChallenge = useCallback(async () => {
+  async function loadDailyChallenge() {
     setLoadingDaily(true);
     try {
       const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`);
@@ -720,9 +718,9 @@ export default function BluffGame() {
       if (data.totalPlayers) setDailyPlayers(data.totalPlayers);
     } catch { setDailyData(null); }
     finally { setLoadingDaily(false); }
-  }, []);
+  }
 
-  const submitDailyResult = useCallback(async (finalScore, finalTotal) => {
+  async function submitDailyResult(finalScore, finalTotal) {
     try {
       const timeTakenMs = Date.now() - (dailyStartTimeRef.current || Date.now());
       const r = await fetch("/api/daily-challenge", {
@@ -747,9 +745,9 @@ export default function BluffGame() {
         myResult: { score: finalScore, total: finalTotal, results: [...dailyResultsRef.current] },
       } : null);
     } catch {}
-  }, []);
+  }
 
-  const startDailyChallenge = useCallback(() => {
+  function startDailyChallenge() {
     if (!dailyData?.rounds) return;
     dailyModeRef.current = true;
     dailyResultsRef.current = [];
@@ -772,10 +770,10 @@ export default function BluffGame() {
     setStoriesImg(null);
     fetchRound(0);
     axiomSpeak("intro", "idle");
-  }, [dailyData, fetchRound, axiomSpeak]);
+  }
 
   // ── AXIOM VOICE ─────────────────────────────────────────────
-  const playAxiomVoice = useCallback(async (text, skin) => {
+  async function playAxiomVoice(text, skin) {
     if (!voiceEnabled || !text || text === "...") return;
 
     audioQueueRef.current.push({ text, skin });
@@ -814,10 +812,10 @@ export default function BluffGame() {
     };
 
     playNext();
-  }, [voiceEnabled]);
+  }
 
   // ── AXIOM SPEAK ─────────────────────────────────────────────
-  const axiomSpeak = useCallback(async (context, mood) => {
+  async function axiomSpeak(context, mood) {
     if(axiomBusyRef.current) return;
     axiomBusyRef.current = true;
     setAxiomMood(mood);
@@ -842,7 +840,256 @@ export default function BluffGame() {
       setAxiomLoading(false);
       axiomBusyRef.current = false;
     }
-  },[lang]);
+  }
+
+  // ── FETCH ROUND ─────────────────────────────────────────────
+  async function fetchRound(idx) {
+    setLoadingRound(true);
+
+    // Daily mode: use pre-generated rounds instead of fetching
+    if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
+      const round = dailyRoundsRef.current[idx];
+      const cat = round.category || CATEGORIES[idx % CATEGORIES.length];
+      setCategory(cat);
+      const normalized = (round.statements || []).map(s => ({
+        text: String(s.text || ""),
+        real: s.real === true || s.real === "true",
+      }));
+      const lies = normalized.filter(s => !s.real);
+      if (lies.length === 1) {
+        const shuffled = shuffle(normalized);
+        setStmts(shuffled);
+        currentStmtsRef.current = shuffled;
+      }
+      setLoadingRound(false);
+      return;
+    }
+
+    const diff = ROUND_DIFFICULTY[idx]||3;
+    const cat = CATEGORIES[idx % CATEGORIES.length];
+    setCategory(cat);
+    try {
+      const res = await fetch("/api/generate-round",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ category:cat, difficulty:diff, lang }),
+      });
+      const data = await res.json();
+      const normalized = (data.statements||[]).map(s=>({
+        text: String(s.text||""),
+        real: s.real===true||s.real==="true",
+      }));
+      const lies = normalized.filter(s=>!s.real);
+      console.log(`[fetchRound] idx=${idx} cat=${cat} diff=${diff} lang=${lang} lies=${lies.length}`);
+      if(lies.length!==1) throw new Error("Bad lie count");
+      const shuffled = shuffle(normalized);
+      setStmts(shuffled);
+      currentStmtsRef.current = shuffled;
+    } catch(e) {
+      console.warn("[fetchRound] fallback:",e.message);
+      const fb = shuffle([
+        {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
+        {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
+        {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne.",real:true},
+        {text:"Ancient Romans built steam-powered door mechanisms making temple doors open by 'divine force.'",real:true},
+        {text:"Queen Victoria kept a diary in Urdu exclusively for the last 13 years of her reign.",real:false},
+      ]);
+      setStmts(fb);
+      currentStmtsRef.current = fb;
+    } finally {
+      setLoadingRound(false);
+    }
+  }
+
+  // ── TIMER ────────────────────────────────────────────────────
+  function startTimer(diff) {
+    clearInterval(timerRef.current);
+    const maxT = TIMER_PER_DIFF[diff]||45;
+    setTime(maxT);
+    timerRef.current = setInterval(()=>{
+      setTime(t=>{
+        if(t<=1){ clearInterval(timerRef.current); return 0; }
+        if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting"); // ~45% remaining
+        if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); }
+        if(t===5) haptic.timerWarning();
+        if(t===3) haptic.timerWarning();
+        return t-1;
+      });
+    },1000);
+  }
+
+  // ── CARD SELECT — psychological warfare ─────────────────────
+  function handleCardSelect(i) {
+    if(revealed) return;
+    haptic.tap();
+    setSel(i);
+    currentSelRef.current = i;
+    const s = currentStmtsRef.current[i];
+    if(!s) return;
+    // AXIOM reacts differently based on whether player picked lie or truth
+    // Small delay so it doesn't feel instant/robotic
+    setTimeout(()=>{
+      if(s.real===false) {
+        // Player selected the LIE — try to make them doubt
+        axiomSpeak("selected_lie","taunting");
+      } else {
+        // Player selected a TRUTH — be amused
+        axiomSpeak("selected_truth","amused");
+      }
+    },300);
+  }
+
+  // ── REVEAL ───────────────────────────────────────────────────
+  function doReveal() {
+    clearInterval(timerRef.current);
+    const stmtsCurrent = currentStmtsRef.current;
+    const selCurrent = currentSelRef.current;
+    const bi = stmtsCurrent.findIndex(s=>!s.real);
+    const isCorrect = selCurrent===bi && bi!==-1;
+
+    setRevealed(true);
+    setTotal(t=>t+1);
+
+    if (dailyModeRef.current) {
+      dailyResultsRef.current = [...dailyResultsRef.current, isCorrect];
+    }
+
+    if(isCorrect){
+      haptic.correct();
+      setScore(s=>s+1);
+      wrongCountRef.current = 0;
+      setStreak(prev=>{
+        const next=prev+1;
+        setBest(b=>Math.max(b,next));
+        if(next>=2) setConfetti(true);
+        // Escalating shock based on streak
+        if(next>=5) axiomSpeak("streak_5","shocked");
+        else if(next>=3) axiomSpeak("streak_3","shocked");
+        else axiomSpeak("correct","shocked");
+        return next;
+      });
+    } else {
+      haptic.wrong();
+      wrongCountRef.current++;
+      const lieStmt = stmtsCurrent.find(s => !s.real);
+      setLastWrongStmt(lieStmt?.text || null);
+      setShameSent(false);
+      setStreak(prev=>{
+        if(prev>0) axiomSpeak("streak_broken","amused"); // broke their streak
+        else if(wrongCountRef.current>=2) axiomSpeak("wrong_celebrate","amused"); // consecutive wrongs
+        else axiomSpeak("wrong","taunting");
+        return 0;
+      });
+    }
+  }
+
+  // ── NEXT ROUND ───────────────────────────────────────────────
+  function nextRound() {
+    const next = roundIdx+1;
+    if(next>=ROUND_DIFFICULTY.length){ showResultScreen(); return; }
+    clearInterval(timerRef.current);
+    setRoundIdx(next);
+    setSel(null);
+    currentSelRef.current=null;
+    setRevealed(false);
+    setConfetti(false);
+    fetchRound(next);
+    axiomSpeak("intro","idle");
+  }
+
+  // ── START ────────────────────────────────────────────────────
+  function startGame() {
+    clearInterval(timerRef.current);
+    wrongCountRef.current=0;
+    setDailyMode(false);
+    dailyModeRef.current = false;
+    dailyResultsRef.current = [];
+    setDailyRank(null);
+    setScreen("play");
+    setRoundIdx(0);
+    setSel(null);
+    currentSelRef.current=null;
+    setRevealed(false);
+    setScore(0);
+    setTotal(0);
+    setStreak(0);
+    setConfetti(false);
+    setShareImg(null);
+    fetchRound(0);
+    axiomSpeak("intro","idle");
+  }
+
+  // ── RESULT ───────────────────────────────────────────────────
+  function showResultScreen() {
+    clearInterval(timerRef.current);
+    setScreen("result");
+
+    // Submit daily result before any state mutation
+    if (dailyModeRef.current) {
+      setScore(sc => {
+        setTotal(tt => {
+          submitDailyResult(sc, tt);
+          return tt;
+        });
+        return sc;
+      });
+    }
+
+    setScore(sc=>{
+      setTotal(tt=>{
+        const won = sc>=Math.ceil(tt*.67);
+        axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
+        if(won){ setConfetti(true); haptic.victory(); }
+        return tt;
+      });
+      return sc;
+    });
+    setTimeout(()=>{
+      setAxiomSpeech(speech=>{
+        setScore(sc=>{
+          setTotal(tt=>{
+            setBest(b=>{
+              const won=sc>=Math.ceil(tt*.67);
+              const img=generateShareCard(sc,tt,b,speech,won);
+              setShareImg(img);
+              return b;
+            });
+            return tt;
+          });
+          return sc;
+        });
+        return speech;
+      });
+    },1000);
+
+    // Build Stories card and challenge URL
+    setTimeout(() => {
+      setScore(sc => {
+        setTotal(tt => {
+          setBest(b => {
+            setAxiomSpeech(speech => {
+              const won = sc >= Math.ceil(tt * .67);
+              const lieStmt = currentStmtsRef.current.find(s => !s.real);
+              const lieText = lieStmt?.text || "";
+              const img = generateStoriesCard(sc, tt, b, speech, won, lieText, lastAxiomLine);
+              setStoriesImg(img);
+              setChallengeURL(buildChallengeURL(sc, tt));
+              return speech;
+            });
+            return b;
+          });
+          return tt;
+        });
+        return sc;
+      });
+    }, 1200);
+  }
+
+  // ── USEEFFECTS ───────────────────────────────────────────────
+
+  // Keep refs in sync
+  useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
+  useEffect(()=>{ currentSelRef.current = sel; },[sel]);
 
   // Re-trigger intro speech if language changes on home screen
   useEffect(()=>{
@@ -920,82 +1167,6 @@ export default function BluffGame() {
   // Load daily challenge on mount
   useEffect(() => { loadDailyChallenge(); }, []);
 
-  // ── FETCH ROUND ─────────────────────────────────────────────
-  const fetchRound = useCallback(async (idx) => {
-    setLoadingRound(true);
-
-    // Daily mode: use pre-generated rounds instead of fetching
-    if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
-      const round = dailyRoundsRef.current[idx];
-      const cat = round.category || CATEGORIES[idx % CATEGORIES.length];
-      setCategory(cat);
-      const normalized = (round.statements || []).map(s => ({
-        text: String(s.text || ""),
-        real: s.real === true || s.real === "true",
-      }));
-      const lies = normalized.filter(s => !s.real);
-      if (lies.length === 1) {
-        const shuffled = shuffle(normalized);
-        setStmts(shuffled);
-        currentStmtsRef.current = shuffled;
-      }
-      setLoadingRound(false);
-      return;
-    }
-
-    const diff = ROUND_DIFFICULTY[idx]||3;
-    const cat = CATEGORIES[idx % CATEGORIES.length];
-    setCategory(cat);
-    try {
-      const res = await fetch("/api/generate-round",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ category:cat, difficulty:diff, lang }),
-      });
-      const data = await res.json();
-      const normalized = (data.statements||[]).map(s=>({
-        text: String(s.text||""),
-        real: s.real===true||s.real==="true",
-      }));
-      const lies = normalized.filter(s=>!s.real);
-      console.log(`[fetchRound] idx=${idx} cat=${cat} diff=${diff} lang=${lang} lies=${lies.length}`);
-      if(lies.length!==1) throw new Error("Bad lie count");
-      const shuffled = shuffle(normalized);
-      setStmts(shuffled);
-      currentStmtsRef.current = shuffled;
-    } catch(e) {
-      console.warn("[fetchRound] fallback:",e.message);
-      const fb = shuffle([
-        {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
-        {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
-        {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne.",real:true},
-        {text:"Ancient Romans built steam-powered door mechanisms making temple doors open by 'divine force.'",real:true},
-        {text:"Queen Victoria kept a diary in Urdu exclusively for the last 13 years of her reign.",real:false},
-      ]);
-      setStmts(fb);
-      currentStmtsRef.current = fb;
-    } finally {
-      setLoadingRound(false);
-    }
-  },[lang]);
-
-  // ── TIMER ────────────────────────────────────────────────────
-  const startTimer = useCallback((diff) => {
-    clearInterval(timerRef.current);
-    const maxT = TIMER_PER_DIFF[diff]||45;
-    setTime(maxT);
-    timerRef.current = setInterval(()=>{
-      setTime(t=>{
-        if(t<=1){ clearInterval(timerRef.current); return 0; }
-        if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting"); // ~45% remaining
-        if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); }
-        if(t===5) haptic.timerWarning();
-        if(t===3) haptic.timerWarning();
-        return t-1;
-      });
-    },1000);
-  },[axiomSpeak]);
-
   // Auto-reveal at 0
   useEffect(()=>{
     if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
@@ -1045,7 +1216,7 @@ export default function BluffGame() {
       webApp.MainButton.onClick(isLast ? showResultScreen : nextRound);
       webApp.MainButton.show();
     }
-  }, [screen, sel, revealed, roundIdx, doReveal, nextRound, showResultScreen]);
+  }, [screen, sel, revealed, roundIdx]);
 
   // ── TELEGRAM BACK BUTTON ────────────────────────────────────
   useEffect(() => {
@@ -1064,173 +1235,6 @@ export default function BluffGame() {
       webApp.BackButton.hide();
     }
   }, [screen]);
-
-  // ── CARD SELECT — psychological warfare ─────────────────────
-  const handleCardSelect = useCallback((i) => {
-    if(revealed) return;
-    haptic.tap();
-    setSel(i);
-    currentSelRef.current = i;
-    const s = currentStmtsRef.current[i];
-    if(!s) return;
-    // AXIOM reacts differently based on whether player picked lie or truth
-    // Small delay so it doesn't feel instant/robotic
-    setTimeout(()=>{
-      if(s.real===false) {
-        // Player selected the LIE — try to make them doubt
-        axiomSpeak("selected_lie","taunting");
-      } else {
-        // Player selected a TRUTH — be amused
-        axiomSpeak("selected_truth","amused");
-      }
-    },300);
-  },[revealed, axiomSpeak]);
-
-  // ── REVEAL ───────────────────────────────────────────────────
-  const doReveal = useCallback(()=>{
-    clearInterval(timerRef.current);
-    const stmtsCurrent = currentStmtsRef.current;
-    const selCurrent = currentSelRef.current;
-    const bi = stmtsCurrent.findIndex(s=>!s.real);
-    const isCorrect = selCurrent===bi && bi!==-1;
-
-    setRevealed(true);
-    setTotal(t=>t+1);
-
-    if (dailyModeRef.current) {
-      dailyResultsRef.current = [...dailyResultsRef.current, isCorrect];
-    }
-
-    if(isCorrect){
-      haptic.correct();
-      setScore(s=>s+1);
-      wrongCountRef.current = 0;
-      setStreak(prev=>{
-        const next=prev+1;
-        setBest(b=>Math.max(b,next));
-        if(next>=2) setConfetti(true);
-        // Escalating shock based on streak
-        if(next>=5) axiomSpeak("streak_5","shocked");
-        else if(next>=3) axiomSpeak("streak_3","shocked");
-        else axiomSpeak("correct","shocked");
-        return next;
-      });
-    } else {
-      haptic.wrong();
-      wrongCountRef.current++;
-      const lieStmt = stmtsCurrent.find(s => !s.real);
-      setLastWrongStmt(lieStmt?.text || null);
-      setShameSent(false);
-      setStreak(prev=>{
-        if(prev>0) axiomSpeak("streak_broken","amused"); // broke their streak
-        else if(wrongCountRef.current>=2) axiomSpeak("wrong_celebrate","amused"); // consecutive wrongs
-        else axiomSpeak("wrong","taunting");
-        return 0;
-      });
-    }
-  },[axiomSpeak]);
-
-  // ── NEXT ROUND ───────────────────────────────────────────────
-  const nextRound = useCallback(()=>{
-    const next = roundIdx+1;
-    if(next>=ROUND_DIFFICULTY.length){ showResultScreen(); return; }
-    clearInterval(timerRef.current);
-    setRoundIdx(next);
-    setSel(null);
-    currentSelRef.current=null;
-    setRevealed(false);
-    setConfetti(false);
-    fetchRound(next);
-    axiomSpeak("intro","idle");
-  },[roundIdx,fetchRound,axiomSpeak]);
-
-  // ── START ────────────────────────────────────────────────────
-  const startGame = useCallback(()=>{
-    clearInterval(timerRef.current);
-    wrongCountRef.current=0;
-    setDailyMode(false);
-    dailyModeRef.current = false;
-    dailyResultsRef.current = [];
-    setDailyRank(null);
-    setScreen("play");
-    setRoundIdx(0);
-    setSel(null);
-    currentSelRef.current=null;
-    setRevealed(false);
-    setScore(0);
-    setTotal(0);
-    setStreak(0);
-    setConfetti(false);
-    setShareImg(null);
-    fetchRound(0);
-    axiomSpeak("intro","idle");
-  },[fetchRound,axiomSpeak]);
-
-  // ── RESULT ───────────────────────────────────────────────────
-  const showResultScreen = useCallback(()=>{
-    clearInterval(timerRef.current);
-    setScreen("result");
-
-    // Submit daily result before any state mutation
-    if (dailyModeRef.current) {
-      setScore(sc => {
-        setTotal(tt => {
-          submitDailyResult(sc, tt);
-          return tt;
-        });
-        return sc;
-      });
-    }
-
-    setScore(sc=>{
-      setTotal(tt=>{
-        const won = sc>=Math.ceil(tt*.67);
-        axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
-        if(won){ setConfetti(true); haptic.victory(); }
-        return tt;
-      });
-      return sc;
-    });
-    setTimeout(()=>{
-      setAxiomSpeech(speech=>{
-        setScore(sc=>{
-          setTotal(tt=>{
-            setBest(b=>{
-              const won=sc>=Math.ceil(tt*.67);
-              const img=generateShareCard(sc,tt,b,speech,won);
-              setShareImg(img);
-              return b;
-            });
-            return tt;
-          });
-          return sc;
-        });
-        return speech;
-      });
-    },1000);
-
-    // Build Stories card and challenge URL
-    setTimeout(() => {
-      setScore(sc => {
-        setTotal(tt => {
-          setBest(b => {
-            setAxiomSpeech(speech => {
-              const won = sc >= Math.ceil(tt * .67);
-              const lieStmt = currentStmtsRef.current.find(s => !s.real);
-              const lieText = lieStmt?.text || "";
-              const img = generateStoriesCard(sc, tt, b, speech, won, lieText, lastAxiomLine);
-              setStoriesImg(img);
-              setChallengeURL(buildChallengeURL(sc, tt));
-              return speech;
-            });
-            return b;
-          });
-          return tt;
-        });
-        return sc;
-      });
-    }, 1200);
-  },[axiomSpeak, submitDailyResult]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(() => {

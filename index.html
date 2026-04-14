@@ -17,6 +17,18 @@
     body { background: #08080f; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
     #root { min-height: 100vh; min-height: 100dvh; }
   </style>
+  <style>
+    /* Shop buy button glow */
+    button[style*="linear-gradient(135deg,#e8c547"] {
+      box-shadow: 0 0 20px rgba(232,197,71,0.45),
+                  0 4px 12px rgba(232,197,71,0.25) !important;
+      transition: box-shadow 0.3s ease !important;
+    }
+    button[style*="linear-gradient(135deg,#e8c547"]:hover {
+      box-shadow: 0 0 32px rgba(232,197,71,0.65),
+                  0 6px 20px rgba(232,197,71,0.35) !important;
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>
