@@ -247,7 +247,7 @@ function CinematicIntro({ onComplete }) {
               letterSpacing={Math.round(ss*.032)}
               fontFamily="Georgia,serif">
               <textPath href="#seal-ring">
-                · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · SIAL DIGITAL FACTORY · MADE IN SLOVENIA ·
+                · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 ·
               </textPath>
             </text>
           </svg>
