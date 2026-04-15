@@ -60,7 +60,7 @@ const CATEGORY_EMOJIS = {
 };
 // Round 1 = difficulty 0 (baby mode), gradual ramp
 const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
-const TIMER_PER_DIFF = { 0:50, 1:50, 2:55, 3:65, 4:80, 5:95 };
+const TIMER_PER_DIFF = { 0:22, 1:26, 2:32, 3:40, 4:52, 5:65 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
 
