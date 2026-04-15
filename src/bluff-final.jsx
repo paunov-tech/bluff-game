@@ -609,6 +609,18 @@ export default function BluffGame() {
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   // Bonus: reveal dramatika
   const [revealPending, setRevealPending] = useState(false);
+  // AXIOS Presence tension system
+  const [isVoid, setIsVoid] = useState(false);
+  const [breathPhase, setBreathPhase] = useState(0);
+  const isVoidRef = useRef(false);
+  const revealedRef = useRef(false);
+  // Tension thresholds — one-shot flags, reset each round
+  const threshold65Ref = useRef(false);
+  const threshold40Ref = useRef(false);
+  const threshold20Ref = useRef(false);
+  const threshold8Ref  = useRef(false);
+  // Micro-expressions scheduler
+  const microExprRef = useRef(null);
   const ladderPosRef = useRef(1);
   const confirmRef = useRef(null);
   const autoAdvanceRef = useRef(null);
@@ -909,6 +921,15 @@ export default function BluffGame() {
   }
 
   // ── NEXT ROUND ───────────────────────────────────────────────
+  function _resetTensionRound() {
+    threshold65Ref.current = false;
+    threshold40Ref.current = false;
+    threshold20Ref.current = false;
+    threshold8Ref.current  = false;
+    setIsVoid(false);
+    setBreathPhase(0);
+  }
+
   function nextRound() {
     const next = roundIdx + 1;
     if (next >= ROUND_DIFFICULTY.length) { showResultScreen(); return; }
@@ -920,6 +941,7 @@ export default function BluffGame() {
     setAutoAdvanceCount(null);
     setConfirmCountdown(null);
     setRevealPending(false);
+    _resetTensionRound();
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current = null;
@@ -946,6 +968,7 @@ export default function BluffGame() {
     setConfirmCountdown(null);
     setAutoAdvanceCount(null);
     nextRoundDataRef.current = null;
+    _resetTensionRound();
     setScore(0);
     setTotal(0);
     setStreak(0);
@@ -1018,6 +1041,44 @@ export default function BluffGame() {
   useEffect(()=>{ currentSelRef.current = sel; },[sel]);
   // Fix 7: keep lastThreeCatsRef in sync for prepareNextRound (avoids stale closure)
   useEffect(()=>{ lastThreeCatsRef.current = lastThreeCats; },[lastThreeCats]);
+  useEffect(()=>{ isVoidRef.current = isVoid; },[isVoid]);
+  useEffect(()=>{ revealedRef.current = revealed; },[revealed]);
+
+  // Audio event subscriptions — sync visual layer with audio events
+  useEffect(()=>{
+    const onBreathIn  = ()=>setBreathPhase(1);
+    const onBreathOut = ()=>setBreathPhase(0);
+    const onVoidEnter = ()=>setIsVoid(true);
+    audio.on("breathIn",  onBreathIn);
+    audio.on("breathOut", onBreathOut);
+    audio.on("voidEnter", onVoidEnter);
+    return ()=>{
+      audio.off("breathIn",  onBreathIn);
+      audio.off("breathOut", onBreathOut);
+      audio.off("voidEnter", onVoidEnter);
+    };
+  },[]);
+
+  // Micro-expressions — AXIOS flashes a reaction for 100ms every 15-25s
+  // Active on ladderPos ≥ 4, stops when revealed
+  useEffect(()=>{
+    clearTimeout(microExprRef.current);
+    if (screen !== "play") return;
+    const schedule = () => {
+      const delay = 15000 + Math.random() * 10000;
+      microExprRef.current = setTimeout(()=>{
+        if (!revealedRef.current && ladderPosRef.current >= 4) {
+          const exprs = ["smug","shocked","taunting"];
+          const expr = exprs[Math.floor(Math.random()*exprs.length)];
+          setAxiosEmotion(expr);
+          setTimeout(()=>setAxiosEmotion("idle"), 100);
+        }
+        schedule();
+      }, delay);
+    };
+    microExprRef.current = setTimeout(schedule, 10000);
+    return ()=>clearTimeout(microExprRef.current);
+  },[screen]);
 
   // Re-trigger intro speech if language changes on home screen
   useEffect(()=>{
@@ -1361,6 +1422,23 @@ export default function BluffGame() {
           animation: "ax-flash 0.08s ease-out forwards",
         }} />
       )}
+      {/* Background breathing — synced to AXIOS breath audio cycle */}
+      <div style={{
+        position:"fixed",inset:0,
+        background:`radial-gradient(ellipse at 50% 30%, rgba(232,197,71,${0.025 + breathPhase * 0.025}) 0%, transparent 65%)`,
+        transition:"background 0.8s ease-in-out",
+        pointerEvents:"none",zIndex:0,
+      }}/>
+      {/* The Void overlay — absolute silence + freeze frame */}
+      {isVoid && (
+        <div style={{
+          position:"fixed",inset:0,
+          background:"rgba(0,0,0,0.52)",
+          backdropFilter:"blur(1.5px)",
+          zIndex:60,pointerEvents:"none",
+          animation:"d-voidIn .35s ease both",
+        }}/>
+      )}
       {/* Vignette */}
       {ladderPos >= 6 && (
         <div style={{
@@ -1408,12 +1486,37 @@ export default function BluffGame() {
                   initialTime={TIMER_BY_LADDER[roundIdx+1] ?? 45}
                   paused={loadingRound || revealed || revealPending}
                   onTick={(t, maxT) => {
-                    audio.tick(t<=5?3:t<=10?2:1);
-                    if(t<=10) audio.heartbeat();
-                    if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting");
-                    if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); showAxios("smug","timer_10"); }
-                    if(t===5){ haptic.timerWarning(); showAxios("taunting","timer_5"); }
-                    if(t===3) haptic.timerWarning();
+                    const frac = t / maxT;
+                    if (!isVoidRef.current) audio.tick(frac<0.15?3:frac<0.35?2:1);
+                    // One-time tension phase thresholds
+                    if (frac < 0.65 && !threshold65Ref.current) {
+                      threshold65Ref.current = true;
+                      audio.tensionShift(0.65);
+                    }
+                    if (frac < 0.40 && !threshold40Ref.current) {
+                      threshold40Ref.current = true;
+                      audio.tensionShift(0.40);
+                      audio.startHeartbeatLoop();
+                    }
+                    if (frac < 0.20 && !threshold20Ref.current) {
+                      threshold20Ref.current = true;
+                      audio.tensionShift(0.20);
+                      audio.intensifyHeartbeat();
+                    }
+                    // The Void — absolute silence at 8s remaining
+                    if (t <= 8 && !threshold8Ref.current) {
+                      threshold8Ref.current = true;
+                      audio.enterTheVoid();
+                      // setIsVoid(true) is handled via audio.on("voidEnter") listener
+                      setAxiosEmotion("smug");
+                    }
+                    // AXIOM taunts (skip during void)
+                    if (!isVoidRef.current) {
+                      if (t === Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting");
+                      if (t === 10) { axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); showAxios("smug","timer_10"); }
+                      if (t === 5) { haptic.timerWarning(); showAxios("taunting","timer_5"); }
+                    }
+                    if (t === 3) haptic.timerWarning();
                   }}
                   onExpire={() => {
                     if(!revealed&&!revealPending&&screen==="play"&&currentStmtsRef.current.length>0) triggerReveal();
@@ -1431,6 +1534,31 @@ export default function BluffGame() {
             AXIOM is preparing your deception...
           </div>
         ):(<>
+          {/* Hover tremor on L4+, glitch on L5 */}
+          {ladderPos >= 6 && !revealed && (
+            <style>{`
+              .bluff-card { transition: background-color .18s ease,border-color .18s ease,transform .15s ease !important; }
+              .bluff-card:hover { animation: d-hover-tremor 0.18s ease-in-out infinite !important; transform: none !important; }
+              @keyframes d-hover-tremor {
+                0%   { transform: perspective(500px) rotateX(-1deg) rotateY(0.5deg); }
+                33%  { transform: perspective(500px) rotateX(0.5deg) rotateY(-1deg); }
+                66%  { transform: perspective(500px) rotateX(1deg) rotateY(0.8deg); }
+                100% { transform: perspective(500px) rotateX(-1deg) rotateY(0.5deg); }
+              }
+            `}</style>
+          )}
+          {diff >= 5 && !revealed && (
+            <style>{`
+              @keyframes d-glitch {
+                0%,94%,100% { clip-path:none;transform:none;filter:none }
+                95% { clip-path:polygon(0 28%,100% 28%,100% 43%,0 43%);transform:translateX(3px);filter:hue-rotate(90deg) }
+                97% { clip-path:polygon(0 58%,100% 58%,100% 73%,0 73%);transform:translateX(-2px);filter:hue-rotate(180deg) }
+                98% { clip-path:none;transform:none;filter:none }
+              }
+              .bluff-card:nth-child(3) { animation: g-cardSnap .20s ease-out 0.036s both, d-glitch 9s ease-in-out 2.5s infinite !important; }
+            `}</style>
+          )}
+
           {/* AXIOS section */}
           <div style={{
             display: "flex", alignItems: "center", gap: 12,
@@ -1441,6 +1569,7 @@ export default function BluffGame() {
               emotion={axiosEmotion}
               speaking={axiosSpeaking}
               ladderPosition={ladderPos}
+              eyeTrack={ladderPos >= 8}
             />
             <AxiosBubble
               text={axiosBubbleText}
@@ -1467,7 +1596,7 @@ export default function BluffGame() {
               // Bonus: selected card scales up during revealPending
               const pendingScale = revealPending && isS ? "scale(1.025)" : "scale(1)";
               return (
-                <button key={i} onClick={()=>handleCardTap(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||revealPending?"default":"pointer",transition:"background-color .18s ease,border-color .18s ease,transform .15s ease",transform:pendingScale,textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardSnap .20s ease-out ${i*0.018}s both, ${anim}`}}>
+                <button key={i} className="bluff-card" onClick={()=>handleCardTap(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||revealPending?"default":"pointer",transition:"background-color .18s ease,border-color .18s ease,transform .15s ease",transform:pendingScale,textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardSnap .20s ease-out ${i*0.018}s both, ${anim}`}}>
                   <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
                     {revealed&&isB?"!":String.fromCharCode(65+i)}
                   </div>
@@ -1692,6 +1821,7 @@ function GameStyles(){
     @keyframes d-lockProgress{from{width:0}to{width:100%}}
     @keyframes d-autoProgress{from{width:0}to{width:100%}}
     @keyframes d-timerRipple{0%{transform:scale(1);opacity:0.6}100%{transform:scale(1.6);opacity:0}}
+    @keyframes d-voidIn{from{opacity:0}to{opacity:1}}
     @keyframes g-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes g-confetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0}}
     @keyframes g-btnShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}

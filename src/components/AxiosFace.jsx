@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const MOUTH_SHAPES = {
   closed:  "M 35,65 Q 50,65 65,65",
@@ -19,9 +19,37 @@ const EYE_SHAPES = {
   nervous: { ry: 7, opacity: 1, animation: "ax-nervousBlink 0.3s infinite" },
 };
 
-export function AxiosFace({ emotion = "idle", speaking = false, ladderPosition = 1 }) {
+export function AxiosFace({ emotion = "idle", speaking = false, ladderPosition = 1, eyeTrack = false }) {
   const [mouthIdx, setMouthIdx] = useState(0);
   const [blinkState, setBlinkState] = useState(false);
+  const [gazeOffset, setGazeOffset] = useState({ x: 0, y: 0 });
+  const rawGaze = useRef({ x: 0, y: 0 });
+  const smoothGaze = useRef({ x: 0, y: 0 });
+
+  // Eye tracking with creepy lag (lerp factor 0.04 = delayed follow)
+  useEffect(() => {
+    if (!eyeTrack) { setGazeOffset({ x: 0, y: 0 }); return; }
+    const track = (e) => {
+      const x = (e.touches?.[0]?.clientX ?? e.clientX) / window.innerWidth;
+      const y = (e.touches?.[0]?.clientY ?? e.clientY) / window.innerHeight;
+      rawGaze.current = { x: x * 2 - 1, y: y * 2 - 1 };
+    };
+    window.addEventListener("mousemove", track);
+    window.addEventListener("touchmove", track, { passive: true });
+    const lag = setInterval(() => {
+      const lf = 0.04;
+      smoothGaze.current = {
+        x: smoothGaze.current.x + (rawGaze.current.x - smoothGaze.current.x) * lf,
+        y: smoothGaze.current.y + (rawGaze.current.y - smoothGaze.current.y) * lf,
+      };
+      setGazeOffset({ ...smoothGaze.current });
+    }, 16);
+    return () => {
+      window.removeEventListener("mousemove", track);
+      window.removeEventListener("touchmove", track);
+      clearInterval(lag);
+    };
+  }, [eyeTrack]);
 
   // Lip sync
   useEffect(() => {
@@ -120,7 +148,9 @@ export function AxiosFace({ emotion = "idle", speaking = false, ladderPosition =
             opacity="0.6"
             style={{ filter: `drop-shadow(0 0 4px ${axColor})` }}
           />
-          <circle cx="33" cy="42" r={3 * Math.min(eyeScale, 1)}
+          <circle
+            cx={33 + gazeOffset.x * 3} cy={42 + gazeOffset.y * 2}
+            r={3 * Math.min(eyeScale, 1)}
             fill="#000" opacity={eyeScale > 0.2 ? 1 : 0}
           />
         </g>
@@ -135,7 +165,9 @@ export function AxiosFace({ emotion = "idle", speaking = false, ladderPosition =
             fill="none" stroke={axColor} strokeWidth="1" opacity="0.6"
             style={{ filter: `drop-shadow(0 0 4px ${axColor})` }}
           />
-          <circle cx="67" cy="42" r={3 * Math.min(eyeScale, 1)}
+          <circle
+            cx={67 + gazeOffset.x * 3} cy={42 + gazeOffset.y * 2}
+            r={3 * Math.min(eyeScale, 1)}
             fill="#000" opacity={eyeScale > 0.2 ? 1 : 0}
           />
         </g>
