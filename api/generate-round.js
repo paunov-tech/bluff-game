@@ -305,18 +305,42 @@ const SUBTOPICS = {
   ],
 
   sports: [
-    "NBA basketball — championship records, iconic players (Jordan, LeBron, Kobe, Shaq, Magic, Bird), draft history, franchise stats, all-time records, surprising Finals facts",
-    "English Premier League — club records, legendary managers (Ferguson, Wenger, Klopp, Guardiola), top scorers, title races, transfer records, surprising historical stats",
-    "La Liga (Spain) — Real Madrid, Barcelona, Atletico Madrid; records, El Clásico history, Ballon d'Or winners, legendary players (Messi, Ronaldo, Zidane, Raul, Xavi, Iniesta)",
-    "Serie A (Italy) — Juventus, AC Milan, Inter Milan, Roma, Napoli; Scudetto records, iconic players (Del Piero, Totti, Maldini, Baggio, Ronaldo), historical facts",
-    "Bundesliga (Germany) — Bayern Munich dominance, Borussia Dortmund, records, top scorers, famous players (Müller, Lewandowski, Neuer, Kahn), surprising stats",
-    "UEFA Champions League — final records, top scorers all-time, clubs with most titles, iconic comebacks and matches (Istanbul 2005, Barcelona 1999), surprising facts",
-    "FIFA World Cup — tournament records, top scorers, memorable upsets, most appearances, surprising facts about host countries, iconic moments and players",
-    "Formula 1 — world champions, constructor records, fastest laps, iconic races, surprising driver career facts (Schumacher, Hamilton, Senna, Verstappen, Prost)",
-    "Grand Slam tennis — Wimbledon, US Open, Roland Garros, Australian Open; records for titles, sets, matches, iconic players (Federer, Nadal, Djokovic, Serena, Steffi Graf)",
-    "NFL American Football — Super Bowl records, all-time passing/rushing leaders, franchise history, surprising player stats, iconic moments",
-    "Summer Olympics — world record progressions, medal table surprises, iconic athletes, facts about host cities, surprising records across track, swimming, gymnastics",
-    "Football (soccer) transfer market — world record fees, most expensive signings, surprising valuations, club spending records, shock moves",
+    "NBA ALL STARS & LEGENDS — Michael Jordan's 6 Finals MVPs, LeBron James all-time scoring record, Wilt Chamberlain's 100-point game, Kobe Bryant's 81-point night, Magic vs Bird rivalry, Shaq's dominance, Stephen Curry's 3-point revolution, shocking draft facts, surprising salary and contract records",
+    "NBA DYNASTIES & DRAMA — Chicago Bulls 72-win season, Golden State Warriors 73 wins, LeBron's Cleveland comeback from 3-1, Russell Westbrook triple-double record, Kevin Durant controversies, trade deadline shocks, franchise relocations, surprising ownership facts",
+    "PREMIER LEAGUE LEGENDS — Thierry Henry's Invincibles season, Wayne Rooney goal records, Alan Shearer's 260 goals, Eric Cantona's genius and controversies, Peter Schmeichel's saves, surprising transfer fees that shocked the world, manager sackings and records",
+    "PREMIER LEAGUE DRAMA & RECORDS — Sergio Aguero's 93:20 moment, Leicester City 5000-1 title, Erling Haaland's debut season record, Manchester City 100 points, Liverpool Istanbul comeback, Arsenal going unbeaten, surprising ownership and financial facts",
+    "LA LIGA ALL STARS — Messi's 91 goals in a calendar year, Ronaldo's Real Madrid records, Zidane's Champions League treble as manager, Xavi and Iniesta's tiki-taka dominance, Raul's legend status, surprising El Clásico facts and records",
+    "LA LIGA DRAMA — Real Madrid's 14 Champions League titles, Barcelona's financial collapse, Atletico Madrid's surprising title wins, Galactico era spending records, shocking player departures (Messi, Ronaldo, Neymar), surprising stadium facts",
+    "BUNDESLIGA MASTERS — Bayern Munich's 11 consecutive titles, Robert Lewandowski's 41-goal season breaking Gerd Müller's record, Borussia Dortmund's yellow wall with 81,365 fans, Thomas Müller's 'Raumdeuter' concept, shocking transfer departures",
+    "CHAMPIONS LEAGUE GREATEST MOMENTS — Istanbul 2005 Liverpool comeback, Manchester United 1999 Treble, Barcelona 6-1 vs PSG, Real Madrid's 4 titles in 5 years, Zidane's Hampden volley, Ronaldo vs Messi Champions League stats, surprising final host city facts",
+    "FIFA WORLD CUP SHOCKS & RECORDS — Germany 7-1 Brazil 2014, Cameroon 1990 surprise, Maradona's Hand of God and Goal of the Century, Ronaldo's hat-trick at 33, surprising host country bidding facts, most goals in a single tournament, shocking early exits",
+    "FORMULA 1 LEGENDS — Michael Schumacher's 7 titles, Ayrton Senna's genius and Monaco records, Lewis Hamilton breaking every record, Max Verstappen youngest champion, surprising engine failure moments, constructor championship facts, fastest pit stop records",
+    "TENNIS GRAND SLAM WARS — Federer vs Nadal vs Djokovic Grand Slam count race, Serena Williams' 23 Slams, Wimbledon's longest match (11 hours), surprising prize money history, Rafael Nadal's 14 French Open titles, shocking upsets and retirements",
+    "SPORTS MONEY & TRANSFERS — Neymar's world record €222M PSG move, Kylian Mbappe's contract drama, Cristiano Ronaldo's total career earnings, LeBron James becoming first active billionaire athlete, most expensive football club purchases, shocking agent fees",
+  ],
+
+  nba: [
+    "NBA scoring legends — Wilt Chamberlain's 100 points, LeBron's all-time record, Kobe's 81, Jordan's 63 playoff points, surprising career totals",
+    "NBA draft shocks — Michael Jordan picked 3rd, Kobe traded on draft night, Sam Bowie over Jordan, Nikola Jokic picked 41st, surprising late picks who became legends",
+    "NBA Finals drama — LeBron's 3-1 comeback with Cleveland, Warriors dynasty, Dirk Nowitzki's 2011 Finals, surprising MVP choices and sweep records",
+    "NBA contract and salary records — first billion-dollar active athlete (LeBron), max contract history, surprising team payroll facts",
+    "NBA records that may never be broken — Wilt's 50.4 PPG season, Oscar Robertson's triple-double season, surprising durability and streak records",
+  ],
+
+  premier_league: [
+    "Premier League title races — Manchester City's Aguero moment, Leicester 5000-1, Arsenal Invincibles, Liverpool's 30-year wait ended, surprising final-day drama",
+    "Premier League transfers and fees — record signings, surprising bargain buys who became legends, most expensive flops, surprising free transfer masterstrokes",
+    "Premier League managers — Sir Alex Ferguson's 26 years, Arsene Wenger's revolution, Klopp vs Guardiola rivalry, surprising sacking timing records",
+    "Premier League goal records — Alan Shearer 260, Thierry Henry's season record broken by Haaland, surprising own goal and hat-trick facts",
+    "Premier League clubs history — founding dates, name changes, ground moves, surprising ownership takeover facts",
+  ],
+
+  bundesliga: [
+    "Bayern Munich dominance records — 11 consecutive titles, surprising seasons they DIDN'T win, Champions League trebles, transfer records",
+    "Borussia Dortmund — Yellow Wall record crowds, Robert Lewandowski's departure to rivals, surprising young talents developed",
+    "Bundesliga goal records — Gerd Müller's record stood 49 years until Lewandowski, surprising top scorer history",
+    "Bundesliga financial model — 50+1 ownership rule, surprising wage structure compared to Premier League",
+    "German football national team — World Cup records, 7-1 Brazil humiliation, surprising squad selection controversies",
   ],
 
 };
@@ -397,6 +421,8 @@ STRICT RULES:
 - Randomize the lie position
 - Make truths SURPRISING and interesting — reward curiosity
 - NEVER use profanity, vulgar words, crude language, or explicit content in any statement
+- For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES — make every fact feel like insider knowledge that rewards true fans
+- ALL STARS RULE: At least 2 of the 4 truths must be facts that even hardcore fans would find surprising or didn't know
 
 CRITICAL JSON:
 - "real": true or false (boolean, NOT string)
@@ -416,7 +442,7 @@ Format:
 
   try {
     const msg = await client.messages.create({
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       max_tokens: 1000,
       messages: [{ role: "user", content: prompt }],
     });

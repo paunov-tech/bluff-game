@@ -51,13 +51,24 @@ const LANGUAGES = [
 ];
 
 const CATEGORIES = [
-  "history","internet","animals","science","popculture",
-  "geography","food","culture","sports","history",
+  "premier_league","nba","bundesliga","premier_league","nba",
+  "sports","popculture","science","bundesliga","sports",
 ];
 const CATEGORY_EMOJIS = {
   history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍",
   food:"🍷", culture:"🎭", internet:"💻", popculture:"🎬", sports:"⚽",
+  nba:"🏀", premier_league:"⚽", bundesliga:"⚽",
 };
+function CategoryIcon({ category, size=26 }) {
+  const svgs = {
+    nba: `<svg width="${size}" height="${size}" viewBox="0 0 28 28" fill="none"><circle cx="14" cy="14" r="12" stroke="#e8c547" stroke-width="1.5" fill="none"/><path d="M14 2 C14 2 8 8 8 14 C8 20 14 26 14 26" stroke="#e8c547" stroke-width="1.2" fill="none"/><path d="M14 2 C14 2 20 8 20 14 C20 20 14 26 14 26" stroke="#e8c547" stroke-width="1.2" fill="none"/><line x1="2" y1="14" x2="26" y2="14" stroke="#e8c547" stroke-width="1.2"/></svg>`,
+    premier_league: `<svg width="${size}" height="${size}" viewBox="0 0 28 28" fill="none"><path d="M14 3 L16.5 10 L24 10 L18 15 L20.5 22 L14 18 L7.5 22 L10 15 L4 10 L11.5 10 Z" stroke="#e8c547" stroke-width="1.5" fill="none"/></svg>`,
+    bundesliga: `<svg width="${size}" height="${size}" viewBox="0 0 28 28" fill="none"><path d="M14 4 L24 9 L24 19 L14 24 L4 19 L4 9 Z" stroke="#e8c547" stroke-width="1.5" fill="none"/><circle cx="14" cy="14" r="4" stroke="#e8c547" stroke-width="1.2" fill="none"/></svg>`,
+  };
+  const svg = svgs[category];
+  if (!svg) return <span style={{fontSize:size*0.75}}>{CATEGORY_EMOJIS[category]||"🎯"}</span>;
+  return <span dangerouslySetInnerHTML={{__html:svg.replace(/\${size}/g,size)}} style={{display:"inline-flex",alignItems:"center"}}/>;
+}
 // Round 1 = difficulty 0 (baby mode), gradual ramp
 const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
 const TIMER_PER_DIFF = { 0:22, 1:26, 2:32, 3:40, 4:52, 5:65 };
@@ -617,6 +628,29 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
   }
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// WEB AUDIO TENSION ENGINE
+// ═══════════════════════════════════════════════════════════════
+const AudioTension = (() => {
+  let ctx = null, masterGain = null, droneOsc = null, droneLfo = null, droneGain = null, muted = false;
+  const init = () => {
+    if (ctx) return;
+    try { ctx = new (window.AudioContext||window.webkitAudioContext)(); masterGain = ctx.createGain(); masterGain.gain.value = 0.5; masterGain.connect(ctx.destination); } catch(e) {}
+  };
+  const play = (fn) => { if(muted||!ctx) return; if(ctx.state==="suspended") ctx.resume().catch(()=>{}); try{fn(ctx,masterGain);}catch(e){} };
+  return {
+    init,
+    setMuted:(v)=>{ muted=v; if(masterGain) masterGain.gain.value=v?0:0.5; },
+    tick(u=1){ play((ctx,dst)=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime; o.frequency.value=480+u*160; o.type="sine"; g.gain.setValueAtTime(0.18+u*0.06,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.06); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.07); if(u>=2){const o2=ctx.createOscillator(),g2=ctx.createGain(),t2=t+0.25; o2.frequency.value=320; g2.gain.setValueAtTime(0.1,t2); g2.gain.exponentialRampToValueAtTime(0.001,t2+0.05); o2.connect(g2);g2.connect(dst);o2.start(t2);o2.stop(t2+0.06);} }); },
+    lockIn(){ play((ctx,dst)=>{ const buf=ctx.createBuffer(1,ctx.sampleRate*0.06,ctx.sampleRate),d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2); const src=ctx.createBufferSource(),g=ctx.createGain(); src.buffer=buf;g.gain.setValueAtTime(0.45,ctx.currentTime); src.connect(g);g.connect(dst);src.start(); }); },
+    fanfare(){ play((ctx,dst)=>{ const s=ctx.currentTime+0.38; [523,659,784,1047].forEach((f,i)=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+i*0.1; o.frequency.value=f;o.type="triangle"; g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.28,t+0.02);g.gain.exponentialRampToValueAtTime(0.001,t+0.4); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.45); }); [523,659,784].forEach(f=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+0.45; o.frequency.value=f;o.type="sine"; g.gain.setValueAtTime(0.16,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.9); o.connect(g);g.connect(dst);o.start(t);o.stop(t+1); }); }); },
+    buzzer(){ play((ctx,dst)=>{ const s=ctx.currentTime+0.32; [[466,0],[370,0.04],[311,0.08]].forEach(([f,d])=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+d; o.frequency.value=f;o.type="sawtooth"; g.gain.setValueAtTime(0.26,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.5); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.55); }); }); },
+    startDrone(level=0){ play((ctx,dst)=>{ const dg=ctx.createGain(); dg.gain.value=0; dg.connect(dst); const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=50+level*10; o.connect(dg); o.start(); const lfo=ctx.createOscillator(),lg=ctx.createGain(); lfo.frequency.value=0.8+level*0.3; lg.gain.value=0.025+level*0.015; lfo.connect(lg);lg.connect(dg.gain);lfo.start(); dg.gain.linearRampToValueAtTime(0.05+level*0.03,ctx.currentTime+1.5); droneOsc=o;droneLfo=lfo;droneGain=dg; }); },
+    stopDrone(){ if(!ctx) return; if(droneGain){droneGain.gain.setTargetAtTime(0,ctx.currentTime,0.3); setTimeout(()=>{try{droneOsc?.stop();droneLfo?.stop();}catch(e){}},700);} droneOsc=droneGain=droneLfo=null; },
+  };
+})();
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
@@ -984,6 +1018,8 @@ export default function BluffGame() {
 
     if(isCorrect){
       haptic.correct();
+      AudioTension.stopDrone();
+      AudioTension.fanfare();
       setScore(s=>s+1);
       wrongCountRef.current = 0;
       setStreak(prev=>{
@@ -998,6 +1034,8 @@ export default function BluffGame() {
       });
     } else {
       haptic.wrong();
+      AudioTension.stopDrone();
+      AudioTension.buzzer();
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -1028,6 +1066,7 @@ export default function BluffGame() {
   // ── START ────────────────────────────────────────────────────
   function startGame() {
     userInteractedRef.current = true;
+    AudioTension.init();
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
     setDailyMode(false);
@@ -1334,6 +1373,42 @@ export default function BluffGame() {
   }, [screen]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
+  useEffect(()=>{
+    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
+    let count=3;
+    setAutoAdvanceCount(count);
+    const tick=()=>{
+      count--;
+      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
+      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
+    };
+    autoAdvanceRef.current=setTimeout(tick,800);
+    return ()=>clearTimeout(autoAdvanceRef.current);
+  },[revealed]);
+  useEffect(()=>{
+    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
+    let count=3;
+    setAutoAdvanceCount(count);
+    const tick=()=>{
+      count--;
+      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
+      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
+    };
+    autoAdvanceRef.current=setTimeout(tick,800);
+    return ()=>clearTimeout(autoAdvanceRef.current);
+  },[revealed]);
+  useEffect(()=>{
+    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
+    let count=3;
+    setAutoAdvanceCount(count);
+    const tick=()=>{
+      count--;
+      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
+      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
+    };
+    autoAdvanceRef.current=setTimeout(tick,800);
+    return ()=>clearTimeout(autoAdvanceRef.current);
+  },[revealed]);
   useEffect(()=>{
     if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
     let count=3;
@@ -1750,7 +1825,7 @@ export default function BluffGame() {
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:20}}>{CATEGORY_EMOJIS[category]||"🎯"}</span>
+            <CategoryIcon category={category} size={22}/>
             <div>
               <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
@@ -1809,7 +1884,7 @@ export default function BluffGame() {
           </div>
 
           {!revealed
-            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); AudioTension.lockIn(); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
               {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
               <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
             </button>
