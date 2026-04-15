@@ -1,0 +1,5 @@
+{
+  "name": "bluff-duel",
+  "main": "party/duel.ts",
+  "compatibilityDate": "2023-11-10"
+}

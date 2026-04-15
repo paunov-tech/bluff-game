@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { PartySocket } from "partysocket";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
@@ -71,6 +72,9 @@ function CategoryIcon({ category, size=26 }) {
 }
 // Round 1 = difficulty 0 (baby mode), gradual ramp
 const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
+const BLITZ_DIFFICULTY = [3, 4, 4, 5]; // 4 rounds only, hard
+const BLITZ_TIMER = 12; // 12 seconds per question
+const BLITZ_ROUNDS = 4;
 const TIMER_PER_DIFF = { 0:22, 1:26, 2:32, 3:40, 4:52, 5:65 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
@@ -682,6 +686,25 @@ export default function BluffGame() {
   const [duelId, setDuelId] = useState(null);
   const [duelCreating, setDuelCreating] = useState(false);
   const [duelName, setDuelName] = useState(() => localStorage.getItem("bluff_duel_name") || "");
+
+  // ── Real-time Duel (PartyKit) ────────────────────────────────
+  const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
+  const [duelMode, setDuelMode] = useState("regular"); // "regular" | "blitz"
+  const [duelRoomId, setDuelRoomId] = useState(null);
+  const [duelPlayers, setDuelPlayers] = useState({});
+  const [duelPhase, setDuelPhase] = useState("waiting");
+  const [duelCountdown, setDuelCountdown] = useState(null);
+  const [duelClocks, setDuelClocks] = useState({});
+  const [duelAnswers, setDuelAnswers] = useState({});
+  const [duelScores, setDuelScores] = useState({});
+  const [duelCurrentRound, setDuelCurrentRound] = useState(0);
+  const [duelRoundData, setDuelRoundData] = useState(null);
+  const [duelBluffIdx, setDuelBluffIdx] = useState(-1);
+  const [duelWinner, setDuelWinner] = useState(null);
+  const [duelBonusOpportunity, setDuelBonusOpportunity] = useState(false);
+  const [myDuelId, setMyDuelId] = useState(null);
+  const duelSocketRef = useRef(null);
+  const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.YOUR_USERNAME.partykit.dev";
   const [activeSkin, setActiveSkin] = useState(
     () => localStorage.getItem("bluff_skin") || "default"
   );
@@ -710,6 +733,11 @@ export default function BluffGame() {
   const resultsHistoryRef = useRef([]); // boolean per round — duel results
   const gameStartTimeRef = useRef(null); // ms timestamp — duel total time
 
+  // ── Blitz Mode ───────────────────────────────────────────────
+  const [blitzMode, setBlitzMode] = useState(false);
+  const [blitzScore, setBlitzScore] = useState(0);
+  const [blitzTimeBonus, setBlitzTimeBonus] = useState(0);
+
   // ── Daily Challenge ──────────────────────────────────────────
   const [dailyMode, setDailyMode] = useState(false);
   const [dailyData, setDailyData] = useState(null);
@@ -718,6 +746,7 @@ export default function BluffGame() {
   const [dailyAlreadyPlayed, setDailyAlreadyPlayed] = useState(false);
   const [loadingDaily, setLoadingDaily] = useState(false);
   const dailyModeRef = useRef(false);
+  const blitzModeRef = useRef(false);
   const dailyResultsRef = useRef([]);
   const dailyRoundsRef = useRef(null);
   const dailyStartTimeRef = useRef(null);
@@ -922,7 +951,7 @@ export default function BluffGame() {
       return;
     }
 
-    const diff = ROUND_DIFFICULTY[idx]||3;
+    const diff = blitzModeRef.current ? (BLITZ_DIFFICULTY[idx] || 4) : (ROUND_DIFFICULTY[idx]||3);
     const cat = CATEGORIES[idx % CATEGORIES.length];
     setCategory(cat);
     try {
@@ -1051,7 +1080,7 @@ export default function BluffGame() {
   // ── NEXT ROUND ───────────────────────────────────────────────
   function nextRound() {
     const next = roundIdx+1;
-    if(next>=ROUND_DIFFICULTY.length){ showResultScreen(); return; }
+    if(next>=(blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length)){ showResultScreen(); return; }
     clearInterval(timerRef.current);
     setRoundIdx(next);
     setSel(null);
@@ -1062,12 +1091,142 @@ export default function BluffGame() {
     axiomSpeak("intro","idle");
   }
 
+  // ── BLITZ ────────────────────────────────────────────────────
+  function startBlitz() {
+    userInteractedRef.current = true;
+    AudioTension.init();
+    clearInterval(timerRef.current);
+    wrongCountRef.current = 0;
+    blitzModeRef.current = true;
+    setBlitzMode(true);
+    setBlitzScore(0);
+    setBlitzTimeBonus(0);
+    setDailyMode(false);
+    dailyModeRef.current = false;
+    setScreen("play");
+    setRoundIdx(0);
+    setSel(null);
+    currentSelRef.current = null;
+    setRevealed(false);
+    setScore(0);
+    setTotal(0);
+    setStreak(0);
+    setConfetti(false);
+    setShareImg(null);
+    setDuelId(null);
+    setDuelCreating(false);
+    roundsPlayedRef.current = [];
+    resultsHistoryRef.current = [];
+    gameStartTimeRef.current = Date.now();
+    setLoadingRound(true);
+    fetchRound(0);
+    axiomSpeak("intro", "idle");
+  }
+
+  // ── REAL-TIME DUEL ───────────────────────────────────────────
+  function openDuel(mode) {
+    const roomId = Math.random().toString(36).slice(2, 8).toUpperCase();
+    setDuelRoomId(roomId);
+    setDuelMode(mode);
+    setDuelScreen("lobby");
+    connectDuel(roomId, mode);
+  }
+
+  function joinDuel(roomId, mode) {
+    setDuelRoomId(roomId.toUpperCase());
+    setDuelMode(mode);
+    setDuelScreen("lobby");
+    connectDuel(roomId.toUpperCase(), mode);
+  }
+
+  function connectDuel(roomId, mode) {
+    const name = duelName.trim() || "Player";
+    const ws = new PartySocket({
+      host: PARTYKIT_HOST,
+      room: roomId,
+      query: { name, mode },
+    });
+
+    ws.addEventListener("message", (e) => {
+      const msg = JSON.parse(e.data);
+      handleDuelMessage(msg, ws);
+    });
+
+    ws.addEventListener("open", () => {
+      setMyDuelId(ws.id);
+    });
+
+    duelSocketRef.current = ws;
+  }
+
+  function handleDuelMessage(msg, ws) {
+    if (msg.type === "state") {
+      setDuelPlayers(msg.state.players);
+      setDuelPhase(msg.state.phase);
+    }
+    if (msg.type === "countdown") {
+      setDuelCountdown(msg.seconds);
+      let c = msg.seconds;
+      const t = setInterval(() => {
+        c--;
+        setDuelCountdown(c);
+        if (c <= 0) { clearInterval(t); setDuelCountdown(null); }
+      }, 1000);
+    }
+    if (msg.type === "round_start") {
+      setDuelCurrentRound(msg.round);
+      setDuelRoundData(msg.data);
+      setDuelPhase("playing");
+      setDuelAnswers({});
+      setDuelBluffIdx(-1);
+      setDuelBonusOpportunity(false);
+      setDuelScreen("playing");
+    }
+    if (msg.type === "clock_update") {
+      setDuelClocks(msg.clocks);
+    }
+    if (msg.type === "bonus_opportunity") {
+      if (msg.forPlayerId === ws.id) {
+        setDuelBonusOpportunity(true);
+      }
+    }
+    if (msg.type === "player_answered") {
+      setDuelAnswers(prev => ({ ...prev, [msg.playerId]: msg }));
+      setDuelScores(prev => ({ ...prev, [msg.playerId]: msg.score }));
+    }
+    if (msg.type === "round_result") {
+      setDuelBluffIdx(msg.bluffIdx);
+      setDuelScores(msg.scores);
+      setDuelPhase("round_result");
+    }
+    if (msg.type === "game_over") {
+      setDuelWinner(msg.winner);
+      setDuelScores(msg.scores);
+      setDuelPhase("finished");
+      setDuelScreen("result");
+    }
+    if (msg.type === "player_left") {
+      setDuelPhase("abandoned");
+    }
+  }
+
+  function sendDuelAnswer(sel) {
+    if (!duelSocketRef.current) return;
+    duelSocketRef.current.send(JSON.stringify({
+      type: "answer",
+      sel,
+      doublePoints: duelBonusOpportunity,
+    }));
+  }
+
   // ── START ────────────────────────────────────────────────────
   function startGame() {
     userInteractedRef.current = true;
     AudioTension.init();
     clearInterval(timerRef.current);
     wrongCountRef.current=0;
+    setBlitzMode(false);
+    blitzModeRef.current = false;
     setDailyMode(false);
     dailyModeRef.current = false;
     dailyResultsRef.current = [];
@@ -1311,8 +1470,8 @@ export default function BluffGame() {
   useEffect(() => {
     if (!loadingRound && screen === "play" && stmts.length > 0) {
       clearInterval(timerRef.current);
-      const diff = ROUND_DIFFICULTY[roundIdx] || 3;
-      const maxT = TIMER_PER_DIFF[diff] || 60;
+      const diff = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
+      const maxT = blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[diff] || 60);
       setTime(maxT);
       timerRef.current = setInterval(() => {
         setTime(t => {
@@ -1345,7 +1504,7 @@ export default function BluffGame() {
       }
       webApp.MainButton.show();
     } else {
-      const isLast = roundIdx + 1 >= ROUND_DIFFICULTY.length;
+      const isLast = roundIdx + 1 >= (blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length);
       webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
       webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
       webApp.MainButton.onClick(isLast ? showResultScreen : nextRound);
@@ -1378,46 +1537,10 @@ export default function BluffGame() {
     setAutoAdvanceCount(count);
     const tick=()=>{
       count--;
-      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
+      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<(blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length)) nextRound(); else showResultScreen(); }
       else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
     };
-    autoAdvanceRef.current=setTimeout(tick,800);
-    return ()=>clearTimeout(autoAdvanceRef.current);
-  },[revealed]);
-  useEffect(()=>{
-    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
-    let count=3;
-    setAutoAdvanceCount(count);
-    const tick=()=>{
-      count--;
-      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
-      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
-    };
-    autoAdvanceRef.current=setTimeout(tick,800);
-    return ()=>clearTimeout(autoAdvanceRef.current);
-  },[revealed]);
-  useEffect(()=>{
-    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
-    let count=3;
-    setAutoAdvanceCount(count);
-    const tick=()=>{
-      count--;
-      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
-      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
-    };
-    autoAdvanceRef.current=setTimeout(tick,800);
-    return ()=>clearTimeout(autoAdvanceRef.current);
-  },[revealed]);
-  useEffect(()=>{
-    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
-    let count=3;
-    setAutoAdvanceCount(count);
-    const tick=()=>{
-      count--;
-      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
-      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
-    };
-    autoAdvanceRef.current=setTimeout(tick,800);
+    autoAdvanceRef.current=setTimeout(tick, blitzMode ? 100 : 800);
     return ()=>clearTimeout(autoAdvanceRef.current);
   },[revealed]);
   useEffect(() => {
@@ -1469,6 +1592,271 @@ export default function BluffGame() {
     localStorage.setItem("bluff_played","1");
     axiomSpeak("intro","idle");
   }}/><GameStyles/></>;
+
+  // ─── DUEL LOBBY ────────────────────────────────────────────
+  if (duelScreen === "lobby") return (
+    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
+      fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        <div style={{textAlign:"center",marginBottom:32}}>
+          <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
+            {duelMode==="blitz"?"⚡ DUEL BLITZ":"⚔️ DUEL REGULAR"}
+          </div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:36,fontWeight:900,color:"#e8c547"}}>
+            {duelRoomId}
+          </div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.3)",marginTop:6,letterSpacing:"2px"}}>
+            ROOM CODE — SHARE WITH OPPONENT
+          </div>
+        </div>
+
+        {Object.values(duelPlayers).map((p,i) => (
+          <div key={p.id} style={{
+            display:"flex",alignItems:"center",gap:12,padding:"14px 16px",marginBottom:8,
+            background:"rgba(232,197,71,.06)",border:"1px solid rgba(232,197,71,.15)",
+            borderRadius:12,
+          }}>
+            <div style={{width:36,height:36,borderRadius:"50%",
+              background:i===0?"rgba(232,197,71,.2)":"rgba(45,212,160,.2)",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:14,fontWeight:700,color:i===0?"#e8c547":"#2dd4a0",
+            }}>
+              {p.name[0].toUpperCase()}
+            </div>
+            <div>
+              <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,.3)"}}>
+                {p.id === myDuelId ? "YOU" : "OPPONENT"}
+              </div>
+            </div>
+            <div style={{marginLeft:"auto",fontSize:11,color:"#2dd4a0"}}>✓ READY</div>
+          </div>
+        ))}
+
+        {Object.keys(duelPlayers).length < 2 && (
+          <div style={{textAlign:"center",padding:"24px",animation:"g-pulse 1s infinite",
+            color:"rgba(255,255,255,.3)",fontSize:13}}>
+            Waiting for opponent...
+          </div>
+        )}
+
+        {duelCountdown !== null && (
+          <div style={{textAlign:"center",fontSize:72,fontWeight:900,fontFamily:"Georgia,serif",
+            color:"#e8c547",animation:"g-pulse .5s infinite"}}>
+            {duelCountdown}
+          </div>
+        )}
+
+        {Object.keys(duelPlayers).length < 2 && (
+          <div style={{marginTop:24}}>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.2)",letterSpacing:"2px",
+              textAlign:"center",marginBottom:12}}>OR JOIN EXISTING ROOM</div>
+            <div style={{display:"flex",gap:8}}>
+              <input
+                placeholder="Room code..."
+                style={{flex:1,padding:"12px 14px",fontSize:14,background:"rgba(255,255,255,.04)",
+                  border:"1px solid rgba(255,255,255,.1)",borderRadius:10,color:"#e8e6e1",
+                  fontFamily:"inherit",outline:"none"}}
+                id="join-room-input"
+              />
+              <button
+                onClick={()=>{
+                  const code = document.getElementById("join-room-input").value;
+                  if(code) joinDuel(code, duelMode);
+                }}
+                style={{padding:"12px 18px",fontSize:13,fontWeight:700,
+                  background:"rgba(232,197,71,.12)",color:"#e8c547",
+                  border:"1px solid rgba(232,197,71,.25)",borderRadius:10,
+                  cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                Join
+              </button>
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={()=>{
+            duelSocketRef.current?.close();
+            setDuelScreen(null);
+          }}
+          style={{width:"100%",marginTop:20,padding:"12px",fontSize:13,
+            background:"transparent",color:"rgba(255,255,255,.2)",
+            border:"1px solid rgba(255,255,255,.07)",borderRadius:10,
+            cursor:"pointer",fontFamily:"inherit"}}>
+          Cancel
+        </button>
+      </div>
+      <GameStyles/>
+    </div>
+  );
+
+  // ─── DUEL PLAYING ──────────────────────────────────────────
+  if (duelScreen === "playing" && duelRoundData) return (
+    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+      alignItems:"center",padding:"20px 16px",color:"#e8e6e1",
+      fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{width:"100%",maxWidth:460}}>
+        {/* Header: scores + clocks */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,
+          paddingTop:"max(12px,env(safe-area-inset-top))"}}>
+          {Object.values(duelPlayers).map((p,i) => (
+            <div key={p.id} style={{textAlign:i===0?"left":"right",flex:1}}>
+              <div style={{fontSize:10,color:i===0?"#e8c547":"#2dd4a0",letterSpacing:"2px"}}>
+                {p.id===myDuelId?"YOU":p.name.toUpperCase()}
+              </div>
+              <div style={{fontSize:24,fontWeight:900,fontFamily:"Georgia,serif",
+                color:i===0?"#e8c547":"#2dd4a0"}}>
+                {duelScores[p.id]||0}
+              </div>
+              {duelMode==="blitz" && duelClocks[p.id] !== undefined && (
+                <div style={{fontSize:11,color:duelClocks[p.id]<10000?"#f43f5e":"rgba(255,255,255,.3)"}}>
+                  ⏱ {(duelClocks[p.id]/1000).toFixed(1)}s
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{fontSize:12,color:"rgba(255,255,255,.3)",padding:"0 12px"}}>
+            {duelCurrentRound+1}/{duelMode==="blitz"?4:6}
+          </div>
+        </div>
+
+        {duelBonusOpportunity && (
+          <div style={{textAlign:"center",padding:"10px",marginBottom:12,
+            background:"rgba(232,197,71,.15)",border:"1px solid rgba(232,197,71,.4)",
+            borderRadius:10,fontSize:13,color:"#e8c547",fontWeight:700}}>
+            ⚡ OPPONENT'S FLAG FELL — Answer for 2× points!
+          </div>
+        )}
+
+        <div style={{textAlign:"center",marginBottom:16}}>
+          <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(17px,4.5vw,22px)",fontWeight:800,
+            margin:"0 0 4px",color:duelPhase==="round_result"?"rgba(255,255,255,.4)":"#fff"}}>
+            {duelPhase==="round_result"?"Round over":"Which one is the BLUFF?"}
+          </h2>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+          {(duelRoundData.statements||[]).map((s,i) => {
+            const isBluff = !s.real;
+            const myAnswer = duelAnswers[myDuelId];
+            const revealed = duelPhase==="round_result";
+            let bg="rgba(15,15,26,.9)",border="rgba(255,255,255,.07)";
+            if(revealed && i===duelBluffIdx){bg="rgba(244,63,94,.08)";border="rgba(244,63,94,.4)";}
+            if(revealed && myAnswer?.sel===i && i!==duelBluffIdx){border="rgba(244,63,94,.3)";}
+            if(revealed && myAnswer?.sel===i && myAnswer?.correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";}
+
+            return (
+              <button key={i}
+                onClick={()=>duelPhase==="playing"&&!duelAnswers[myDuelId]&&sendDuelAnswer(i)}
+                style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,
+                  background:bg,border:`1.5px solid ${border}`,borderRadius:14,
+                  padding:"clamp(11px,3vw,14px)",cursor:duelPhase==="playing"&&!duelAnswers[myDuelId]?"pointer":"default",
+                  textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",
+                  lineHeight:1.55,fontFamily:"inherit",minHeight:52,transition:"all .2s"}}>
+                <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,
+                  border:`2px solid ${revealed&&isBluff?"rgba(244,63,94,.5)":"rgba(255,255,255,.1)"}`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:12,fontWeight:700,marginTop:2,
+                  background:revealed&&isBluff?"rgba(244,63,94,.18)":"transparent",
+                  color:revealed&&isBluff?"#f43f5e":"rgba(90,90,104,1)"}}>
+                  {revealed&&isBluff?"!":String.fromCharCode(65+i)}
+                </div>
+                <div style={{flex:1}}>
+                  {s.text}
+                  {revealed && (
+                    <div style={{marginTop:5,fontSize:10,fontWeight:700,letterSpacing:"1px",
+                      color:isBluff?"#f43f5e":i===myAnswer?.sel?"rgba(244,63,94,.6)":"rgba(45,212,160,.5)"}}>
+                      {isBluff?"🎭 BLUFF":i===myAnswer?.sel?"✗ Real":"✓ Real"}
+                    </div>
+                  )}
+                </div>
+                {revealed && Object.entries(duelAnswers).filter(([_,a])=>a.sel===i).map(([pid])=>(
+                  <div key={pid} style={{fontSize:10,color:"rgba(255,255,255,.3)",flexShrink:0}}>
+                    {duelPlayers[pid]?.name?.[0]}
+                  </div>
+                ))}
+              </button>
+            );
+          })}
+        </div>
+
+        {duelAnswers[myDuelId] && duelPhase==="playing" && (
+          <div style={{textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:13}}>
+            Waiting for opponent...
+          </div>
+        )}
+
+        {duelPhase==="abandoned" && (
+          <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.4)",fontSize:14}}>
+            Opponent disconnected.
+            <button onClick={()=>{duelSocketRef.current?.close();setDuelScreen(null);}}
+              style={{display:"block",margin:"12px auto 0",padding:"10px 20px",fontSize:13,
+                background:"rgba(255,255,255,.06)",color:"#e8e6e1",border:"1px solid rgba(255,255,255,.1)",
+                borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
+              Back to home
+            </button>
+          </div>
+        )}
+      </div>
+      <GameStyles/>
+    </div>
+  );
+
+  // ─── DUEL RESULT ───────────────────────────────────────────
+  if (duelScreen === "result") return (
+    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
+      fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{width:"100%",maxWidth:420,textAlign:"center"}}>
+        <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(255,255,255,.3)",marginBottom:16}}>
+          DUEL OVER
+        </div>
+
+        {duelWinner && (
+          <div style={{marginBottom:24}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,
+              color: duelWinner===myDuelId?"#e8c547":"#f43f5e",marginBottom:8}}>
+              {duelWinner===myDuelId?"YOU WIN":"YOU LOSE"}
+            </div>
+            <div style={{fontSize:14,color:"rgba(255,255,255,.4)"}}>
+              {duelWinner===myDuelId?"🏆 Opponent humiliated":"💀 AXIOM is disappointed in you"}
+            </div>
+          </div>
+        )}
+
+        {Object.values(duelPlayers).map((p)=>(
+          <div key={p.id} style={{
+            display:"flex",justifyContent:"space-between",alignItems:"center",
+            padding:"14px 18px",marginBottom:8,
+            background: p.id===duelWinner?"rgba(232,197,71,.1)":"rgba(255,255,255,.03)",
+            border: p.id===duelWinner?"1px solid rgba(232,197,71,.3)":"1px solid rgba(255,255,255,.07)",
+            borderRadius:12,
+          }}>
+            <div style={{fontWeight:700,fontSize:15}}>{p.id===myDuelId?"You":p.name}</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,
+              color:p.id===duelWinner?"#e8c547":"rgba(255,255,255,.5)"}}>
+              {duelScores[p.id]||0}
+            </div>
+          </div>
+        ))}
+
+        <button onClick={()=>{
+          duelSocketRef.current?.close();
+          setDuelScreen(null);
+          setDuelPlayers({});
+          setDuelScores({});
+          setDuelWinner(null);
+        }} style={{width:"100%",marginTop:20,padding:"16px",fontSize:14,fontWeight:700,
+          background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+          border:"none",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
+          letterSpacing:"1px",textTransform:"uppercase"}}>
+          Play again
+        </button>
+      </div>
+      <GameStyles/>
+    </div>
+  );
 
   // ─── HOME ──────────────────────────────────────────────────
   if(screen==="home") return (
@@ -1583,62 +1971,44 @@ export default function BluffGame() {
           </div>
         )}
 
-        {/* Daily Challenge block */}
-        {(loadingDaily || dailyData) && (
-          <div style={{marginBottom:14,animation:"g-fadeUp .5s .38s both"}}>
-            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(232,197,71,.5)",fontWeight:700,marginBottom:8,textTransform:"uppercase"}}>
-              📅 Today's Challenge
-            </div>
-            {loadingDaily ? (
-              <div style={{background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.07)",borderRadius:14,padding:14,textAlign:"center",fontSize:13,color:"rgba(255,255,255,.3)"}}>
-                Loading...
-              </div>
-            ) : dailyAlreadyPlayed && dailyData?.myResult ? (
-              <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <div style={{fontSize:13,fontWeight:700,color:"#2dd4a0"}}>✓ Completed today</div>
-                  {dailyRank && <div style={{fontSize:12,color:"rgba(232,197,71,.7)",fontWeight:600}}>#{dailyRank} / {dailyPlayers}</div>}
-                </div>
-                <div style={{fontSize:22,letterSpacing:3,marginBottom:6,textAlign:"center"}}>
-                  {(dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("")}
-                </div>
-                <div style={{fontSize:11,color:"rgba(255,255,255,.35)",textAlign:"center",marginBottom:10}}>
-                  {dailyData.myResult.score}/{dailyData.myResult.total} correct
-                  {dailyData.myResult.timeTakenMs ? ` · ${Math.round(dailyData.myResult.timeTakenMs/1000)}s` : ""}
-                </div>
-                <button
-                  onClick={() => {
-                    const grid = (dailyData.myResult.results || []).map(r => r ? "🟩" : "🟥").join("");
-                    const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
-                    const text = `BLUFF™ Daily #${dailyData.dayNum}\n${grid}\n${dailyData.myResult.score}/${dailyData.myResult.total}${rankStr}\nplaybluff.games`;
-                    if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
-                    else navigator.clipboard?.writeText(text).then(() => alert("Copied!")).catch(() => alert(text));
-                  }}
-                  style={{width:"100%",minHeight:40,padding:"8px 14px",fontSize:12,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.25)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-                  📤 Share result
-                </button>
-              </div>
-            ) : dailyData?.rounds ? (
-              <div style={{background:"rgba(232,197,71,.06)",border:"1px solid rgba(232,197,71,.25)",borderRadius:14,padding:"14px 16px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div>
-                    <div style={{fontSize:14,fontWeight:700,color:"#e8c547",marginBottom:2}}>Same puzzle for everyone</div>
-                    <div style={{fontSize:11,color:"rgba(255,255,255,.35)"}}>
-                      {dailyData.totalPlayers > 0 ? `${dailyData.totalPlayers} player${dailyData.totalPlayers !== 1 ? "s" : ""} today` : "Be the first today!"}
-                    </div>
-                  </div>
-                  <div style={{fontSize:11,color:"rgba(232,197,71,.4)",letterSpacing:"1px"}}>#{dailyData.dayNum}</div>
-                </div>
-                <button
-                  onClick={startDailyChallenge}
-                  style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                  <span style={{position:"relative"}}>📅 Play today's challenge</span>
-                </button>
-              </div>
-            ) : null}
-          </div>
-        )}
+        {/* Blitz button */}
+        <button onClick={startBlitz} style={{
+          width:"100%",minHeight:48,padding:"13px",marginBottom:10,
+          fontSize:"clamp(12px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",
+          textTransform:"uppercase",
+          background:"linear-gradient(135deg,rgba(244,63,94,.15),rgba(244,63,94,.05))",
+          color:"#f43f5e",border:"1px solid rgba(244,63,94,.3)",
+          borderRadius:16,fontFamily:"inherit",cursor:"pointer",
+          display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+          animation:"g-fadeUp .5s .38s both",
+        }}>
+          <span>⚡</span>
+          <span>Blitz — 4 questions, 12 seconds</span>
+        </button>
+
+        {/* Duel buttons */}
+        <div style={{display:"flex",gap:8,marginBottom:10,animation:"g-fadeUp .5s .42s both"}}>
+          <button onClick={()=>openDuel("regular")} style={{
+            flex:1,minHeight:48,padding:"13px",
+            fontSize:"clamp(11px,3vw,13px)",fontWeight:700,letterSpacing:"1px",
+            textTransform:"uppercase",
+            background:"rgba(232,197,71,.06)",color:"#e8c547",
+            border:"1px solid rgba(232,197,71,.2)",
+            borderRadius:14,fontFamily:"inherit",cursor:"pointer",
+          }}>
+            ⚔️ Duel
+          </button>
+          <button onClick={()=>openDuel("blitz")} style={{
+            flex:1,minHeight:48,padding:"13px",
+            fontSize:"clamp(11px,3vw,13px)",fontWeight:700,letterSpacing:"1px",
+            textTransform:"uppercase",
+            background:"rgba(244,63,94,.06)",color:"#f43f5e",
+            border:"1px solid rgba(244,63,94,.2)",
+            borderRadius:14,fontFamily:"inherit",cursor:"pointer",
+          }}>
+            ⚡ Duel Blitz
+          </button>
+        </div>
 
         {tg.isInsideTelegram && (
           <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginBottom:12,fontSize:11,color:"rgba(41,182,246,.45)",letterSpacing:"1px"}}>
@@ -1829,7 +2199,7 @@ export default function BluffGame() {
             <div>
               <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
-                <div style={{fontSize:9,color:T.dim}}>Round {roundIdx+1}/{ROUND_DIFFICULTY.length}</div>
+                <div style={{fontSize:9,color:T.dim}}>Round {roundIdx+1}/{blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length}{blitzMode ? " ⚡" : ""}</div>
                 <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {diff === 0 ? "Baby mode 👶" : DIFF_LABEL[diff]}</div>
               </div>
             </div>
@@ -1890,9 +2260,9 @@ export default function BluffGame() {
             </button>
             :<div style={{display:"flex",gap:10}}>
               <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);if(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)) nextRound(); else showResultScreen();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<ROUND_DIFFICULTY.length?`Next in ${autoAdvanceCount}...`:`Results in ${autoAdvanceCount}...`):(roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →")}</span>
+                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?`Next in ${autoAdvanceCount}...`:`Results in ${autoAdvanceCount}...`):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?"Next round →":"See results →")}</span>
               </button>
             </div>
           }
@@ -1978,6 +2348,19 @@ export default function BluffGame() {
               style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
               📤 Share daily result
             </button>
+          </div>
+        )}
+
+        {/* Blitz result */}
+        {blitzMode && (
+          <div style={{textAlign:"center",marginBottom:16,padding:"12px",
+            background:"rgba(244,63,94,.08)",border:"1px solid rgba(244,63,94,.2)",
+            borderRadius:12,animation:"g-fadeUp .5s .35s both"}}>
+            <div style={{fontSize:11,letterSpacing:"3px",color:"#f43f5e",marginBottom:4}}>⚡ BLITZ RESULT</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,color:"#f43f5e"}}>{score}/4</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.4)",marginTop:4}}>
+              {score===4?"AXIOM demolished. 🔥":score>=3?"Sharp. Very sharp.":score>=2?"Decent.":"AXIOM wins."}
+            </div>
           </div>
         )}
 
