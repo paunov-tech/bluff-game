@@ -1821,6 +1821,7 @@ export default function BluffGame() {
     <div style={wrap}>
       <Particles count={10}/>
       {confetti&&<Confetti/>}
+      {!revealed&&time<=3&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:50,background:"rgba(244,63,94," + (0.08 + (3-time)*0.07) + ")",animation:"g-pulse .4s ease-in-out infinite",transition:"background .5s"}}/>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
