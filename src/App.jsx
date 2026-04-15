@@ -704,6 +704,7 @@ export default function BluffGame() {
   const [duelBonusOpportunity, setDuelBonusOpportunity] = useState(false);
   const [myDuelId, setMyDuelId] = useState(null);
   const duelSocketRef = useRef(null);
+  const duelAnswerSentRef = useRef(false);
   const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.YOUR_USERNAME.partykit.dev";
   const [activeSkin, setActiveSkin] = useState(
     () => localStorage.getItem("bluff_skin") || "default"
@@ -954,11 +955,14 @@ export default function BluffGame() {
     const diff = blitzModeRef.current ? (BLITZ_DIFFICULTY[idx] || 4) : (ROUND_DIFFICULTY[idx]||3);
     const cat = CATEGORIES[idx % CATEGORIES.length];
     setCategory(cat);
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 9000);
     try {
       const res = await fetch("/api/generate-round",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({ category:cat, difficulty:diff, lang }),
+        signal: controller.signal,
       });
       const data = await res.json();
       const normalized = (data.statements||[]).map(s=>({
@@ -985,6 +989,7 @@ export default function BluffGame() {
       currentStmtsRef.current = fb;
       roundsPlayedRef.current[idx] = { statements: fb, category: cat };
     } finally {
+      clearTimeout(fetchTimeout);
       setLoadingRound(false);
     }
   }
@@ -1174,6 +1179,7 @@ export default function BluffGame() {
       }, 1000);
     }
     if (msg.type === "round_start") {
+      duelAnswerSentRef.current = false;
       setDuelCurrentRound(msg.round);
       setDuelRoundData(msg.data);
       setDuelPhase("playing");
@@ -1211,7 +1217,8 @@ export default function BluffGame() {
   }
 
   function sendDuelAnswer(sel) {
-    if (!duelSocketRef.current) return;
+    if (!duelSocketRef.current || duelAnswerSentRef.current) return;
+    duelAnswerSentRef.current = true;
     duelSocketRef.current.send(JSON.stringify({
       type: "answer",
       sel,
@@ -1302,63 +1309,35 @@ export default function BluffGame() {
     clearInterval(timerRef.current);
     setScreen("result");
 
-    // Submit daily result before any state mutation
-    if (dailyModeRef.current) {
-      setScore(sc => {
-        setTotal(tt => {
-          submitDailyResult(sc, tt);
-          return tt;
-        });
-        return sc;
-      });
-    }
+    // Snapshot committed state once — avoids nested-updater race conditions
+    const finalScore = score;
+    const finalTotal = total;
+    const finalBest  = best;
+    const won = finalScore >= Math.ceil(finalTotal * .67);
 
-    setScore(sc=>{
-      setTotal(tt=>{
-        const won = sc>=Math.ceil(tt*.67);
-        axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
-        if(won){ setConfetti(true); haptic.victory(); }
-        return tt;
-      });
-      return sc;
-    });
-    setTimeout(()=>{
-      setAxiomSpeech(speech=>{
-        setScore(sc=>{
-          setTotal(tt=>{
-            setBest(b=>{
-              const won=sc>=Math.ceil(tt*.67);
-              const img=generateShareCard(sc,tt,b,speech,won);
-              setShareImg(img);
-              return b;
-            });
-            return tt;
-          });
-          return sc;
-        });
+    if (dailyModeRef.current) submitDailyResult(finalScore, finalTotal);
+
+    axiomSpeak(won ? "final_win" : "final_lose", won ? "defeated" : "taunting");
+    if (won) { setConfetti(true); haptic.victory(); }
+
+    // Share card — wait for AXIOM speech to land (~1s)
+    setTimeout(() => {
+      setAxiomSpeech(speech => {
+        const img = generateShareCard(finalScore, finalTotal, finalBest, speech, won);
+        setShareImg(img);
         return speech;
       });
-    },1000);
+    }, 1000);
 
-    // Build Stories card and challenge URL
+    // Stories card + challenge URL
     setTimeout(() => {
-      setScore(sc => {
-        setTotal(tt => {
-          setBest(b => {
-            setAxiomSpeech(speech => {
-              const won = sc >= Math.ceil(tt * .67);
-              const lieStmt = currentStmtsRef.current.find(s => !s.real);
-              const lieText = lieStmt?.text || "";
-              const img = generateStoriesCard(sc, tt, b, speech, won, lieText, lastAxiomLine);
-              setStoriesImg(img);
-              setChallengeURL(buildChallengeURL(sc, tt));
-              return speech;
-            });
-            return b;
-          });
-          return tt;
-        });
-        return sc;
+      const lieStmt = currentStmtsRef.current.find(s => !s.real);
+      const lieText = lieStmt?.text || "";
+      setAxiomSpeech(speech => {
+        const img = generateStoriesCard(finalScore, finalTotal, finalBest, speech, won, lieText, lastAxiomLine);
+        setStoriesImg(img);
+        setChallengeURL(buildChallengeURL(finalScore, finalTotal));
+        return speech;
       });
     }, 1200);
   }
@@ -1382,10 +1361,10 @@ export default function BluffGame() {
   useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
   useEffect(()=>{ currentSelRef.current = sel; },[sel]);
 
-  // Re-trigger intro speech if language changes on home screen
+  // Re-trigger intro speech if language changes or user returns to home
   useEffect(()=>{
     if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
-  },[lang]);
+  },[lang, screen, showIntro]);
 
   // Detect challenge from URL
   useEffect(() => {
@@ -1463,7 +1442,7 @@ export default function BluffGame() {
 
   // Auto-reveal at 0
   useEffect(()=>{
-    if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
+    if(time<=0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
   },[time,revealed,screen]);
 
   // Timer starts only after round finishes loading
@@ -1548,6 +1527,14 @@ export default function BluffGame() {
       if (audioRef.current) {
         audioRef.current.pause();
         URL.revokeObjectURL(audioRef.current.src);
+      }
+    };
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (duelSocketRef.current) {
+        duelSocketRef.current.close();
+        duelSocketRef.current = null;
       }
     };
   }, []);
