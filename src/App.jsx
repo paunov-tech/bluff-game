@@ -637,6 +637,7 @@ export default function BluffGame() {
   const [best, setBest] = useState(0);
   const [time, setTime] = useState(45);
   const [confetti, setConfetti] = useState(false);
+  const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   const [loadingRound, setLoadingRound] = useState(false);
   const [axiomMood, setAxiomMood] = useState("idle");
   const [axiomSpeech, setAxiomSpeech] = useState("Your confidence is endearing. Begin.");
@@ -663,6 +664,7 @@ export default function BluffGame() {
     () => localStorage.getItem("bluff_voice") !== "off"
   );
   const timerRef = useRef(null);
+  const autoAdvanceRef = useRef(null);
   const audioRef = useRef(null);
   const userInteractedRef = useRef(false);
   const audioQueueRef = useRef([]);
@@ -1332,6 +1334,18 @@ export default function BluffGame() {
   }, [screen]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
+  useEffect(()=>{
+    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
+    let count=3;
+    setAutoAdvanceCount(count);
+    const tick=()=>{
+      count--;
+      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }
+      else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
+    };
+    autoAdvanceRef.current=setTimeout(tick,800);
+    return ()=>clearTimeout(autoAdvanceRef.current);
+  },[revealed]);
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -1800,10 +1814,10 @@ export default function BluffGame() {
               <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
             </button>
             :<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{clearInterval(timerRef.current);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-              <button onClick={roundIdx+1<ROUND_DIFFICULTY.length?nextRound:showResultScreen} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
+              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>{roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →"}</span>
+                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<ROUND_DIFFICULTY.length?`Next in ${autoAdvanceCount}...`:`Results in ${autoAdvanceCount}...`):(roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →")}</span>
               </button>
             </div>
           }
