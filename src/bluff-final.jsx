@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getNextRound } from "./utils/roundSelector.js";
-import { LADDER_DIFFICULTY } from "./data/difficultyMap.js";
+import { LADDER_DIFFICULTY, TIMER_BY_LADDER } from "./data/difficultyMap.js";
 import { audio } from "./audio/AudioEngine.js";
 import { axiosSay, AXIOS_LINES } from "./audio/axiosVoice.js";
 import { AxiosFace, AxiosBubble } from "./components/AxiosFace.jsx";
@@ -47,7 +47,6 @@ const CATEGORY_EMOJIS = {
 // Show-logic difficulty curve — used only for timer duration lookup
 // Actual round selection uses LADDER_DIFFICULTY from difficultyMap.js
 const ROUND_DIFFICULTY = [1, 2, 2, 3, 2, 4, 3, 5, 5, 5];
-const TIMER_PER_DIFF = { 0:50, 1:50, 2:55, 3:65, 4:80, 5:95 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
 
@@ -246,19 +245,55 @@ function Confetti() {
 
 function TimerRing({time,max=45,size=48}) {
   const r=(size-6)/2,circ=2*Math.PI*r;
-  const color=time<=10?"#f43f5e":time<=20?"#fb923c":"#e8c547";
   const pct=Math.max(0,time/max);
+  const urgency=pct<0.15?3:pct<0.35?2:pct<0.55?1:0;
+  const color=urgency>=3?"#f43f5e":urgency>=2?"#fb923c":urgency>=1?"#e8c547":"#e8c547";
+  const pulseAnim=urgency===3?"g-pulse .4s infinite":urgency===2?"g-pulse .7s infinite":urgency===1?"g-pulse 1.4s infinite":"none";
   return (
     <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
-      <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+      {urgency>=2&&(
+        <div style={{
+          position:"absolute",inset:0,borderRadius:"50%",
+          border:`2px solid ${color}`,opacity:.4,
+          animation:"d-timerRipple .9s ease-out infinite",
+          pointerEvents:"none",
+        }}/>
+      )}
+      <svg width={size} height={size} style={{transform:"rotate(-90deg)",position:"relative",zIndex:1,
+        filter:urgency>=3?`drop-shadow(0 0 6px ${color})`:"none"}}>
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={3}/>
         <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={3}
           strokeDasharray={circ} strokeDashoffset={circ*(1-pct)}
           strokeLinecap="round" style={{transition:"stroke-dashoffset 1s linear,stroke .3s"}}/>
       </svg>
-      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color,animation:time<=5?"g-pulse .5s infinite":"none"}}>{time}</div>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color,zIndex:2,animation:urgency>0?pulseAnim:"none"}}>{time}</div>
     </div>
   );
+}
+
+// Fix 4: IsolatedTimer — timer state lives here, parent doesn't re-render every second
+function IsolatedTimer({ initialTime, paused, onTick, onExpire, size=46 }) {
+  const [time, setTime] = useState(initialTime);
+  const ref = useRef(null);
+  const onTickRef = useRef(onTick);
+  const onExpireRef = useRef(onExpire);
+  useEffect(() => { onTickRef.current = onTick; });
+  useEffect(() => { onExpireRef.current = onExpire; });
+  useEffect(() => {
+    if (paused) { clearInterval(ref.current); return; }
+    setTime(initialTime);
+    clearInterval(ref.current);
+    ref.current = setInterval(() => {
+      setTime(t => {
+        const next = t - 1;
+        onTickRef.current?.(next, initialTime);
+        if (next <= 0) { clearInterval(ref.current); onExpireRef.current?.(); return 0; }
+        return next;
+      });
+    }, 1000);
+    return () => clearInterval(ref.current);
+  }, [paused, initialTime]);
+  return <TimerRing time={time} max={initialTime} size={size}/>;
 }
 
 function generateShareCard(score,total,best,speech,won) {
@@ -537,7 +572,6 @@ export default function BluffGame() {
   const [total, setTotal] = useState(0);
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
-  const [time, setTime] = useState(45);
   const [confetti, setConfetti] = useState(false);
   const [loadingRound, setLoadingRound] = useState(false);
   const [axiomMood, setAxiomMood] = useState("idle");
@@ -569,8 +603,17 @@ export default function BluffGame() {
   const [flashColor, setFlashColor] = useState(null);
   const [ladderPos, setLadderPos] = useState(1);
   const [muted, setMuted] = useState(false);
+  // Fix 2: single-tap confirm countdown
+  const [confirmCountdown, setConfirmCountdown] = useState(null);
+  // Fix 3: auto-advance after reveal
+  const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
+  // Bonus: reveal dramatika
+  const [revealPending, setRevealPending] = useState(false);
   const ladderPosRef = useRef(1);
-  const timerRef = useRef(null);
+  const confirmRef = useRef(null);
+  const autoAdvanceRef = useRef(null);
+  const nextRoundDataRef = useRef(null);
+  const lastThreeCatsRef = useRef([]);
   const audioRef = useRef(null);
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
@@ -682,9 +725,13 @@ export default function BluffGame() {
       setStmts(shuffled);
       currentStmtsRef.current = shuffled;
 
-      console.log(`[round] ladder=${ladderPos} diff=${diff} cat=${cat} id=${round.id}`);
+      const timerSec = TIMER_BY_LADDER[pos] ?? 45;
+      console.log(`[round] ladder=${ladderPos} diff=${diff} timer=${timerSec}s cat=${cat} id=${round.id}`);
       audio.startBackgroundMusic(pos);
       showAxios("speaking", "round_start");
+      // Fix 7: preload next round 500ms after this one loads
+      nextRoundDataRef.current = null;
+      setTimeout(() => prepareNextRound(idx + 1), 500);
     } catch(e) {
       console.warn("[fetchRound] fallback:", e.message);
       const fb = shuffle([
@@ -729,50 +776,83 @@ export default function BluffGame() {
     }
   }
 
-  // ── TIMER ────────────────────────────────────────────────────
-  function startTimer(diff) {
-    clearInterval(timerRef.current);
-    const maxT = TIMER_PER_DIFF[diff]||45;
-    setTime(maxT);
-    timerRef.current = setInterval(()=>{
-      setTime(t=>{
-        if(t<=1){ clearInterval(timerRef.current); return 0; }
-        if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting"); // ~45% remaining
-        if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); }
-        if(t===5) haptic.timerWarning();
-        if(t===3) haptic.timerWarning();
-        return t-1;
-      });
-    },1000);
+  // Fix 7: preload next round data synchronously
+  function prepareNextRound(idx) {
+    if (idx >= ROUND_DIFFICULTY.length) return;
+    const pos = idx + 1;
+    try {
+      const round = getNextRound(pos, lastThreeCatsRef.current);
+      const normalized = round.stmts.map(s => ({ text: s.t, real: s.r }));
+      nextRoundDataRef.current = { stmts: shuffle(normalized), cat: round.cat };
+    } catch(e) {
+      nextRoundDataRef.current = null;
+    }
   }
 
-  // ── CARD SELECT — psychological warfare ─────────────────────
-  function handleCardSelect(i) {
-    if(revealed) return;
+  // Bonus: 400ms dramatika before revealing — AXIOM "thinks"
+  function triggerReveal() {
+    if (revealed || revealPending) return;
+    clearInterval(confirmRef.current);
+    confirmRef.current = null;
+    setConfirmCountdown(null);
+    setRevealPending(true);
+    setAxiosEmotion("thinking");
+    audio.drumRoll(1.5);
+    setTimeout(() => {
+      setRevealPending(false);
+      doReveal();
+    }, 400);
+  }
+
+  // Fix 2: single-tap confirm — 1.2s auto-lock, double-tap = immediate
+  function handleCardTap(i) {
+    if (revealed || revealPending) return;
     haptic.tap();
     audio.whoosh();
+
+    // Double-tap same card: immediate reveal
+    if (sel === i && confirmRef.current) {
+      clearInterval(confirmRef.current);
+      confirmRef.current = null;
+      setConfirmCountdown(null);
+      haptic.lockIn();
+      triggerReveal();
+      return;
+    }
+
+    // New card: reset countdown, select card
+    clearInterval(confirmRef.current);
+    confirmRef.current = null;
     setSel(i);
     currentSelRef.current = i;
     setAxiosEmotion("thinking");
     showAxios("thinking", "player_selects", 500);
     const s = currentStmtsRef.current[i];
-    if(!s) return;
-    // AXIOM reacts differently based on whether player picked lie or truth
-    // Small delay so it doesn't feel instant/robotic
-    setTimeout(()=>{
-      if(s.real===false) {
-        // Player selected the LIE — try to make them doubt
-        axiomSpeak("selected_lie","taunting");
+    if (!s) return;
+    setTimeout(() => {
+      if (s.real === false) axiomSpeak("selected_lie", "taunting");
+      else axiomSpeak("selected_truth", "amused");
+    }, 300);
+
+    // Start 1.2s auto-lock countdown (3 × 400ms)
+    let steps = 3;
+    setConfirmCountdown(steps);
+    confirmRef.current = setInterval(() => {
+      steps--;
+      if (steps <= 0) {
+        clearInterval(confirmRef.current);
+        confirmRef.current = null;
+        setConfirmCountdown(null);
+        haptic.lockIn();
+        triggerReveal();
       } else {
-        // Player selected a TRUTH — be amused
-        axiomSpeak("selected_truth","amused");
+        setConfirmCountdown(steps);
       }
-    },300);
+    }, 400);
   }
 
   // ── REVEAL ───────────────────────────────────────────────────
   function doReveal() {
-    clearInterval(timerRef.current);
     const stmtsCurrent = currentStmtsRef.current;
     const selCurrent = currentSelRef.current;
     const bi = stmtsCurrent.findIndex(s=>!s.real);
@@ -817,44 +897,68 @@ export default function BluffGame() {
         return 0;
       });
     }
+
+    // Fix 3: auto-advance 2.8s after reveal
+    clearTimeout(autoAdvanceRef.current);
+    setAutoAdvanceCount(1);
+    autoAdvanceRef.current = setTimeout(() => {
+      setAutoAdvanceCount(null);
+      if (roundIdx + 1 < ROUND_DIFFICULTY.length) nextRound();
+      else showResultScreen();
+    }, 2800);
   }
 
   // ── NEXT ROUND ───────────────────────────────────────────────
   function nextRound() {
-    const next = roundIdx+1;
-    if(next>=ROUND_DIFFICULTY.length){ showResultScreen(); return; }
-    clearInterval(timerRef.current);
+    const next = roundIdx + 1;
+    if (next >= ROUND_DIFFICULTY.length) { showResultScreen(); return; }
+    // Clear all pending timers
+    clearTimeout(autoAdvanceRef.current);
+    autoAdvanceRef.current = null;
+    clearInterval(confirmRef.current);
+    confirmRef.current = null;
+    setAutoAdvanceCount(null);
+    setConfirmCountdown(null);
+    setRevealPending(false);
     setRoundIdx(next);
     setSel(null);
-    currentSelRef.current=null;
+    currentSelRef.current = null;
     setRevealed(false);
     setConfetti(false);
     fetchRound(next);
-    axiomSpeak("intro","idle");
+    axiomSpeak("intro", "idle");
   }
 
   // ── START ────────────────────────────────────────────────────
   function startGame() {
-    clearInterval(timerRef.current);
+    clearTimeout(autoAdvanceRef.current);
+    autoAdvanceRef.current = null;
+    clearInterval(confirmRef.current);
+    confirmRef.current = null;
     audio.init();
-    wrongCountRef.current=0;
+    wrongCountRef.current = 0;
     setScreen("play");
     setRoundIdx(0);
     setSel(null);
-    currentSelRef.current=null;
+    currentSelRef.current = null;
     setRevealed(false);
+    setRevealPending(false);
+    setConfirmCountdown(null);
+    setAutoAdvanceCount(null);
+    nextRoundDataRef.current = null;
     setScore(0);
     setTotal(0);
     setStreak(0);
     setConfetti(false);
     setShareImg(null);
     fetchRound(0);
-    axiomSpeak("intro","idle");
+    axiomSpeak("intro", "idle");
   }
 
   // ── RESULT ───────────────────────────────────────────────────
   function showResultScreen() {
-    clearInterval(timerRef.current);
+    clearTimeout(autoAdvanceRef.current);
+    autoAdvanceRef.current = null;
     audio.stopBackgroundMusic();
     setScreen("result");
     setScore(sc=>{
@@ -912,33 +1016,8 @@ export default function BluffGame() {
   // Keep refs in sync
   useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
   useEffect(()=>{ currentSelRef.current = sel; },[sel]);
-
-  // Auto-reveal at 0
-  useEffect(()=>{
-    if(time===0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
-  },[time,revealed,screen]);
-
-  // Timer starts only after round finishes loading
-  useEffect(() => {
-    if (!loadingRound && screen === "play" && stmts.length > 0) {
-      clearInterval(timerRef.current);
-      const diff = ROUND_DIFFICULTY[roundIdx] || 3;
-      const maxT = TIMER_PER_DIFF[diff] || 60;
-      setTime(maxT);
-      timerRef.current = setInterval(() => {
-        setTime(t => {
-          if (t <= 1) { clearInterval(timerRef.current); return 0; }
-          if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
-          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); showAxios("smug", "timer_10"); }
-          if (t === 5) { haptic.timerWarning(); showAxios("taunting", "timer_5"); }
-          if (t === 3) haptic.timerWarning();
-          audio.tick(t <= 5 ? 3 : t <= 10 ? 2 : 1);
-          if (t <= 10) audio.heartbeat();
-          return t - 1;
-        });
-      }, 1000);
-    }
-  }, [loadingRound]);
+  // Fix 7: keep lastThreeCatsRef in sync for prepareNextRound (avoids stale closure)
+  useEffect(()=>{ lastThreeCatsRef.current = lastThreeCats; },[lastThreeCats]);
 
   // Re-trigger intro speech if language changes on home screen
   useEffect(()=>{
@@ -985,7 +1064,6 @@ export default function BluffGame() {
     }
   }, []);
 
-  useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(() => {
     return () => {
       if (audioRef.current) {
@@ -1324,8 +1402,24 @@ export default function BluffGame() {
               {muted ? "🔇" : "🔊"}
             </button>
             {streak>0&&<div style={{fontSize:12,color:T.gold,fontWeight:700,display:"flex",alignItems:"center",gap:3,background:T.goldDim,padding:"4px 10px",borderRadius:20,animation:streak>=3?"g-fire .6s infinite":"none"}}>🔥{streak}</div>}
-            {!revealed
-              ?<TimerRing time={time} max={TIMER_PER_DIFF[diff]||45} size={46}/>
+            {!revealed && !revealPending
+              ?<IsolatedTimer
+                  key={`r${roundIdx}`}
+                  initialTime={TIMER_BY_LADDER[roundIdx+1] ?? 45}
+                  paused={loadingRound || revealed || revealPending}
+                  onTick={(t, maxT) => {
+                    audio.tick(t<=5?3:t<=10?2:1);
+                    if(t<=10) audio.heartbeat();
+                    if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting");
+                    if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); showAxios("smug","timer_10"); }
+                    if(t===5){ haptic.timerWarning(); showAxios("taunting","timer_5"); }
+                    if(t===3) haptic.timerWarning();
+                  }}
+                  onExpire={() => {
+                    if(!revealed&&!revealPending&&screen==="play"&&currentStmtsRef.current.length>0) triggerReveal();
+                  }}
+                  size={46}
+                />
               :<div style={{width:46,height:46,borderRadius:"50%",background:correct?"rgba(45,212,160,.12)":"rgba(244,63,94,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,animation:"g-pulse .5s",color:correct?T.ok:T.bad}}>{correct?"✓":"✗"}</div>
             }
           </div>
@@ -1370,8 +1464,10 @@ export default function BluffGame() {
               if(!revealed&&isS){bg=T.goldDim;border="rgba(232,197,71,.4)";}
               if(revealed&&isB){bg="rgba(244,63,94,.07)";border="rgba(244,63,94,.4)";anim="g-glow .8s";}
               if(revealed&&isS&&correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";anim="g-correctGlow .8s";}
+              // Bonus: selected card scales up during revealPending
+              const pendingScale = revealPending && isS ? "scale(1.025)" : "scale(1)";
               return (
-                <button key={i} onClick={()=>handleCardSelect(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed?"default":"pointer",transition:"all .22s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardIn .3s ${i*.055}s both, ${anim}`}}>
+                <button key={i} onClick={()=>handleCardTap(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||revealPending?"default":"pointer",transition:"background-color .18s ease,border-color .18s ease,transform .15s ease",transform:pendingScale,textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardSnap .20s ease-out ${i*0.018}s both, ${anim}`}}>
                   <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
                     {revealed&&isB?"!":String.fromCharCode(65+i)}
                   </div>
@@ -1386,14 +1482,27 @@ export default function BluffGame() {
             })}
           </div>
 
-          {!revealed
-            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); audio.drumRoll(2.0); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+          {!revealed && !revealPending
+            ?<button
+              onClick={()=>{ if(sel!==null){ clearInterval(confirmRef.current); confirmRef.current=null; setConfirmCountdown(null); haptic.lockIn(); triggerReveal(); }}}
+              disabled={sel===null}
+              style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              {/* Fix 2: lock progress bar (animates from 0→100% in 1.2s) */}
+              {sel!==null&&<div key={`lp${sel}`} style={{position:"absolute",inset:0,background:"rgba(255,255,255,.18)",transformOrigin:"left",animation:"d-lockProgress 1.2s linear forwards"}}/>}
               {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
               <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
             </button>
+            : !revealed && revealPending
+            ? <button disabled style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(232,197,71,.1)",color:"#e8c547",border:"1.5px solid rgba(232,197,71,.2)",borderRadius:16,fontFamily:"inherit",animation:"g-pulse .4s infinite"}}>
+                ⏳ Revealing...
+              </button>
             :<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{clearInterval(timerRef.current);audio.stopBackgroundMusic();setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-              <button onClick={roundIdx+1<ROUND_DIFFICULTY.length?nextRound:showResultScreen} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              <button onClick={()=>{ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); audio.stopBackgroundMusic(); setScreen("home"); }} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
+              <button
+                onClick={()=>{ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }}
+                style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+                {/* Fix 3: auto-advance progress bar (2.8s) */}
+                {autoAdvanceCount!==null&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:4,background:"rgba(4,6,15,.3)",transformOrigin:"left",animation:"d-autoProgress 2.8s linear forwards"}}/>}
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
                 <span style={{position:"relative"}}>{roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →"}</span>
               </button>
@@ -1579,6 +1688,10 @@ function GameStyles(){
     @keyframes g-shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
     @keyframes g-fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
     @keyframes g-cardIn{from{opacity:0;transform:translateX(-10px) scale(.97)}to{opacity:1;transform:none}}
+    @keyframes g-cardSnap{from{opacity:0;transform:translateX(12px) scale(0.98)}to{opacity:1;transform:none}}
+    @keyframes d-lockProgress{from{width:0}to{width:100%}}
+    @keyframes d-autoProgress{from{width:0}to{width:100%}}
+    @keyframes d-timerRipple{0%{transform:scale(1);opacity:0.6}100%{transform:scale(1.6);opacity:0}}
     @keyframes g-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes g-confetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0}}
     @keyframes g-btnShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}

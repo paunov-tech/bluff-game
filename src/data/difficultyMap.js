@@ -1,3 +1,9 @@
+// Per-ladder-position timer durations (seconds) — Fix 1: adaptive timer
+export const TIMER_BY_LADDER = {
+  1: 22, 2: 28, 3: 28, 4: 38, 5: 32,
+  6: 52, 7: 42, 8: 68, 9: 68, 10: 75,
+};
+
 // Show-logic difficulty curve (Millionaire/The Chase style)
 // Trap rounds 4 and 7 — harder than expected after easier round
 export const LADDER_DIFFICULTY = {
