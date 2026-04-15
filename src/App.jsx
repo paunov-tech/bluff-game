@@ -906,6 +906,7 @@ export default function BluffGame() {
     setDailyRank(null);
     clearInterval(timerRef.current);
     wrongCountRef.current = 0;
+    setLoadingRound(true);
     setScreen("play");
     setRoundIdx(0);
     setSel(null);
