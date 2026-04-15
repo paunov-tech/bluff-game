@@ -1054,7 +1054,7 @@ export default function BluffGame() {
       currentStmtsRef.current = fb;
       roundsPlayedRef.current[idx] = { statements: fb, category: cat };
     } finally {
-      setLoadingRound(false);
+      setTimeout(()=>setLoadingRound(false), 1800);
     }
   }
 
