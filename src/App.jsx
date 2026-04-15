@@ -651,6 +651,103 @@ const AudioTension = (() => {
   };
 })();
 
+
+// ═══════════════════════════════════════════════════════════════
+// AXIOM PORTRAIT — full screen loading overlay
+// ═══════════════════════════════════════════════════════════════
+function AxiomPortrait({ visible }) {
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:200,
+      background:"#020810",
+      display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",
+      opacity:visible?1:0,
+      pointerEvents:visible?"all":"none",
+      transition:"opacity .4s ease",
+    }}>
+      <div style={{width:"min(480px,92vw)",maxHeight:"92vh"}}>
+        <svg width="100%" viewBox="0 0 680 680" role="img" style={{display:"block"}}>
+          <title>AXIOM preparing deception</title>
+          <style>{`
+            .rCW2{animation:rCW2 28s linear infinite;transform-box:fill-box;transform-origin:center}
+            .rCCW2{animation:rCCW2 18s linear infinite;transform-box:fill-box;transform-origin:center}
+            .rSlow2{animation:rCW2 60s linear infinite;transform-box:fill-box;transform-origin:center}
+            .scan2{animation:scan2 3.2s ease-in-out infinite}
+            .pdot2{animation:pdot2 2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+            .iflicker2{animation:iflicker2 4s ease-in-out infinite}
+            .blink2{animation:blink2 7s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+            @keyframes rCW2{to{transform:rotate(360deg)}}
+            @keyframes rCCW2{to{transform:rotate(-360deg)}}
+            @keyframes scan2{0%{transform:translateY(-68px);opacity:0}15%{opacity:.65}85%{opacity:.65}100%{transform:translateY(68px);opacity:0}}
+            @keyframes pdot2{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.4}}
+            @keyframes iflicker2{0%,100%{opacity:.9}45%{opacity:.5}55%{opacity:.8}60%{opacity:.4}65%{opacity:.9}}
+            @keyframes blink2{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.04)}}
+          `}</style>
+          <rect width="680" height="680" fill="#020810"/>
+          <line x1="340" y1="0" x2="340" y2="680" stroke="#22d3ee" strokeWidth=".3" opacity=".06"/>
+          <line x1="0" y1="340" x2="680" y2="340" stroke="#22d3ee" strokeWidth=".3" opacity=".06"/>
+          <line x1="0" y1="0" x2="680" y2="680" stroke="#22d3ee" strokeWidth=".3" opacity=".04"/>
+          <line x1="680" y1="0" x2="0" y2="680" stroke="#22d3ee" strokeWidth=".3" opacity=".04"/>
+          <g className="rSlow2"><polygon points="340,28 622,190 622,490 340,652 58,490 58,190" fill="none" stroke="#22d3ee" strokeWidth=".5" strokeOpacity=".15" strokeDasharray="18 10"/></g>
+          <g className="rCCW2" opacity=".2"><polygon points="340,45 608,197 608,483 340,635 72,483 72,197" fill="none" stroke="#22d3ee" strokeWidth=".5" strokeDasharray="4 20"/></g>
+          <polygon points="340,72 583,212 583,468 340,608 97,468 97,212" fill="#040c1c" stroke="#22d3ee" strokeWidth="1.8"/>
+          <line x1="97" y1="212" x2="57" y2="188" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="57" y1="188" x2="57" y2="148" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="340" y1="72" x2="340" y2="32" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="583" y1="212" x2="622" y2="190" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="622" y1="190" x2="650" y2="190" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="583" y1="468" x2="622" y2="490" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="97" y1="468" x2="58" y2="490" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="58" y1="490" x2="32" y2="490" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <line x1="340" y1="608" x2="340" y2="648" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+          <g className="rCCW2" opacity=".5"><polygon points="340,120 530,228 530,452 340,560 150,452 150,228" fill="none" stroke="#0891b2" strokeWidth=".8" strokeDasharray="8 6"/></g>
+          <polygon points="340,166 494,256 494,424 340,514 186,424 186,256" fill="#030a19" stroke="#0e7490" strokeWidth="1.2"/>
+          <g className="rCW2" opacity=".35"><polygon points="340,208 470,282 470,398 340,472 210,398 210,282" fill="none" stroke="#22d3ee" strokeWidth=".6" strokeDasharray="3 8"/></g>
+          <defs><clipPath id="hc2"><polygon points="340,166 494,256 494,424 340,514 186,424 186,256"/></clipPath></defs>
+          <rect className="scan2" x="175" y="335" width="330" height="2" fill="#22d3ee" opacity=".6" clipPath="url(#hc2)"/>
+          <ellipse cx="330" cy="330" rx="108" ry="86" fill="#010508"/>
+          <ellipse cx="330" cy="330" rx="80" ry="80" fill="none" stroke="#22d3ee" strokeWidth="2.5"/>
+          <circle cx="330" cy="330" r="78" fill="#050f20"/>
+          <circle cx="330" cy="330" r="64" fill="none" stroke="#0e7490" strokeWidth="1" className="iflicker2"/>
+          <circle cx="330" cy="330" r="52" fill="none" stroke="#0891b2" strokeWidth=".75" opacity=".6"/>
+          <line x1="330" y1="252" x2="330" y2="265" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+          <line x1="330" y1="395" x2="330" y2="408" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+          <line x1="252" y1="330" x2="265" y2="330" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+          <line x1="395" y1="330" x2="408" y2="330" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+          <line x1="385" y1="275" x2="395" y2="267" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+          <line x1="275" y1="275" x2="265" y2="267" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+          <line x1="385" y1="385" x2="395" y2="393" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+          <line x1="275" y1="385" x2="265" y2="393" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+          <g className="blink2">
+            <circle cx="330" cy="330" r="30" fill="#020912"/>
+            <circle cx="330" cy="330" r="22" fill="#030d1a"/>
+            <circle cx="330" cy="330" r="14" fill="#22d3ee"/>
+            <circle cx="330" cy="330" r="8"  fill="#0891b2"/>
+            <circle cx="330" cy="330" r="4"  fill="#e0f7ff"/>
+          </g>
+          <ellipse cx="350" cy="312" rx="12" ry="8" fill="#67e8f9" opacity=".55"/>
+          <ellipse cx="356" cy="307" rx="5"  ry="3" fill="#f0faff" opacity=".7"/>
+          <line x1="218" y1="266" x2="428" y2="252" stroke="#22d3ee" strokeWidth="2.2" strokeLinecap="round"/>
+          <line x1="428" y1="252" x2="448" y2="264" stroke="#22d3ee" strokeWidth="2.2" strokeLinecap="round"/>
+          <polygon points="296,259 316,244 322,260" fill="#22d3ee" opacity=".5"/>
+          <line x1="448" y1="320" x2="490" y2="305" stroke="#0e7490" strokeWidth=".8"/>
+          <line x1="490" y1="305" x2="526" y2="305" stroke="#0e7490" strokeWidth=".8"/>
+          <line x1="448" y1="340" x2="532" y2="340" stroke="#0e7490" strokeWidth=".8"/>
+          <line x1="448" y1="360" x2="526" y2="360" stroke="#0e7490" strokeWidth=".8"/>
+          <rect x="527" y="300" width="36" height="9" fill="#071420" stroke="#0e7490" strokeWidth=".5"/>
+          <rect x="527" y="335" width="36" height="9" fill="#071420" stroke="#0e7490" strokeWidth=".5"/>
+          <rect x="527" y="300" width="24" height="9" fill="#0e7490" opacity=".5"/>
+          <rect x="527" y="335" width="14" height="9" fill="#22d3ee" opacity=".6"/>
+          <circle cx="560" cy="382" r="7" fill="#22d3ee" className="pdot2"/>
+          <text x="340" y="580" textAnchor="middle" fontFamily="'Courier New',monospace" fontSize="26" fontWeight="700" letterSpacing="14" fill="#22d3ee" opacity=".95">AXIOM</text>
+          <text x="340" y="598" textAnchor="middle" fontFamily="'Courier New',monospace" fontSize="11" letterSpacing="5" fill="#0891b2" opacity=".65">PREPARING YOUR DECEPTION</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
@@ -1844,12 +1941,8 @@ export default function BluffGame() {
           </div>
         </div>
 
-        {loadingRound?(
-          <div style={{textAlign:"center",padding:"40px 0",color:T.dim,fontSize:14}}>
-            <div style={{animation:"g-pulse 1s infinite",marginBottom:8,fontSize:22}}>🤖</div>
-            AXIOM is preparing your deception...
-          </div>
-        ):(<>
+        <AxiomPortrait visible={loadingRound}/>
+        {loadingRound?null:(<>
           <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={true}/>
 
           <div style={{textAlign:"center",marginBottom:12}}>
