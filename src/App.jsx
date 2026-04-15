@@ -133,44 +133,43 @@ function AxiomFace({ mood="idle", size=64 }) {
   const uid = useRef(Math.random().toString(36).slice(2)).current;
   const m = MOODS[mood] || MOODS.idle;
   const sc = size / 200;
-  const s = v => Math.round(v * sc);
-  const fid = `gc-${uid}`, cid = `hc-${uid}`;
-  const Mouth = m.mouth.type === "line" ? <line {...m.mouth.p}/> : <path {...m.mouth.p}/>;
-
+  const s2 = v => Math.round(v * sc);
+  const fid = `gc-${uid}`;
+  const ex = s2(95), ey = s2(92);
+  const r1=s2(30),r2=s2(24),r3=s2(17),r4=s2(9),r5=s2(4);
   return (
     <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-        style={{position:"absolute",inset:0,animation:"hexRotate 13s linear infinite"}}>
-        <polygon points={`${s(100)},${s(8)} ${s(186)},${s(52)} ${s(186)},${s(148)} ${s(100)},${s(192)} ${s(14)},${s(148)} ${s(14)},${s(52)}`}
-          fill="none" stroke="rgba(34,211,238,.1)" strokeWidth="1.5" strokeDasharray="5 4"/>
+        style={{position:"absolute",inset:0,animation:"hexRotate 22s linear infinite"}}>
+        <polygon points={`${s2(100)},${s2(12)} ${s2(178)},${s2(56)} ${s2(178)},${s2(144)} ${s2(100)},${s2(188)} ${s2(22)},${s2(144)} ${s2(22)},${s2(56)}`}
+          fill="none" stroke={m.eye} strokeWidth={sc*1.2} strokeOpacity=".15" strokeDasharray={`${s2(10)} ${s2(7)}`}/>
       </svg>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-        style={{position:"absolute",inset:0,animation:"hexRotateCCW 9s linear infinite"}}>
-        <polygon points={`${s(100)},${s(20)} ${s(174)},${s(62)} ${s(174)},${s(138)} ${s(100)},${s(180)} ${s(26)},${s(138)} ${s(26)},${s(62)}`}
-          fill="none" stroke="rgba(34,211,238,.15)" strokeWidth="1" strokeDasharray="2 5"/>
+        style={{position:"absolute",inset:0,animation:"hexRotateCCW 14s linear infinite"}}>
+        <polygon points={`${s2(100)},${s2(22)} ${s2(164)},${s2(61)} ${s2(164)},${s2(139)} ${s2(100)},${s2(178)} ${s2(36)},${s2(139)} ${s2(36)},${s2(61)}`}
+          fill="none" stroke="rgba(34,211,238,.1)" strokeWidth={sc*.7} strokeDasharray={`${s2(4)} ${s2(12)}`}/>
       </svg>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{position:"absolute",inset:0}}>
-        <defs>
-          <filter id={fid}><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <clipPath id={cid}><polygon points={`${s(100)},${s(32)} ${s(168)},${s(70)} ${s(168)},${s(148)} ${s(100)},${s(186)} ${s(32)},${s(148)} ${s(32)},${s(70)}`}/></clipPath>
-        </defs>
-        <polygon points={`${s(100)},${s(32)} ${s(168)},${s(70)} ${s(168)},${s(148)} ${s(100)},${s(186)} ${s(32)},${s(148)} ${s(32)},${s(70)}`}
-          fill="#030810" stroke={m.eye} strokeWidth={size>80?2:1.5} filter={`url(#${fid})`}/>
-        <ellipse cx={s(82)} cy={s(94)} rx={s(15)} ry={s(11)} fill="rgba(2,6,16,.95)" stroke="rgba(34,211,238,.2)" strokeWidth="1"/>
-        <ellipse cx={s(118)} cy={s(94)} rx={s(15)} ry={s(11)} fill="rgba(2,6,16,.95)" stroke="rgba(34,211,238,.2)" strokeWidth="1"/>
-        <circle cx={s(82)} cy={s(94)} r={Math.round(m.er*sc*.85)} fill={m.eye} filter={`url(#${fid})`}/>
-        <circle cx={s(118)} cy={s(94)} r={Math.round(m.er*sc*.85)} fill={m.eye} filter={`url(#${fid})`}/>
-        <circle cx={s(82)} cy={s(94)} r={Math.max(1,Math.round(2.2*sc))} fill="#030810"/>
-        <circle cx={s(118)} cy={s(94)} r={Math.max(1,Math.round(2.2*sc))} fill="#030810"/>
-        <g transform={`scale(${sc})`}>{Mouth}</g>
-        <line x1={s(m.bl.x1)} y1={s(m.bl.y1)} x2={s(m.bl.x2)} y2={s(m.bl.y2)} stroke="rgba(34,211,238,.35)" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1={s(m.br.x1)} y1={s(m.br.y1)} x2={s(m.br.x2)} y2={s(m.br.y2)} stroke="rgba(34,211,238,.35)" strokeWidth="1.5" strokeLinecap="round"/>
-        <rect x={s(32)} y={s(32)} width={s(136)} height="2" fill={m.eye} opacity=".04" clipPath={`url(#${cid})`} style={{animation:"scanDown 3s linear infinite"}}/>
+        <defs><filter id={fid}><feGaussianBlur stdDeviation={sc*1.5} result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+        <polygon points={`${s2(100)},${s2(12)} ${s2(178)},${s2(56)} ${s2(178)},${s2(144)} ${s2(100)},${s2(188)} ${s2(22)},${s2(144)} ${s2(22)},${s2(56)}`}
+          fill="#030810" stroke={m.eye} strokeWidth={size>80?1.8:1.2} filter={`url(#${fid})`}/>
+        <line x1={s2(52)} y1={s2(62)} x2={s2(136)} y2={s2(55)} stroke={m.eye} strokeWidth={size>80?1.8:1.2} strokeLinecap="round" opacity=".9"/>
+        <line x1={s2(136)} y1={s2(55)} x2={s2(148)} y2={s2(63)} stroke={m.eye} strokeWidth={size>80?1.8:1.2} strokeLinecap="round" opacity=".9"/>
+        <ellipse cx={ex} cy={ey} rx={s2(36)} ry={s2(29)} fill="#010407"/>
+        <circle cx={ex} cy={ey} r={r1} fill="none" stroke={m.eye} strokeWidth={size>80?1.5:1} opacity=".9"/>
+        <circle cx={ex} cy={ey} r={s2(28)} fill="#050f20"/>
+        <circle cx={ex} cy={ey} r={r2} fill="none" stroke={m.eye} strokeWidth={sc*.8} opacity=".5" style={{animation:"axiomPulse 2s infinite"}}/>
+        <circle cx={ex} cy={ey} r={r3} fill="none" stroke="rgba(34,211,238,.3)" strokeWidth={sc*.6}/>
+        <circle cx={ex} cy={ey} r={r4} fill="#020912"/>
+        <circle cx={ex} cy={ey} r={r5} fill={m.eye} filter={`url(#${fid})`}/>
+        <ellipse cx={ex+s2(8)} cy={ey-s2(8)} rx={s2(5)} ry={s2(3.5)} fill="rgba(224,247,255,.5)"/>
+        <rect x={s2(58)} y={ey} width={s2(74)} height={sc*.9} fill={m.eye} opacity=".35" style={{animation:"scanDown 3s linear infinite"}}/>
+        {m.mouth.type==="path"
+          ? <path d={`M${s2(65)} ${s2(140)} Q${s2(100)} ${s2(140+m.er*sc*1.8)} ${s2(135)} ${s2(140)}`} stroke={m.eye} strokeWidth={sc*1.2} fill="none" strokeLinecap="round" opacity=".6"/>
+          : <line x1={s2(70)} y1={s2(140)} x2={s2(130)} y2={s2(140)} stroke={m.eye} strokeWidth={sc*1.2} strokeLinecap="round" opacity=".6"/>
+        }
       </svg>
-      <div style={{position:"absolute",bottom:size>80?10:2,right:size>80?10:2,
-        width:size>80?12:8,height:size>80?12:8,borderRadius:"50%",
-        background:m.dot,border:"2px solid #04060f",
-        boxShadow:`0 0 7px ${m.dot}`,animation:"axiomPulse 2s infinite",transition:"all .4s"}}/>
+      <div style={{position:"absolute",bottom:size>80?8:1,right:size>80?8:1,width:size>80?10:6,height:size>80?10:6,borderRadius:"50%",background:m.dot,border:`${sc*2}px solid #04060f`,animation:"axiomPulse 2s infinite",transition:"all .4s"}}/>
     </div>
   );
 }
