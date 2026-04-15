@@ -3,8 +3,12 @@
   "buildCommand": "npx vite build",
   "outputDirectory": "dist",
   "functions": {
-    "api/*.js": { "maxDuration": 60 }
+    "api/**/*.js": { "maxDuration": 60 }
   },
+  "rewrites": [
+    { "source": "/duel/:id", "destination": "/index.html" },
+    { "source": "/party/:code", "destination": "/index.html" }
+  ],
   "crons": [
     { "path": "/api/pre-generate", "schedule": "0 */6 * * *" },
     { "path": "/api/cron-daily", "schedule": "0 23 * * *" }

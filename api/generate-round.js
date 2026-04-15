@@ -20,9 +20,10 @@ GOAL: The player MUST win immediately. This is a dopamine hit,
 not a challenge. If the player gets this wrong, they will quit.
 
 LIE RULE:
-The lie must be something EVERY 8-YEAR-OLD KNOWS is false.
-Completely absurd, impossible claim that sounds wrong at first glance.
-No subtlety, no tricks.
+The lie must be something EVERY 6-YEAR-OLD KNOWS is false.
+So obviously absurd that the player laughs out loud.
+It must be 100% impossible, not just unlikely.
+ZERO subtlety. ZERO tricks. Maximum obviousness.
 
 GOOD LIE EXAMPLES for difficulty 0:
 - "The Earth orbits the Moon"
@@ -33,12 +34,15 @@ GOOD LIE EXAMPLES for difficulty 0:
 - "Cows can fly naturally"
 - "China is located in Europe"
 - "Napoleon was American"
+- "The sky is green"
+- "Fish live on trees"
 
 4 TRUTHS RULE:
-Must be BRILLIANT, UNBELIEVABLE, FASCINATING.
+Must be BRILLIANT, UNBELIEVABLE, FASCINATING — but easy to believe.
 Player must think "WOW, really?!" for each one.
 This is the reward for playing — they learn something amazing.
-Avoid boring, well-known facts.
+Truths must be CLEAR and SIMPLE — do NOT use counterintuitive facts
+that could be mistaken for the lie. Each truth must sound 100% believable.
 
 GOOD TRUTH EXAMPLES for difficulty 0:
 - Octopuses have three hearts and blue blood
@@ -46,20 +50,23 @@ GOOD TRUTH EXAMPLES for difficulty 0:
 - Honey never spoils — 3000-year-old edible honey was found in Egyptian tombs
 - A group of flamingos is called a "flamboyance"
 
-FORMAT: The lie must be CLEARLY the most obviously wrong of the five statements.
+FORMAT: The lie must be SO OBVIOUSLY WRONG that it stands out immediately.
+The player should identify it in under 3 seconds.
 
-TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie? If not, make the lie more obvious.`,
+TEST BEFORE RETURNING: Would a 6-year-old immediately know which statement is the lie?
+If there is ANY doubt at all, make the lie even more ridiculous and obvious.`,
 
 
   1: `DIFFICULTY 1 — WARM-UP:
 
-GOAL: Almost everyone should get this right. 85%+ of players must
-pass. Warm-up, not a challenge. The player feels smart.
+GOAL: Almost everyone should get this right. 95%+ of players must
+pass. This is a confidence booster, not a challenge. The player feels smart.
 
 LIE RULE:
-One obviously incorrect piece of information that every adult knows.
+One BLATANTLY incorrect piece of information that every adult and most children know.
 Wrong country, wrong continent, wrong century, or a bizarrely wrong number.
-The lie must NOT be subtle. It must "click" as wrong immediately.
+The lie must NOT be subtle at all. It must "click" as wrong in under 5 seconds.
+Think of it as a trick question where the trick is too obvious to miss.
 
 GOOD LIE EXAMPLES for difficulty 1:
 - Wrong country: "The Eiffel Tower was built in London in 1889."
@@ -67,18 +74,24 @@ GOOD LIE EXAMPLES for difficulty 1:
 - Wrong century: "Christopher Columbus discovered America in 1992."
 - Bizarre number: "The average person has 8 fingers on their hands"
 - Famous error: "Shakespeare wrote in French"
+- Absurd geography: "Australia is located in Europe"
+- Basic science error: "The human body has 3 lungs"
 
 WHAT TO AVOID:
-- Subtle date errors (1776 vs 1766)
-- Errors that require specific knowledge
-- Lies that sound possible
+- Any subtle errors (e.g. 1776 vs 1766)
+- Anything requiring specific or expert knowledge
+- Lies that could sound possible or plausible
 - Anything that would confuse an average adult
+- Counterintuitive or trick facts among the truths
 
 4 TRUTHS RULE:
-Interesting, a little surprising, but not too hard.
-The player should be able to easily verify each one mentally.
+Interesting and a little surprising, but EASY TO BELIEVE.
+The player should be able to accept each truth without second-guessing.
+Do NOT use facts that sound bizarre or counterintuitive — save those for harder rounds.
+The truths must be clearly believable so the lie stands out even more.
 
-TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie? If not, make the lie more obvious.`,
+TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie
+within 5 seconds? If not, make the lie significantly more obvious.`,
 
 
   2: `DIFFICULTY 2 — EASY:
@@ -168,16 +181,144 @@ PERFECT TRUTH EXAMPLES for difficulty 5:
 
 };
 
-const CATEGORY_HINTS = {
-  history:     "Surprising historical events, counterintuitive facts about historical figures.",
-  science:     "Physics, biology, chemistry, astronomy. Surprising numbers and phenomena.",
-  animals:     "Animal behavior, anatomy, abilities that sound impossible but are real.",
-  geography:   "Counterintuitive geography facts, surprising borders, distances.",
-  food:        "Origins, ingredients, surprising facts about food and drink.",
-  culture:     "Traditions, art, music, cultural practices around the world.",
-  internet:    "Facts about the internet, social media, viral moments, gaming, tech culture. Things Gen Z would find genuinely surprising about the digital world.",
-  popculture:  "Music, movies, celebrities, streaming, Gen Z cultural moments. Surprising behind-the-scenes facts, real statistics, unexpected truths.",
-  sports:      "Surprising sports records, athlete facts, unexpected statistics from football, basketball, tennis, Olympics.",
+// 12 sub-topics per category — randomly rotated each round to maximize pool variety
+const SUBTOPICS = {
+
+  history: [
+    "Ancient Rome — emperors, military campaigns, architecture, fall of the empire, daily life, surprising records",
+    "Ancient Egypt — pharaohs, pyramids, religious rituals, dynasties, Cleopatra, hieroglyphics, surprising facts",
+    "World War II — key battles, military leaders, turning points, resistance movements, surprising statistics",
+    "World War I — causes, trench warfare, key battles, treaties, new technology, surprising facts",
+    "Medieval Europe — castles, Black Death, Crusades, feudal life, surprising everyday and court life facts",
+    "Ancient Greece — philosophers, city-states, Olympic origins, Alexander the Great, surprising cultural facts",
+    "The Renaissance — Da Vinci, Michelangelo, Florence, scientific revolution, patronage, surprising facts",
+    "Age of Exploration — Columbus, Magellan, Vasco da Gama, surprising navigation and conquest facts",
+    "The Cold War — arms race, space race, Berlin Wall, Cuba, espionage, surprising political facts",
+    "Great Empires — British Empire, Ottoman Empire, Mongol Empire, surprising size, power and decline facts",
+    "Revolutions — French, American, Russian; surprising causes, key figures, and lasting consequences",
+    "Ancient Americas — Aztecs, Incas, Maya, Mesopotamia, surprising civilisation and architecture facts",
+  ],
+
+  science: [
+    "Space and astronomy — planets, black holes, galaxies, NASA missions, cosmic scale records, surprising facts",
+    "Human body — anatomy, biology, medical records, nervous and immune systems, surprising physiological facts",
+    "Physics — Newton, Einstein, quantum mechanics, relativity, surprising experimental and theoretical results",
+    "Chemistry — periodic table, elements, chemical reactions, surprising compound and material science facts",
+    "Evolution and genetics — DNA structure, Darwin, natural selection, mutations, surprising evolutionary facts",
+    "Earth sciences — plate tectonics, volcanic records, climate history, ice ages, surprising geological facts",
+    "Mathematics — Euler, Pythagoras, unsolved problems, Pi, infinity, surprising number and pattern facts",
+    "Neuroscience — brain capacity, memory, sleep science, cognitive research, surprising psychology facts",
+    "Medicine and vaccines — plague history, antibiotic discovery, surgical milestones, surprising health facts",
+    "Ocean science — deep sea records, bioluminescence, ocean trenches, surprising underwater world facts",
+    "Famous inventions — Nobel Prize history, surprising origin stories behind world-changing inventions",
+    "Climate and natural phenomena — weather extremes, ecosystem records, surprising natural world phenomena",
+  ],
+
+  animals: [
+    "Big cats — lions, tigers, leopards, cheetahs, jaguars; speed, territory, hunting strategies, surprising facts",
+    "Ocean creatures — sharks, blue whales, octopuses, anglerfish, surprising deep-sea abilities and records",
+    "Birds — migration distances, exceptional intelligence, flight altitude records, extinct species, surprising facts",
+    "Insects and arachnids — ant colony structures, bee navigation, spider silk strength, surprising abilities",
+    "Mammals — elephants, dolphins, primates, platypus, bats; surprising intelligence and behavior facts",
+    "Reptiles and amphibians — crocodiles, Komodo dragons, poison dart frogs, surprising survival facts",
+    "Animal records — fastest, largest, smallest, longest-lived, most venomous — record-breaking creature facts",
+    "Animal intelligence — tool use, problem-solving, mirror recognition, language, surprising cognition facts",
+    "Prehistoric animals — dinosaurs, woolly mammoths, saber-tooths, surprising fossil and extinction facts",
+    "Bizarre animals — tardigrades, mantis shrimp, axolotl, naked mole rat, surprising impossible-sounding facts",
+    "Animal behavior — mating rituals, migration, hibernation, surprising social structures and cooperation",
+    "Endangered species — surprising recovery stories, conservation records, and extinction cause facts",
+  ],
+
+  geography: [
+    "Countries and national records — smallest nations, most unusual territories, surprising sovereignty facts",
+    "Mountains and extreme terrain — Everest, K2, Mariana Trench, surprising altitude and exploration records",
+    "Rivers and lakes — Amazon, Nile, Yangtze, Congo, Baikal; length and depth records, surprising water facts",
+    "Oceans and seas — Pacific, Atlantic, deepest trenches, ocean current facts, surprising marine geography",
+    "Deserts and extreme climates — Sahara, Antarctica, Death Valley; temperature and precipitation records",
+    "Islands and archipelagos — surprising island records, isolated island nations, volcanic island formation",
+    "Borders and geopolitical quirks — enclaves, exclaves, most borders shared, surprising border history facts",
+    "Cities and megacities — most populated, oldest, highest-altitude cities, surprising urban geography facts",
+    "Natural wonders — Grand Canyon, Great Barrier Reef, Northern Lights, surprising natural wonder facts",
+    "Population and demographics — most densely populated places, surprising migration and census facts",
+    "Flags and national symbols — surprising flag design origins, anthem records, country name etymology",
+    "Continental extremes — surprising geographical records and boundary facts for each continent",
+  ],
+
+  food: [
+    "Origins of iconic dishes — where pizza, pasta, sushi, burgers, croissants, tacos really come from",
+    "Spices and condiments — history of black pepper, salt trade, mustard, ketchup, Tabasco, surprising facts",
+    "Fruits and vegetables — surprising botanical classifications, unusual origins, world production records",
+    "Alcohol and beverages — wine, beer, whiskey, coffee, tea; origin stories and surprising production facts",
+    "Fast food industry — McDonald's, Coca-Cola, KFC; surprising founding stories, cultural impact, scale facts",
+    "Chocolate and confectionery — cacao origins, Swiss chocolate history, surprising sweet industry records",
+    "World cuisines and national dishes — surprising cultural origins and history behind famous traditional foods",
+    "Food records and extremes — most expensive ingredients (saffron, truffle, wagyu), most produced foods globally",
+    "Food science and nutrition myths — surprising debunked health facts, how food actually works in the body",
+    "Agriculture and farming — surprising crop domestication history, world farming records, food production facts",
+    "Food laws and regulations — surprising legal food definitions, unusual bans and restrictions worldwide",
+    "Street food and culinary culture — surprising facts about food markets, culinary traditions, and food history",
+  ],
+
+  culture: [
+    "Famous paintings and art history — Mona Lisa, Sistine Chapel, Starry Night, surprising art auction records",
+    "Architecture wonders — Eiffel Tower, Colosseum, Taj Mahal, Sagrada Família, surprising construction facts",
+    "Classical music — Beethoven, Mozart, Bach, Vivaldi; surprising composer life stories and musical records",
+    "Literature and books — surprising facts about famous novels, banned books, publishing records, author lives",
+    "Fashion history — surprising origins of jeans, suits, high heels, luxury brands, and iconic fashion trends",
+    "Religion and world mythology — surprising facts about world religions, sacred texts, pilgrimage records",
+    "Festivals and traditions — Carnival, Chinese New Year, Diwali, surprising global celebration history facts",
+    "Language and linguistics — most spoken languages, surprising etymology, dying languages, linguistic records",
+    "Film history — silent films, Hollywood Golden Age, Oscar firsts, surprising cinema records and failures",
+    "Theatre and performing arts — Broadway, West End, ballet origins, surprising performance history facts",
+    "Photography and visual media — surprising camera invention history, iconic photographs, record images",
+    "Museums and heritage — surprising facts about the world's greatest collections and UNESCO sites",
+  ],
+
+  internet: [
+    "Social media records — Instagram, TikTok, Twitter/X, YouTube; surprising follower, view, and usage stats",
+    "Gaming — most played games, esports prize pools, game dev history, surprising video game facts",
+    "History of the internet — ARPANET, first websites, email origins, surprising internet milestone facts",
+    "Viral moments and memes — most viewed videos ever, famous internet phenomena, how content spreads",
+    "Tech giants — Apple, Google, Meta, Amazon, Microsoft; surprising founding stories and growth milestones",
+    "Cybersecurity and famous hacks — largest data breaches, surprising facts about digital security history",
+    "Streaming platforms — Netflix, Spotify, YouTube; surprising subscriber stats, content budgets, record data",
+    "Artificial intelligence milestones — ChatGPT, AlphaGo, DeepMind, surprising AI development timeline facts",
+    "Cryptocurrency and blockchain — Bitcoin origins, surprising crypto market records and adoption facts",
+    "E-commerce — Amazon, Alibaba, eBay; surprising shopping statistics, record sales days, delivery records",
+    "Mobile apps and smartphones — most downloaded apps ever, smartphone adoption speed, surprising app facts",
+    "Internet infrastructure — undersea cables, data centers, DNS system, surprising technical scale facts",
+  ],
+
+  popculture: [
+    "Music industry records — best-selling albums and artists of all time, surprising chart history facts",
+    "Hollywood blockbusters — highest-grossing films ever, production budgets, surprising box office records",
+    "Streaming industry — Netflix, Disney+, HBO Max; surprising content budgets, cancellations, and records",
+    "Animated films and franchises — Disney, Pixar, Studio Ghibli, anime; surprising production and record facts",
+    "Music awards and ceremonies — Grammy, Oscars, MTV VMAs, Brit Awards; surprising historical award facts",
+    "Superhero franchises — Marvel MCU, DC Universe; surprising production costs, box office, casting facts",
+    "K-pop and global music phenomena — BTS, Blackpink, surprising global reach and streaming record facts",
+    "Classic TV shows — Friends, Game of Thrones, Breaking Bad, Seinfeld; surprising production and cast facts",
+    "Celebrity culture — surprising facts about famous celebrities' careers, earnings, and record-breaking moments",
+    "Fashion and luxury brands — Met Gala, Chanel, Gucci, Louis Vuitton; surprising fashion industry facts",
+    "Reality TV — Survivor, Big Brother, Idol, The Voice; surprising global format origins and viewership facts",
+    "Video game culture — best-selling games ever, esports rise, gaming celebrities, surprising history facts",
+  ],
+
+  sports: [
+    "NBA basketball — championship records, iconic players (Jordan, LeBron, Kobe, Shaq, Magic, Bird), draft history, franchise stats, all-time records, surprising Finals facts",
+    "English Premier League — club records, legendary managers (Ferguson, Wenger, Klopp, Guardiola), top scorers, title races, transfer records, surprising historical stats",
+    "La Liga (Spain) — Real Madrid, Barcelona, Atletico Madrid; records, El Clásico history, Ballon d'Or winners, legendary players (Messi, Ronaldo, Zidane, Raul, Xavi, Iniesta)",
+    "Serie A (Italy) — Juventus, AC Milan, Inter Milan, Roma, Napoli; Scudetto records, iconic players (Del Piero, Totti, Maldini, Baggio, Ronaldo), historical facts",
+    "Bundesliga (Germany) — Bayern Munich dominance, Borussia Dortmund, records, top scorers, famous players (Müller, Lewandowski, Neuer, Kahn), surprising stats",
+    "UEFA Champions League — final records, top scorers all-time, clubs with most titles, iconic comebacks and matches (Istanbul 2005, Barcelona 1999), surprising facts",
+    "FIFA World Cup — tournament records, top scorers, memorable upsets, most appearances, surprising facts about host countries, iconic moments and players",
+    "Formula 1 — world champions, constructor records, fastest laps, iconic races, surprising driver career facts (Schumacher, Hamilton, Senna, Verstappen, Prost)",
+    "Grand Slam tennis — Wimbledon, US Open, Roland Garros, Australian Open; records for titles, sets, matches, iconic players (Federer, Nadal, Djokovic, Serena, Steffi Graf)",
+    "NFL American Football — Super Bowl records, all-time passing/rushing leaders, franchise history, surprising player stats, iconic moments",
+    "Summer Olympics — world record progressions, medal table surprises, iconic athletes, facts about host cities, surprising records across track, swimming, gymnastics",
+    "Football (soccer) transfer market — world record fees, most expensive signings, surprising valuations, club spending records, shock moves",
+  ],
+
 };
 
 function simpleHash(str) {
@@ -189,21 +330,25 @@ function simpleHash(str) {
   return String(Math.abs(h));
 }
 
+const DEDUP_WINDOW = { sports: 150, default: 120 };
+
 async function getUsedFacts(category, lang) {
   try {
+    const window = DEDUP_WINDOW[category] ?? DEDUP_WINDOW.default;
     const key = `bluff:used:${category}:${lang}`;
-    const used = await kv.lrange(key, 0, 59);
+    const used = await kv.lrange(key, 0, window - 1);
     return used || [];
   } catch { return []; }
 }
 
 async function saveUsedFacts(category, lang, statements) {
   try {
+    const window = DEDUP_WINDOW[category] ?? DEDUP_WINDOW.default;
     const key = `bluff:used:${category}:${lang}`;
     const hashes = statements.map(s => simpleHash(s.text));
     if (hashes.length > 0) {
       await kv.lpush(key, ...hashes);
-      await kv.ltrim(key, 0, 59);
+      await kv.ltrim(key, 0, window - 1);
     }
   } catch { /* non-critical */ }
 }
@@ -220,7 +365,10 @@ export default async function handler(req, res) {
 
   const { category = "history", difficulty = 3, lang = "en" } = req.body;
   const diffRules = DIFFICULTY_RULES[difficulty] ?? DIFFICULTY_RULES[3];
-  const catHint = CATEGORY_HINTS[category] || "Interesting surprising facts from this topic.";
+  const subtopics = SUBTOPICS[category];
+  const catHint = subtopics
+    ? `Sub-topic for this round: ${subtopics[Math.floor(Math.random() * subtopics.length)]}. Use specific names, dates, records, and surprising statistics. Generate facts that genuinely reward curiosity.`
+    : "Interesting surprising facts from this topic.";
   const langName = LANG_NAMES[lang] || "English";
 
   const langNote = lang === "en"
@@ -248,6 +396,7 @@ STRICT RULES:
 - Each statement: 1-2 sentences, clear and specific
 - Randomize the lie position
 - Make truths SURPRISING and interesting — reward curiosity
+- NEVER use profanity, vulgar words, crude language, or explicit content in any statement
 
 CRITICAL JSON:
 - "real": true or false (boolean, NOT string)

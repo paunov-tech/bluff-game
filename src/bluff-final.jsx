@@ -1,4 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { getNextRound } from "./utils/roundSelector.js";
+import { LADDER_DIFFICULTY } from "./data/difficultyMap.js";
+import { audio } from "./audio/AudioEngine.js";
+import { axiosSay, AXIOS_LINES } from "./audio/axiosVoice.js";
+import { AxiosFace, AxiosBubble } from "./components/AxiosFace.jsx";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
@@ -39,7 +44,9 @@ const CATEGORY_EMOJIS = {
   food:"🍷", culture:"🎭", internet:"💻", popculture:"🎬", sports:"⚽",
 };
 // Round 1 = difficulty 0 (baby mode), gradual ramp
-const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
+// Show-logic difficulty curve — used only for timer duration lookup
+// Actual round selection uses LADDER_DIFFICULTY from difficultyMap.js
+const ROUND_DIFFICULTY = [1, 2, 2, 3, 2, 4, 3, 5, 5, 5];
 const TIMER_PER_DIFF = { 0:50, 1:50, 2:55, 3:65, 4:80, 5:95 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
@@ -95,93 +102,7 @@ const MOODS = {
     bl:{x1:68,y1:76,x2:90,y2:80}, br:{x1:110,y1:80,x2:132,y2:76} },
 };
 
-// ═══════════════════════════════════════════════════════════════
-// AXIOM FACE
-// ═══════════════════════════════════════════════════════════════
-function AxiomFace({ mood="idle", size=64 }) {
-  const uid = useRef(Math.random().toString(36).slice(2)).current;
-  const m = MOODS[mood] || MOODS.idle;
-  const sc = size / 200;
-  const s = v => Math.round(v * sc);
-  const fid = `gc-${uid}`, cid = `hc-${uid}`;
-  const Mouth = m.mouth.type === "line" ? <line {...m.mouth.p}/> : <path {...m.mouth.p}/>;
-
-  return (
-    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-        style={{position:"absolute",inset:0,animation:"hexRotate 13s linear infinite"}}>
-        <polygon points={`${s(100)},${s(8)} ${s(186)},${s(52)} ${s(186)},${s(148)} ${s(100)},${s(192)} ${s(14)},${s(148)} ${s(14)},${s(52)}`}
-          fill="none" stroke="rgba(34,211,238,.1)" strokeWidth="1.5" strokeDasharray="5 4"/>
-      </svg>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-        style={{position:"absolute",inset:0,animation:"hexRotateCCW 9s linear infinite"}}>
-        <polygon points={`${s(100)},${s(20)} ${s(174)},${s(62)} ${s(174)},${s(138)} ${s(100)},${s(180)} ${s(26)},${s(138)} ${s(26)},${s(62)}`}
-          fill="none" stroke="rgba(34,211,238,.15)" strokeWidth="1" strokeDasharray="2 5"/>
-      </svg>
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{position:"absolute",inset:0}}>
-        <defs>
-          <filter id={fid}><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-          <clipPath id={cid}><polygon points={`${s(100)},${s(32)} ${s(168)},${s(70)} ${s(168)},${s(148)} ${s(100)},${s(186)} ${s(32)},${s(148)} ${s(32)},${s(70)}`}/></clipPath>
-        </defs>
-        <polygon points={`${s(100)},${s(32)} ${s(168)},${s(70)} ${s(168)},${s(148)} ${s(100)},${s(186)} ${s(32)},${s(148)} ${s(32)},${s(70)}`}
-          fill="#030810" stroke={m.eye} strokeWidth={size>80?2:1.5} filter={`url(#${fid})`}/>
-        <ellipse cx={s(82)} cy={s(94)} rx={s(15)} ry={s(11)} fill="rgba(2,6,16,.95)" stroke="rgba(34,211,238,.2)" strokeWidth="1"/>
-        <ellipse cx={s(118)} cy={s(94)} rx={s(15)} ry={s(11)} fill="rgba(2,6,16,.95)" stroke="rgba(34,211,238,.2)" strokeWidth="1"/>
-        <circle cx={s(82)} cy={s(94)} r={Math.round(m.er*sc*.85)} fill={m.eye} filter={`url(#${fid})`}/>
-        <circle cx={s(118)} cy={s(94)} r={Math.round(m.er*sc*.85)} fill={m.eye} filter={`url(#${fid})`}/>
-        <circle cx={s(82)} cy={s(94)} r={Math.max(1,Math.round(2.2*sc))} fill="#030810"/>
-        <circle cx={s(118)} cy={s(94)} r={Math.max(1,Math.round(2.2*sc))} fill="#030810"/>
-        <g transform={`scale(${sc})`}>{Mouth}</g>
-        <line x1={s(m.bl.x1)} y1={s(m.bl.y1)} x2={s(m.bl.x2)} y2={s(m.bl.y2)} stroke="rgba(34,211,238,.35)" strokeWidth="1.5" strokeLinecap="round"/>
-        <line x1={s(m.br.x1)} y1={s(m.br.y1)} x2={s(m.br.x2)} y2={s(m.br.y2)} stroke="rgba(34,211,238,.35)" strokeWidth="1.5" strokeLinecap="round"/>
-        <rect x={s(32)} y={s(32)} width={s(136)} height="2" fill={m.eye} opacity=".04" clipPath={`url(#${cid})`} style={{animation:"scanDown 3s linear infinite"}}/>
-      </svg>
-      <div style={{position:"absolute",bottom:size>80?10:2,right:size>80?10:2,
-        width:size>80?12:8,height:size>80?12:8,borderRadius:"50%",
-        background:m.dot,border:"2px solid #04060f",
-        boxShadow:`0 0 7px ${m.dot}`,animation:"axiomPulse 2s infinite",transition:"all .4s"}}/>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// AXIOM PANEL
-// ═══════════════════════════════════════════════════════════════
-function AxiomPanel({ mood, speech, loading, compact=false }) {
-  const ec = (MOODS[mood]||MOODS.idle).eye;
-  if (compact) return (
-    <div style={{display:"flex",alignItems:"center",gap:10,
-      background:"rgba(4,10,22,.85)",border:"1px solid rgba(34,211,238,.15)",
-      borderRadius:14,padding:"10px 12px",marginBottom:12,backdropFilter:"blur(8px)"}}>
-      <AxiomFace mood={mood} size={44}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:10,letterSpacing:"2.5px",color:ec,fontWeight:600,opacity:.65,marginBottom:3}}>AXIOM</div>
-        <div style={{fontSize:"clamp(11px,3vw,13px)",color:"#e8e6e1",lineHeight:1.45,
-          overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",
-          fontStyle:"italic",animation:"moodIn .35s ease",opacity:loading?.4:1}}>
-          {loading?"...":speech}
-        </div>
-      </div>
-    </div>
-  );
-  return (
-    <div style={{background:"rgba(4,10,22,.9)",border:"1px solid rgba(34,211,238,.18)",borderRadius:16,padding:16,marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:14}}>
-        <AxiomFace mood={mood} size={68}/>
-        <div style={{flex:1}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
-            <span style={{fontSize:12,letterSpacing:"3px",color:ec,fontWeight:700}}>AXIOM</span>
-            <span style={{fontSize:9,padding:"2px 6px",background:"rgba(34,211,238,.1)",borderRadius:8,color:"rgba(34,211,238,.55)",letterSpacing:"1px"}}>AI OPPONENT</span>
-          </div>
-          <div style={{fontSize:"clamp(12px,3.2vw,14px)",color:"#e8e6e1",lineHeight:1.55,
-            fontStyle:"italic",animation:"moodIn .4s ease",opacity:loading?.4:1,transition:"opacity .2s"}}>
-            {loading?"...":`"${speech}"`}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// AxiomFace and AxiomPanel replaced by AxiosFace / AxiosBubble (imported above)
 
 // ═══════════════════════════════════════════════════════════════
 // LANGUAGE PICKER
@@ -640,6 +561,15 @@ export default function BluffGame() {
   const [voiceEnabled, setVoiceEnabled] = useState(
     () => localStorage.getItem("bluff_voice") !== "off"
   );
+  const [lastThreeCats, setLastThreeCats] = useState([]);
+  const [axiosEmotion, setAxiosEmotion] = useState("idle");
+  const [axiosSpeaking, setAxiosSpeaking] = useState(false);
+  const [axiosBubbleText, setAxiosBubbleText] = useState("");
+  const [axiosBubbleVisible, setAxiosBubbleVisible] = useState(false);
+  const [flashColor, setFlashColor] = useState(null);
+  const [ladderPos, setLadderPos] = useState(1);
+  const [muted, setMuted] = useState(false);
+  const ladderPosRef = useRef(1);
   const timerRef = useRef(null);
   const audioRef = useRef(null);
   const audioQueueRef = useRef([]);
@@ -656,6 +586,36 @@ export default function BluffGame() {
     setLang(code);
     localStorage.setItem("bluff_lang", code);
   }
+
+  // ── AXIOS HELPERS ────────────────────────────────────────────
+  const showAxios = useCallback((emotion, event, delay = 0) => {
+    setTimeout(() => {
+      setAxiosEmotion(emotion);
+      axiosSay(event,
+        () => {
+          setAxiosSpeaking(true);
+          const lines = AXIOS_LINES[event];
+          if (lines) {
+            const text = lines[Math.floor(Math.random() * lines.length)];
+            setAxiosBubbleText(text);
+            setAxiosBubbleVisible(true);
+          }
+        },
+        () => {
+          setAxiosSpeaking(false);
+          setTimeout(() => {
+            setAxiosBubbleVisible(false);
+            setAxiosEmotion("idle");
+          }, 1000);
+        }
+      );
+    }, delay);
+  }, []);
+
+  const triggerFlash = useCallback((color) => {
+    setFlashColor(color);
+    setTimeout(() => setFlashColor(null), 80);
+  }, []);
 
   // ── AXIOM VOICE ─────────────────────────────────────────────
   async function playAxiomVoice(text, skin) {
@@ -702,28 +662,31 @@ export default function BluffGame() {
   // ── FETCH ROUND ─────────────────────────────────────────────
   async function fetchRound(idx) {
     setLoadingRound(true);
-    const diff = ROUND_DIFFICULTY[idx]||3;
-    const cat = CATEGORIES[idx % CATEGORIES.length];
-    setCategory(cat);
+    const pos = idx + 1; // rounds are 1-indexed in LADDER_DIFFICULTY
+    setLadderPos(pos);
+    ladderPosRef.current = pos;
+    const ladderPos = pos; // keep local alias for rest of function
+
+    // Determine difficulty from show-logic curve
+    const diff = LADDER_DIFFICULTY[ladderPos] ?? 3;
+
     try {
-      const res = await fetch("/api/generate-round",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ category:cat, difficulty:diff, lang }),
-      });
-      const data = await res.json();
-      const normalized = (data.statements||[]).map(s=>({
-        text: String(s.text||""),
-        real: s.real===true||s.real==="true",
-      }));
-      const lies = normalized.filter(s=>!s.real);
-      console.log(`[fetchRound] idx=${idx} cat=${cat} diff=${diff} lang=${lang} lies=${lies.length}`);
-      if(lies.length!==1) throw new Error("Bad lie count");
+      const round = getNextRound(ladderPos, lastThreeCats);
+      const cat = round.cat;
+      setCategory(cat);
+      setLastThreeCats(prev => [...prev.slice(-2), cat]);
+
+      // Convert round format {t, r} to game format {text, real}
+      const normalized = round.stmts.map(s => ({ text: s.t, real: s.r }));
       const shuffled = shuffle(normalized);
       setStmts(shuffled);
       currentStmtsRef.current = shuffled;
+
+      console.log(`[round] ladder=${ladderPos} diff=${diff} cat=${cat} id=${round.id}`);
+      audio.startBackgroundMusic(pos);
+      showAxios("speaking", "round_start");
     } catch(e) {
-      console.warn("[fetchRound] fallback:",e.message);
+      console.warn("[fetchRound] fallback:", e.message);
       const fb = shuffle([
         {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
         {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
@@ -787,8 +750,11 @@ export default function BluffGame() {
   function handleCardSelect(i) {
     if(revealed) return;
     haptic.tap();
+    audio.whoosh();
     setSel(i);
     currentSelRef.current = i;
+    setAxiosEmotion("thinking");
+    showAxios("thinking", "player_selects", 500);
     const s = currentStmtsRef.current[i];
     if(!s) return;
     // AXIOM reacts differently based on whether player picked lie or truth
@@ -817,6 +783,9 @@ export default function BluffGame() {
 
     if(isCorrect){
       haptic.correct();
+      audio.fanfare();
+      triggerFlash("#2dd4a0");
+      showAxios("shocked", "correct", 200);
       setScore(s=>s+1);
       wrongCountRef.current = 0;
       setStreak(prev=>{
@@ -827,10 +796,16 @@ export default function BluffGame() {
         if(next>=5) axiomSpeak("streak_5","shocked");
         else if(next>=3) axiomSpeak("streak_3","shocked");
         else axiomSpeak("correct","shocked");
+        if(next===3) showAxios("nervous","streak_3");
+        if(next===5) showAxios("nervous","streak_5");
+        if(next===7) showAxios("nervous","streak_7");
         return next;
       });
     } else {
       haptic.wrong();
+      audio.buzzer();
+      triggerFlash("#f43f5e");
+      showAxios("taunting", "wrong", 200);
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -861,6 +836,7 @@ export default function BluffGame() {
   // ── START ────────────────────────────────────────────────────
   function startGame() {
     clearInterval(timerRef.current);
+    audio.init();
     wrongCountRef.current=0;
     setScreen("play");
     setRoundIdx(0);
@@ -879,12 +855,13 @@ export default function BluffGame() {
   // ── RESULT ───────────────────────────────────────────────────
   function showResultScreen() {
     clearInterval(timerRef.current);
+    audio.stopBackgroundMusic();
     setScreen("result");
     setScore(sc=>{
       setTotal(tt=>{
         const won = sc>=Math.ceil(tt*.67);
         axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
-        if(won){ setConfetti(true); haptic.victory(); }
+        if(won){ setConfetti(true); haptic.victory(); showAxios("defeated","grand_bluff"); }
         return tt;
       });
       return sc;
@@ -952,9 +929,11 @@ export default function BluffGame() {
         setTime(t => {
           if (t <= 1) { clearInterval(timerRef.current); return 0; }
           if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
-          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
-          if (t === 5) haptic.timerWarning();
+          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); showAxios("smug", "timer_10"); }
+          if (t === 5) { haptic.timerWarning(); showAxios("taunting", "timer_5"); }
           if (t === 3) haptic.timerWarning();
+          audio.tick(t <= 5 ? 3 : t <= 10 ? 2 : 1);
+          if (t <= 10) audio.heartbeat();
           return t - 1;
         });
       }, 1000);
@@ -1022,9 +1001,17 @@ export default function BluffGame() {
     goldDim:"rgba(232,197,71,.1)",ok:"#2dd4a0",bad:"#f43f5e",
     dim:"#5a5a68",glass:"rgba(255,255,255,.03)",gb:"rgba(255,255,255,.07)",
   };
+  const atmosphereColor = {
+    1:"rgba(74,158,255,0.04)", 2:"rgba(74,158,255,0.06)", 3:"rgba(232,197,71,0.04)",
+    4:"rgba(232,197,71,0.06)", 5:"rgba(255,140,66,0.06)", 6:"rgba(255,100,50,0.08)",
+    7:"rgba(255,60,80,0.07)", 8:"rgba(200,30,60,0.10)", 9:"rgba(150,20,50,0.12)",
+    10:"rgba(120,0,40,0.15)",
+  }[ladderPos] || "rgba(74,158,255,0.04)";
+
   const wrap = {
     minHeight:"100vh",
-    background:`radial-gradient(ellipse at 50% 0%,rgba(232,197,71,.05) 0%,${T.bg} 55%)`,
+    background:`radial-gradient(ellipse at 50% 0%,${atmosphereColor} 0%,${T.bg} 55%)`,
+    transition:"background 2s ease",
     fontFamily:"'Segoe UI',system-ui,sans-serif",
     display:"flex",flexDirection:"column",alignItems:"center",
     position:"relative",overflow:"hidden",color:"#e8e6e1",
@@ -1285,6 +1272,26 @@ export default function BluffGame() {
   // ─── PLAY ──────────────────────────────────────────────────
   if(screen==="play") return (
     <div style={wrap}>
+      {/* Flash overlay */}
+      {flashColor && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: flashColor,
+          opacity: 0.15,
+          pointerEvents: "none",
+          zIndex: 9998,
+          animation: "ax-flash 0.08s ease-out forwards",
+        }} />
+      )}
+      {/* Vignette */}
+      {ladderPos >= 6 && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: `radial-gradient(ellipse at 50% 50%, transparent ${30 + (10-ladderPos)*5}%, rgba(0,0,0,${0.1 + (ladderPos-6)*0.08}) 100%)`,
+          pointerEvents: "none", zIndex: 0,
+          transition: "all 1s ease",
+        }} />
+      )}
       <Particles count={10}/>
       {confetti&&<Confetti/>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
@@ -1300,7 +1307,22 @@ export default function BluffGame() {
               </div>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button
+              onClick={() => {
+                const newMuted = !muted;
+                setMuted(newMuted);
+                audio.enabled = !newMuted;
+                if (newMuted) window.speechSynthesis?.cancel();
+              }}
+              style={{
+                background: "transparent", border: "none",
+                fontSize: 18, cursor: "pointer", opacity: 0.5,
+                color: "#e8e6e1", padding: "4px",
+              }}
+            >
+              {muted ? "🔇" : "🔊"}
+            </button>
             {streak>0&&<div style={{fontSize:12,color:T.gold,fontWeight:700,display:"flex",alignItems:"center",gap:3,background:T.goldDim,padding:"4px 10px",borderRadius:20,animation:streak>=3?"g-fire .6s infinite":"none"}}>🔥{streak}</div>}
             {!revealed
               ?<TimerRing time={time} max={TIMER_PER_DIFF[diff]||45} size={46}/>
@@ -1315,7 +1337,22 @@ export default function BluffGame() {
             AXIOM is preparing your deception...
           </div>
         ):(<>
-          <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={true}/>
+          {/* AXIOS section */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 12,
+            marginBottom: 14,
+            animation: "g-fadeUp .4s ease",
+          }}>
+            <AxiosFace
+              emotion={axiosEmotion}
+              speaking={axiosSpeaking}
+              ladderPosition={ladderPos}
+            />
+            <AxiosBubble
+              text={axiosBubbleText}
+              visible={axiosBubbleVisible}
+            />
+          </div>
 
           <div style={{textAlign:"center",marginBottom:12}}>
             <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(17px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:revealed?(correct?T.ok:T.bad):"#fff",transition:"color .4s"}}>
@@ -1350,12 +1387,12 @@ export default function BluffGame() {
           </div>
 
           {!revealed
-            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); audio.drumRoll(2.0); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
               {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
               <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
             </button>
             :<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{clearInterval(timerRef.current);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
+              <button onClick={()=>{clearInterval(timerRef.current);audio.stopBackgroundMusic();setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
               <button onClick={roundIdx+1<ROUND_DIFFICULTY.length?nextRound:showResultScreen} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
                 <span style={{position:"relative"}}>{roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →"}</span>
@@ -1565,5 +1602,14 @@ function GameStyles(){
     @keyframes scanDown{0%{transform:translateY(-50px)}100%{transform:translateY(220px)}}
     @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+    @keyframes ax-breathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.015) translateY(-1px)}}
+    @keyframes ax-tilt{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-4deg) translateX(-2px)}}
+    @keyframes ax-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px) rotate(-0.5deg)}75%{transform:translateX(2px) rotate(0.5deg)}}
+    @keyframes ax-meltdown{0%{transform:scale(1) rotate(0deg);filter:hue-rotate(0deg)}25%{transform:scale(1.02) rotate(-2deg);filter:hue-rotate(90deg)}50%{transform:scale(0.98) rotate(2deg);filter:hue-rotate(180deg)}75%{transform:scale(1.01) rotate(-1deg);filter:hue-rotate(270deg)}100%{transform:scale(1) rotate(0deg);filter:hue-rotate(360deg)}}
+    @keyframes ax-heartbeat{0%{transform:scale(1)}14%{transform:scale(1.1)}28%{transform:scale(1)}42%{transform:scale(1.06)}100%{transform:scale(1)}}
+    @keyframes ax-timerPulse{0%{transform:scale(1);opacity:0.6}100%{transform:scale(1.8);opacity:0}}
+    @keyframes ax-sweatDrop{0%{transform:translateY(0);opacity:0.8}100%{transform:translateY(14px);opacity:0}}
+    @keyframes ax-tauntGlow{0%,100%{opacity:0.4}50%{opacity:0.9}}
+    @keyframes ax-flash{0%{opacity:0.15}100%{opacity:0}}
   `}</style>;
 }

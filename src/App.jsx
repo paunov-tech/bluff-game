@@ -645,6 +645,9 @@ export default function BluffGame() {
   const [storiesImg, setStoriesImg] = useState(null);
   const [challengeURL, setChallengeURL] = useState(null);
   const [challenge, setChallenge] = useState(null);
+  const [duelId, setDuelId] = useState(null);
+  const [duelCreating, setDuelCreating] = useState(false);
+  const [duelName, setDuelName] = useState(() => localStorage.getItem("bluff_duel_name") || "");
   const [activeSkin, setActiveSkin] = useState(
     () => localStorage.getItem("bluff_skin") || "default"
   );
@@ -668,6 +671,9 @@ export default function BluffGame() {
   const wrongCountRef = useRef(0); // tracks consecutive wrongs for escalating taunts
   const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
   const currentSelRef = useRef(null);
+  const roundsPlayedRef = useRef([]); // [{statements, category}] — duel replay data
+  const resultsHistoryRef = useRef([]); // boolean per round — duel results
+  const gameStartTimeRef = useRef(null); // ms timestamp — duel total time
 
   // ── Daily Challenge ──────────────────────────────────────────
   const [dailyMode, setDailyMode] = useState(false);
@@ -875,6 +881,7 @@ export default function BluffGame() {
         const shuffled = shuffle(normalized);
         setStmts(shuffled);
         currentStmtsRef.current = shuffled;
+        roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
       }
       setLoadingRound(false);
       return;
@@ -900,6 +907,7 @@ export default function BluffGame() {
       const shuffled = shuffle(normalized);
       setStmts(shuffled);
       currentStmtsRef.current = shuffled;
+      roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
     } catch(e) {
       console.warn("[fetchRound] fallback:",e.message);
       const fb = shuffle([
@@ -911,6 +919,7 @@ export default function BluffGame() {
       ]);
       setStmts(fb);
       currentStmtsRef.current = fb;
+      roundsPlayedRef.current[idx] = { statements: fb, category: cat };
     } finally {
       setLoadingRound(false);
     }
@@ -961,6 +970,8 @@ export default function BluffGame() {
     const selCurrent = currentSelRef.current;
     const bi = stmtsCurrent.findIndex(s=>!s.real);
     const isCorrect = selCurrent===bi && bi!==-1;
+
+    resultsHistoryRef.current[roundIdx] = isCorrect;
 
     setRevealed(true);
     setTotal(t=>t+1);
@@ -1031,8 +1042,60 @@ export default function BluffGame() {
     setStreak(0);
     setConfetti(false);
     setShareImg(null);
+    setDuelId(null);
+    setDuelCreating(false);
+    roundsPlayedRef.current = [];
+    resultsHistoryRef.current = [];
+    gameStartTimeRef.current = Date.now();
     fetchRound(0);
     axiomSpeak("intro","idle");
+  }
+
+  // ── CREATE DUEL ──────────────────────────────────────────────
+  async function handleCreateDuel() {
+    if (duelCreating || duelId) return;
+    const rounds = roundsPlayedRef.current.filter(Boolean);
+    if (rounds.length < ROUND_DIFFICULTY.length) return; // not all rounds tracked
+    setDuelCreating(true);
+    try {
+      const totalTime = gameStartTimeRef.current
+        ? Math.round((Date.now() - gameStartTimeRef.current) / 1000)
+        : 0;
+      const name = duelName.trim() || "Player";
+      localStorage.setItem("bluff_duel_name", name);
+      const res = await fetch("/api/duel/create", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          rounds,
+          score,
+          time:    totalTime,
+          results: resultsHistoryRef.current,
+          name,
+        }),
+      });
+      const data = await res.json();
+      if (data.challengeId) {
+        setDuelId(data.challengeId);
+        const url = `${window.location.origin}/duel/${data.challengeId}`;
+        if (navigator.share) {
+          navigator.share({
+            title: "BLUFF™ Duel Challenge",
+            text:  `I scored ${score}/${total} on BLUFF™. Can you beat me? 🎯`,
+            url,
+          }).catch(() => {});
+        } else {
+          navigator.clipboard?.writeText(url)
+            .then(() => alert("Duel link copied! 📋"))
+            .catch(() => alert(url));
+        }
+      }
+    } catch (e) {
+      console.error("[duel create]", e);
+      alert("Could not create duel. Please try again.");
+    } finally {
+      setDuelCreating(false);
+    }
   }
 
   // ── RESULT ───────────────────────────────────────────────────
@@ -1885,6 +1948,50 @@ export default function BluffGame() {
             <div style={{ background: "rgba(34,211,238,.04)", border: "1px solid rgba(34,211,238,.1)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(34,211,238,.3)" }}>
               Generating...
             </div>
+          )}
+
+          {/* DUEL — same questions, head-to-head */}
+          {!dailyMode && roundsPlayedRef.current.filter(Boolean).length >= ROUND_DIFFICULTY.length && (
+            <>
+              <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginTop: 14, marginBottom: 10 }}>
+                ⚔️ Duel — same rounds, head to head
+              </div>
+              {!duelId && (
+                <input
+                  value={duelName}
+                  onChange={e => setDuelName(e.target.value)}
+                  placeholder="Your name for the duel..."
+                  style={{ width: "100%", padding: "11px 14px", fontSize: 14, background: T.card, border: `1.5px solid ${T.gb}`, borderRadius: 10, color: "#e8e6e1", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8, outline: "none" }}
+                />
+              )}
+              {duelId ? (
+                <button
+                  onClick={() => {
+                    const url = `${window.location.origin}/duel/${duelId}`;
+                    if (navigator.share) {
+                      navigator.share({
+                        title: "BLUFF™ Duel Challenge",
+                        text:  `I scored ${score}/${total} on BLUFF™. Can you beat me with the same questions? 🎯`,
+                        url,
+                      }).catch(() => navigator.clipboard?.writeText(url));
+                    } else {
+                      navigator.clipboard?.writeText(url)
+                        .then(() => alert("Duel link copied! 📋"))
+                        .catch(() => alert(url));
+                    }
+                  }}
+                  style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "rgba(232,197,71,.1)", color: "#e8c547", border: "1px solid rgba(232,197,71,.3)", borderRadius: 12, fontFamily: "inherit", cursor: "pointer" }}>
+                  📋 Share duel link
+                </button>
+              ) : (
+                <button
+                  onClick={handleCreateDuel}
+                  disabled={duelCreating}
+                  style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: duelCreating ? T.glass : "rgba(232,197,71,.08)", color: duelCreating ? T.dim : "#e8c547", border: `1px solid ${duelCreating ? T.gb : "rgba(232,197,71,.3)"}`, borderRadius: 12, fontFamily: "inherit", cursor: duelCreating ? "not-allowed" : "pointer" }}>
+                  {duelCreating ? "Creating duel..." : "⚔️ Challenge to a Duel"}
+                </button>
+              )}
+            </>
           )}
 
           {/* Telegram share */}
