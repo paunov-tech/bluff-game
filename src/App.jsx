@@ -1572,6 +1572,7 @@ export default function BluffGame() {
   // ─── HOME ──────────────────────────────────────────────────
   if(screen==="home") return (
     <div style={wrap}>
+      <AxiomPortrait visible={loadingRound}/>
       <Particles/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
