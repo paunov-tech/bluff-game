@@ -1,1807 +1,968 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { getNextRound } from "./utils/roundSelector.js";
-import { LADDER_DIFFICULTY, TIMER_BY_LADDER } from "./data/difficultyMap.js";
-import { audio } from "./audio/AudioEngine.js";
-import { axiosSay, AXIOS_LINES } from "./audio/axiosVoice.js";
-import { AxiosFace, AxiosBubble } from "./components/AxiosFace.jsx";
-
-// ── Haptic feedback ──────────────────────
-function useHaptic() {
-  const supported = typeof navigator !== "undefined" &&
-    "vibrate" in navigator;
-  return {
-    tap:          () => { if (supported) navigator.vibrate(8); },
-    lockIn:       () => { if (supported) navigator.vibrate([12, 60, 12]); },
-    correct:      () => { if (supported) navigator.vibrate([15, 40, 15, 40, 80]); },
-    wrong:        () => { if (supported) navigator.vibrate([0, 30, 80, 30, 80, 30, 150]); },
-    timerWarning: () => { if (supported) navigator.vibrate(20); },
-    victory:      () => { if (supported) navigator.vibrate([50,30,50,30,50,80,50,80,50,200]); },
-  };
-}
 
 // ═══════════════════════════════════════════════════════════════
-// CONFIG
-// ═══════════════════════════════════════════════════════════════
-const BETA_MODE = true;
-
-const LANGUAGES = [
-  { code: "en", flag: "🇬🇧", label: "EN" },
-  { code: "de", flag: "🇩🇪", label: "DE" },
-  { code: "sr", flag: "🇷🇸", label: "SR" },
-  { code: "hr", flag: "🇭🇷", label: "HR" },
-  { code: "sl", flag: "🇸🇮", label: "SL" },
-  { code: "bs", flag: "🇧🇦", label: "BS" },
-  { code: "fr", flag: "🇫🇷", label: "FR" },
-  { code: "es", flag: "🇪🇸", label: "ES" },
-];
-
-const CATEGORIES = [
-  "history","internet","animals","science","popculture",
-  "geography","food","culture","sports","history",
-];
-const CATEGORY_EMOJIS = {
-  history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍",
-  food:"🍷", culture:"🎭", internet:"💻", popculture:"🎬", sports:"⚽",
-};
-// Round 1 = difficulty 0 (baby mode), gradual ramp
-// Show-logic difficulty curve — used only for timer duration lookup
-// Actual round selection uses LADDER_DIFFICULTY from difficultyMap.js
-const ROUND_DIFFICULTY = [1, 2, 2, 3, 2, 4, 3, 5, 5, 5];
-const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
-const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
-
-// ── Challenge system ──────────────────────────
-function encodeChallenge(score, total, roundDifficulties) {
-  const data = {
-    s: score,
-    t: total,
-    d: roundDifficulties, // array of difficulties played
-    ts: Date.now(),
-  };
-  return btoa(JSON.stringify(data)).replace(/=/g, "");
-}
-
-function decodeChallenge(encoded) {
-  try {
-    const padded = encoded + "==".slice(0, (4 - encoded.length % 4) % 4);
-    return JSON.parse(atob(padded));
-  } catch { return null; }
-}
-
-function getChallengeFromURL() {
-  const params = new URLSearchParams(window.location.search);
-  const c = params.get("c");
-  if (!c) return null;
-  return decodeChallenge(c);
-}
-
-function buildChallengeURL(score, total) {
-  const encoded = encodeChallenge(score, total, ROUND_DIFFICULTY);
-  return `${window.location.origin}?c=${encoded}`;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// AXIOM FACE DATA
-// ═══════════════════════════════════════════════════════════════
-const MOODS = {
-  idle:     { eye:"#22d3ee", er:5,  dot:"#22d3ee",
-    mouth:{ type:"line", p:{x1:80,y1:120,x2:120,y2:120,stroke:"#22d3ee",strokeWidth:2,strokeLinecap:"round"}},
-    bl:{x1:68,y1:78,x2:90,y2:82}, br:{x1:110,y1:82,x2:132,y2:78} },
-  taunting: { eye:"#f43f5e", er:7,  dot:"#f43f5e",
-    mouth:{ type:"path", p:{d:"M80 118 Q100 114 120 118",stroke:"#f43f5e",strokeWidth:2,fill:"none",strokeLinecap:"round"}},
-    bl:{x1:68,y1:74,x2:90,y2:80}, br:{x1:110,y1:80,x2:132,y2:74} },
-  shocked:  { eye:"#f0d878", er:8,  dot:"#f0d878",
-    mouth:{ type:"path", p:{d:"M80 122 Q100 130 120 122",stroke:"#f0d878",strokeWidth:2.5,fill:"none",strokeLinecap:"round"}},
-    bl:{x1:68,y1:82,x2:90,y2:76}, br:{x1:110,y1:76,x2:132,y2:82} },
-  defeated: { eye:"#2dd4a0", er:4,  dot:"#2dd4a0",
-    mouth:{ type:"path", p:{d:"M80 122 Q100 115 120 122",stroke:"#2dd4a0",strokeWidth:2,fill:"none",strokeLinecap:"round"}},
-    bl:{x1:68,y1:80,x2:90,y2:84}, br:{x1:110,y1:84,x2:132,y2:80} },
-  amused:   { eye:"#fb923c", er:6,  dot:"#fb923c",
-    mouth:{ type:"path", p:{d:"M80 122 Q100 128 120 122",stroke:"#fb923c",strokeWidth:2,fill:"none",strokeLinecap:"round"}},
-    bl:{x1:68,y1:76,x2:90,y2:80}, br:{x1:110,y1:80,x2:132,y2:76} },
-};
-
-// AxiomFace and AxiomPanel replaced by AxiosFace / AxiosBubble (imported above)
-
-// ═══════════════════════════════════════════════════════════════
-// LANGUAGE PICKER
-// ═══════════════════════════════════════════════════════════════
-function LangPicker({ lang, onChange }) {
-  return (
-    <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:16,flexWrap:"wrap"}}>
-      {LANGUAGES.map(l => (
-        <button key={l.code} onClick={()=>onChange(l.code)} style={{
-          display:"flex",alignItems:"center",gap:5,
-          padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:600,
-          fontFamily:"inherit",cursor:"pointer",transition:"all .2s",
-          background: lang===l.code ? "rgba(232,197,71,.12)" : "rgba(255,255,255,.03)",
-          border: lang===l.code ? "1px solid rgba(232,197,71,.45)" : "1px solid rgba(255,255,255,.07)",
-          color: lang===l.code ? "#e8c547" : "#5a5a68",
-        }}>
-          <span style={{fontSize:16}}>{l.flag}</span>
-          <span>{l.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CINEMATIC INTRO
+// CINEMATIC INTRO — unchanged
 // ═══════════════════════════════════════════════════════════════
 function CinematicIntro({ onComplete }) {
   const [phase, setPhase] = useState(0);
-  const ss = Math.min(window.innerWidth * 0.44, 180);
-  const sc = ss / 200;
-  const sp = v => Math.round(v * sc);
-  const pts = useRef(Array.from({length:18},()=>({
-    x:Math.random()*100,y:Math.random()*100,
-    s:2+Math.random()*3,d:3+Math.random()*4,dl:Math.random()*2
-  }))).current;
-
   useEffect(() => {
     const t = [
-      setTimeout(()=>setPhase(1),300),
-      setTimeout(()=>setPhase(2),2600),
-      setTimeout(()=>setPhase(3),4000),
-      setTimeout(()=>setPhase(4),5800),
+      setTimeout(() => setPhase(1), 300),
+      setTimeout(() => setPhase(2), 2800),
+      setTimeout(() => setPhase(3), 4200),
+      setTimeout(() => setPhase(4), 6200),
     ];
-    return ()=>t.forEach(clearTimeout);
-  },[]);
-
+    return () => t.forEach(clearTimeout);
+  }, []);
   return (
-    <div onClick={()=>phase>=3&&onComplete()} style={{
-      position:"fixed",inset:0,zIndex:9999,background:"#040408",
-      display:"flex",flexDirection:"column",alignItems:"center",
-      justifyContent:"center",cursor:phase>=3?"pointer":"default",overflow:"hidden"}}>
-      {pts.map((p,i)=>(
-        <div key={i} style={{position:"absolute",width:p.s,height:p.s,borderRadius:"50%",background:"#e8c547",
-          left:`${p.x}%`,top:`${p.y}%`,pointerEvents:"none",
-          opacity:phase>=2?0.05+(i%3)*0.04:0,transition:`opacity ${1+(i%3)*.5}s ease`,
-          animation:`g-float ${p.d}s ease-in-out ${p.dl}s infinite`}}/>
-      ))}
-      {BETA_MODE&&<div style={{position:"absolute",top:"max(14px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600}}>β BETA</div>}
-      {/* Seal */}
-      <div style={{position:"absolute",opacity:phase>=1&&phase<3?1:0,
-        transform:phase===1?"scale(1)":phase>=3?"scale(1.5)":"scale(.25)",
-        transition:phase===1?"all .75s cubic-bezier(.34,1.56,.64,1)":"all .55s ease",
-        display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{width:ss,height:ss,borderRadius:"50%",border:"3px solid rgba(232,197,71,.4)",
-          display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
-          boxShadow:"0 0 36px rgba(232,197,71,.1),inset 0 0 20px rgba(232,197,71,.05)"}}>
-          <div style={{width:sp(175),height:sp(175),borderRadius:"50%",border:"1.5px solid rgba(232,197,71,.2)",
-            display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
-            <div style={{fontSize:sp(10),letterSpacing:sp(8),color:"rgba(232,197,71,.4)",marginBottom:sp(5)}}>★ ★ ★</div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:sp(36),fontWeight:700,letterSpacing:sp(5),color:"#e8c547",textShadow:"0 0 15px rgba(232,197,71,.3)"}}>SIAL</div>
-            <div style={{width:sp(80),height:1.5,margin:`${sp(7)}px 0`,background:"linear-gradient(90deg,transparent,rgba(232,197,71,.4),transparent)"}}/>
-            <div style={{fontSize:sp(12),letterSpacing:sp(6),fontWeight:600,color:"rgba(232,197,71,.55)"}}>GAMES</div>
-            <div style={{fontSize:sp(10),letterSpacing:sp(8),color:"rgba(232,197,71,.4)",marginTop:sp(5)}}>★ ★ ★</div>
+    <div onClick={() => phase >= 3 && onComplete()} style={{
+      position:"fixed",inset:0,zIndex:10000,background:"#040408",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      cursor:phase>=3?"pointer":"default",overflow:"hidden",
+    }}>
+      <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+        {Array.from({length:30},(_,i)=>(
+          <div key={i} style={{
+            position:"absolute",width:2+Math.random()*4,height:2+Math.random()*4,
+            borderRadius:"50%",background:"#e8c547",
+            left:`${Math.random()*100}%`,top:`${Math.random()*100}%`,
+            opacity:phase>=2?0.08+Math.random()*0.15:0,
+            transition:`opacity ${1+Math.random()*2}s ease ${Math.random()}s`,
+            animation:phase>=2?`intro-sparkle ${3+Math.random()*4}s ease-in-out ${Math.random()*2}s infinite`:"none",
+          }}/>
+        ))}
+      </div>
+      <div style={{
+        position:"absolute",width:phase>=3?600:300,height:phase>=3?600:300,borderRadius:"50%",
+        background:"radial-gradient(circle,rgba(232,197,71,0.12) 0%,transparent 70%)",
+        opacity:phase>=1?1:0,transition:"all 1.5s ease",filter:"blur(40px)",
+      }}/>
+      <div style={{
+        position:"absolute",top:"48%",left:0,right:0,height:2,
+        background:"linear-gradient(90deg,transparent 0%,rgba(232,197,71,0.6) 45%,rgba(255,255,255,0.8) 50%,rgba(232,197,71,0.6) 55%,transparent 100%)",
+        opacity:phase===2?1:0,transform:phase===2?"scaleX(1.5)":"scaleX(0)",
+        transition:"all 0.6s cubic-bezier(0.16,1,0.3,1)",filter:"blur(1px)",
+      }}/>
+      <div style={{
+        position:"absolute",opacity:phase>=1&&phase<3?1:0,
+        transform:phase===1?"scale(1) rotate(0deg)":phase===2?"scale(0.8) rotate(-5deg)":"scale(1.5)",
+        transition:phase===1?"all 0.8s cubic-bezier(0.34,1.56,0.64,1)":"all 0.8s cubic-bezier(0.4,0,0.2,1)",
+        display:"flex",flexDirection:"column",alignItems:"center",
+      }}>
+        <div style={{
+          width:200,height:200,borderRadius:"50%",
+          border:"3px solid rgba(232,197,71,0.5)",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          position:"relative",
+          boxShadow:phase>=1?"0 0 40px rgba(232,197,71,0.15),inset 0 0 30px rgba(232,197,71,0.08)":"none",
+        }}>
+          <div style={{width:175,height:175,borderRadius:"50%",border:"1.5px solid rgba(232,197,71,0.25)",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
+            <div style={{fontSize:10,letterSpacing:8,color:"rgba(232,197,71,0.5)",marginBottom:6}}>{"★ ★ ★"}</div>
+            <div style={{fontFamily:"Georgia,'Times New Roman',serif",fontSize:36,fontWeight:700,letterSpacing:6,color:"#e8c547",textShadow:"0 0 20px rgba(232,197,71,0.4)",lineHeight:1}}>SIAL</div>
+            <div style={{width:80,height:1.5,margin:"8px 0",background:"linear-gradient(90deg,transparent,rgba(232,197,71,0.5),transparent)"}}/>
+            <div style={{fontSize:13,letterSpacing:7,fontWeight:600,color:"rgba(232,197,71,0.7)",textTransform:"uppercase"}}>GAMES</div>
+            <div style={{fontSize:10,letterSpacing:8,color:"rgba(232,197,71,0.5)",marginTop:6}}>{"★ ★ ★"}</div>
           </div>
-          <svg width={ss} height={ss} viewBox={`0 0 ${ss} ${ss}`}
-            style={{position:"absolute",top:0,left:0,animation:"hexRotate 18s linear infinite"}}>
-            <defs>
-              <path id="seal-ring"
-                d={`M ${ss/2},${ss/2} m -${ss*.42},0 a ${ss*.42},${ss*.42} 0 1,1 ${ss*.84},0 a ${ss*.42},${ss*.42} 0 1,1 -${ss*.84},0`}/>
-            </defs>
-            <text fill="rgba(232,197,71,.28)"
-              fontSize={Math.round(ss*.058)}
-              letterSpacing={Math.round(ss*.032)}
-              fontFamily="Georgia,serif">
-              <textPath href="#seal-ring">
-                · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 ·
-              </textPath>
+          <svg width="200" height="200" style={{position:"absolute",top:0,left:0,animation:"intro-spin 20s linear infinite"}}>
+            <defs><path id="cp" d="M 100,100 m -82,0 a 82,82 0 1,1 164,0 a 82,82 0 1,1 -164,0"/></defs>
+            <text fill="rgba(232,197,71,0.25)" fontSize="9" letterSpacing="3" fontFamily="Georgia,serif">
+              <textPath href="#cp">{"• DIGITAL FACTORY • SLOVENIA • EST. 2024 • QUALITY ENTERTAINMENT •"}</textPath>
             </text>
           </svg>
         </div>
-        <div style={{marginTop:sp(16),fontSize:sp(11),letterSpacing:sp(6),color:"rgba(232,197,71,.4)",fontWeight:500,opacity:phase>=1?1:0,transition:"opacity .5s ease .3s"}}>PRESENTS</div>
+        <div style={{marginTop:20,fontSize:12,letterSpacing:8,color:"rgba(232,197,71,0.5)",fontWeight:500,textTransform:"uppercase",opacity:phase>=1?1:0,transform:phase>=1?"translateY(0)":"translateY(10px)",transition:"all 0.6s ease 0.4s"}}>PRESENTS</div>
       </div>
-      {/* Logo */}
-      <div style={{position:"absolute",display:"flex",flexDirection:"column",alignItems:"center",
-        opacity:phase>=3?1:0,transform:phase>=3?"scale(1) translateY(0)":"scale(.45) translateY(20px)",
-        transition:"all .9s cubic-bezier(.34,1.56,.64,1) .1s"}}>
-        <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(62px,17vw,92px)",fontWeight:900,letterSpacing:-2,margin:0,lineHeight:1,
-          background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.6),#e8c547)",backgroundSize:"200% auto",
-          WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
-          animation:"g-shimmer 3s ease infinite",filter:"drop-shadow(0 0 24px rgba(232,197,71,.3))"}}>
-          BLUFF<sup style={{fontSize:"clamp(12px,3vw,15px)",WebkitTextFillColor:"rgba(232,197,71,.5)",position:"relative",top:"clamp(-28px,-6vw,-38px)",marginLeft:2,fontFamily:"system-ui",fontWeight:400}}>™</sup>
+      <div style={{
+        position:"absolute",display:"flex",flexDirection:"column",alignItems:"center",
+        opacity:phase>=3?1:0,transform:phase>=3?"scale(1) translateY(0)":"scale(0.5) translateY(20px)",
+        transition:"all 1s cubic-bezier(0.34,1.56,0.64,1) 0.1s",
+      }}>
+        <h1 style={{
+          fontFamily:"Georgia,'Times New Roman',serif",fontSize:88,fontWeight:900,letterSpacing:-2,
+          margin:0,lineHeight:1,
+          background:"linear-gradient(135deg,#e8c547 0%,#f0d878 30%,#fff 50%,#f0d878 70%,#e8c547 100%)",
+          backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+          animation:phase>=3?"intro-logoShimmer 3s ease infinite":"none",
+          filter:"drop-shadow(0 0 30px rgba(232,197,71,0.3))",
+        }}>
+          BLUFF<sup style={{fontSize:16,fontWeight:500,WebkitTextFillColor:"rgba(232,197,71,0.6)",position:"relative",top:-40,marginLeft:2,fontFamily:"system-ui,sans-serif"}}>™</sup>
         </h1>
-        <div style={{width:phase>=3?180:0,height:1.5,marginTop:10,background:"linear-gradient(90deg,transparent,rgba(232,197,71,.4),transparent)",transition:"width .8s ease .5s"}}/>
-        <div style={{marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",letterSpacing:"clamp(3px,1vw,5px)",color:"rgba(232,197,71,.5)",textTransform:"uppercase",fontWeight:500,opacity:phase>=4?1:0,transition:"opacity .5s .2s"}}>The AI Deception Game</div>
-        <div style={{marginTop:32,fontSize:11,letterSpacing:"3px",color:"rgba(255,255,255,.22)",textTransform:"uppercase",animation:"g-tapPulse 2s infinite",opacity:phase>=4?1:0,transition:"opacity .4s .4s"}}>Tap anywhere to play</div>
+        <div style={{width:phase>=3?200:0,height:2,marginTop:12,background:"linear-gradient(90deg,transparent,rgba(232,197,71,0.5),transparent)",transition:"width 0.8s cubic-bezier(0.16,1,0.3,1) 0.5s"}}/>
+        <div style={{marginTop:14,fontSize:14,letterSpacing:5,color:"rgba(232,197,71,0.6)",textTransform:"uppercase",fontWeight:500,opacity:phase>=4?1:0,transform:phase>=4?"translateY(0)":"translateY(10px)",transition:"all 0.6s ease 0.2s"}}>The AI Deception Game</div>
+        <div style={{marginTop:40,fontSize:13,letterSpacing:3,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",opacity:phase>=4?1:0,animation:phase>=4?"intro-tapPulse 2s ease-in-out infinite":"none"}}>Tap anywhere to play</div>
       </div>
+      <style>{`
+        @keyframes intro-sparkle{0%,100%{transform:translateY(0);opacity:0.05}50%{transform:translateY(-12px);opacity:0.2}}
+        @keyframes intro-spin{to{transform:rotate(360deg)}}
+        @keyframes intro-logoShimmer{0%{background-position:-200% center}100%{background-position:200% center}}
+        @keyframes intro-tapPulse{0%,100%{opacity:0.3}50%{opacity:0.6}}
+      `}</style>
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// HELPERS
+// ADAPTIVE TIMER MAP — shorter for easy rounds, longer for hard
 // ═══════════════════════════════════════════════════════════════
-function Particles({count=14}) {
-  const ps = useRef(Array.from({length:count},()=>({
-    x:Math.random()*100,y:Math.random()*100,
-    s:2+Math.random()*3,d:3+Math.random()*5,dl:Math.random()*3
-  }))).current;
+const ROUND_TIMER = [
+  0,   // placeholder (1-indexed)
+  22,  // Round 1: Warm-up — brzo
+  26,  // Round 2: Tricky
+  28,  // Round 3: Tricky
+  35,  // Round 4: Sneaky — TRAP
+  25,  // Round 5: Safety Net — lagano pred prelaz
+  48,  // Round 6: Devious
+  38,  // Round 7: Sneaky — TRAP (opuštanje)
+  60,  // Round 8: Diabolical
+  65,  // Round 9: Diabolical
+  70,  // Round 10: Grand Bluff
+];
+function getTimer(roundNum) {
+  if (roundNum <= 10) return ROUND_TIMER[roundNum] || 35;
+  // Posle runde 10, alternira teško/lako
+  return roundNum % 2 === 0 ? 40 : 55;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROUNDS DATABASE — 15 rounds, diverse categories
+// ═══════════════════════════════════════════════════════════════
+const ROUNDS = [
+  { cat:"history", emoji:"🏛️", label:"History", stmts:[
+    {t:"Napoleon was once attacked by a horde of rabbits — he organized a rabbit hunt after the Treaty of Tilsit and hundreds of tame rabbits overwhelmed him.",r:true},
+    {t:"Cleopatra lived closer in time to the Moon landing (1969) than to the construction of the Great Pyramid of Giza.",r:true},
+    {t:"During WWI, France used 600+ Paris taxis to rush troops to the Battle of the Marne — the first military use of motor vehicles at scale.",r:true},
+    {t:"Ancient Romans built steam-powered temple doors that opened 'by divine force' using a hidden altar fire and air pressure system.",r:true},
+    {t:"Queen Victoria kept a personal diary written exclusively in Urdu for the last 13 years of her reign as tribute to her servant Abdul Karim.",r:false},
+  ]},
+  { cat:"science", emoji:"🔬", label:"Science", stmts:[
+    {t:"Honey never spoils — archaeologists found 3,000-year-old honey in Egyptian tombs that was still perfectly edible.",r:true},
+    {t:"A teaspoon of neutron star material would weigh approximately 6 billion tons on Earth's surface.",r:true},
+    {t:"Bananas are slightly radioactive due to their potassium-40 content — a naturally occurring isotope.",r:true},
+    {t:"Hot water can freeze faster than cold water under certain conditions — the Mpemba effect, still not fully explained by science.",r:true},
+    {t:"Jupiter's core is a single enormous diamond roughly the size of Earth, formed under extreme gravitational pressure.",r:false},
+  ]},
+  { cat:"animals", emoji:"🦎", label:"Animals", stmts:[
+    {t:"A group of flamingos is officially called a 'flamboyance' — one of the most whimsical collective nouns in English.",r:true},
+    {t:"Octopuses have three hearts and blue blood. Two pump blood to the gills, one pumps it throughout the body.",r:true},
+    {t:"Crows can recognize individual human faces and have been documented holding grudges against specific people for years.",r:true},
+    {t:"The mimic octopus can impersonate over 15 different marine species including lionfish, flatfish, and sea snakes.",r:true},
+    {t:"Dolphins sleep with both eyes closed but alternate which brain hemisphere stays awake, giving them a form of 'stereo dreaming.'",r:false},
+  ]},
+  { cat:"sports_nba", emoji:"🏀", label:"NBA", stmts:[
+    {t:"LeBron James became the NBA's all-time leading scorer in 2023, surpassing Kareem Abdul-Jabbar's record of 38,387 points.",r:true},
+    {t:"Wilt Chamberlain scored 100 points in a single NBA game on March 2, 1962 — a record that still stands today.",r:true},
+    {t:"Stephen Curry set the all-time record for three-pointers in a single NBA season with 402 in 2015-16.",r:true},
+    {t:"The Golden State Warriors went from last place in 2012 to NBA champions in 2015 — the fastest franchise turnaround in modern NBA history.",r:true},
+    {t:"Michael Jordan was selected as the #1 overall pick in the 1984 NBA Draft by the Chicago Bulls.",r:false},
+  ]},
+  { cat:"sports_epl", emoji:"⚽", label:"Premier League", stmts:[
+    {t:"Erling Haaland scored 36 Premier League goals in his debut season (2022/23) — smashing the previous record of 34.",r:true},
+    {t:"Arsenal went the entire 2003/04 season unbeaten across 38 Premier League games — earning the nickname 'The Invincibles'.",r:true},
+    {t:"Leicester City won the Premier League title in 2015/16 as 5000-1 outsiders — one of the biggest upsets in sports history.",r:true},
+    {t:"Sergio Agüero's goal in the 93rd minute of the final game of the 2011/12 season won Manchester City their first title in 44 years.",r:true},
+    {t:"Alan Shearer scored 260 Premier League goals — a record no player has come within 50 goals of matching.",r:false},
+  ]},
+  { cat:"showbiz", emoji:"🎬", label:"Show Biznis", stmts:[
+    {t:"Taylor Swift's Eras Tour became the highest-grossing concert tour in history, surpassing $1 billion in revenue.",r:true},
+    {t:"Oppenheimer and Barbie were released on the same day in July 2023, creating the cultural phenomenon 'Barbenheimer'.",r:true},
+    {t:"Squid Game became Netflix's most-watched series ever in its first 28 days, with 1.65 billion viewing hours.",r:true},
+    {t:"The Barbie movie (2023) crossed $1 billion at the box office in just 17 days — faster than any other Warner Bros. film.",r:true},
+    {t:"BTS is the only K-pop act to have performed at the United Nations General Assembly as part of a youth climate initiative.",r:false},
+  ]},
+  { cat:"social_media", emoji:"📱", label:"Social Media", stmts:[
+    {t:"TikTok was the most downloaded app in the world in 2020, surpassing Instagram and Facebook for the first time.",r:true},
+    {t:"Kylie Jenner caused Snapchat's stock to drop by $1.3 billion in one day with a single tweet in 2018.",r:true},
+    {t:"Threads, Meta's rival to Twitter/X, gained 100 million users in just 5 days — the fastest app to reach that milestone.",r:true},
+    {t:"YouTube was acquired by Google in 2006 for $1.65 billion — just 18 months after YouTube was founded.",r:true},
+    {t:"Instagram was originally designed as a check-in and location-sharing app before pivoting to photos just before launch.",r:true},
+  ]},
+  { cat:"sports_laliga", emoji:"⚽", label:"La Liga", stmts:[
+    {t:"Lionel Messi scored 50 La Liga goals in the 2011/12 season — a record that still stands as the most in a single La Liga campaign.",r:true},
+    {t:"Real Madrid won the Champions League three consecutive times between 2016 and 2018 under Zinedine Zidane.",r:true},
+    {t:"Luka Modrić ended the 10-year Messi-Ronaldo stranglehold on the Ballon d'Or by winning it in 2018.",r:true},
+    {t:"Atlético Madrid won La Liga in 2013/14, ending the dominance of Real Madrid and Barcelona with a title neither Madrid club expected to lose.",r:true},
+    {t:"Cristiano Ronaldo scored exactly 450 goals for Real Madrid across all competitions during his nine seasons there.",r:false},
+  ]},
+  { cat:"weird_facts", emoji:"🌍", label:"Čudne Činjenice", stmts:[
+    {t:"Oxford University is older than the Aztec Empire — teaching began there around 1096, while the Aztec Empire was founded in 1428.",r:true},
+    {t:"Woolly mammoths were still alive when the Great Pyramid of Giza was being built — some survived on Wrangel Island until 1650 BC.",r:true},
+    {t:"There are more possible iterations of a game of chess than there are atoms in the observable universe.",r:true},
+    {t:"The Great Wall of China is not visible from space with the naked eye — this is a myth confirmed by Chinese astronaut Yang Liwei.",r:true},
+    {t:"The average person swallows 8 spiders per year while sleeping — a figure backed by sleep laboratory research.",r:false},
+  ]},
+  { cat:"sports_nba", emoji:"🏀", label:"NBA Drama", stmts:[
+    {t:"Nikola Jokić became the first center to win the NBA MVP award three times, doing so within a four-season span.",r:true},
+    {t:"The Philadelphia 76ers deliberately tanked games for multiple seasons between 2013-17, a strategy publicly called 'The Process'.",r:true},
+    {t:"Kevin Durant tore his Achilles tendon during the 2019 NBA Finals but initially tried to continue playing before collapsing.",r:true},
+    {t:"Victor Wembanyama was considered so uniquely talented that NBA scouts called him a 'generational anomaly' — a phrase never used before.",r:true},
+    {t:"LeBron James was the #1 overall pick in the 2003 NBA Draft, selected by his hometown Cleveland Cavaliers.",r:true},
+  ]},
+  { cat:"showbiz", emoji:"🎵", label:"Music Drama", stmts:[
+    {t:"Drake and Kendrick Lamar's 2024 rap beef generated record-breaking streaming numbers — 'Not Like Us' hit #1 on Billboard Hot 100.",r:true},
+    {t:"Beyoncé became the first Black woman to win the Grammy for Best Country Album in 2024 with her album 'Cowboy Carter'.",r:true},
+    {t:"Celine Dion revealed she has been battling Stiff Person Syndrome — a rare neurological disorder affecting 1 in a million people.",r:true},
+    {t:"The Weeknd publicly boycotted the Grammys and refused nominations, claiming the voting process was corrupt and non-transparent.",r:true},
+    {t:"Sabrina Carpenter had three songs simultaneously in the Billboard Hot 100 Top 10 in 2024 — a rare achievement.",r:true},
+  ]},
+  { cat:"sports_epl", emoji:"⚽", label:"EPL Legends", stmts:[
+    {t:"Thierry Henry scored 228 goals in all competitions for Arsenal — a record that stood for over 15 years until broken by another player.",r:true},
+    {t:"Roberto Mancini won the Premier League with Manchester City in 2012 — their first title in 44 years, secured on goal difference on the final day.",r:true},
+    {t:"Manchester City set the record for most points in a Premier League season under Pep Guardiola — reaching 100 points in 2017/18.",r:true},
+    {t:"Liverpool's 'You'll Never Walk Alone' anthem became their official song after the 1965 FA Cup win — the first trophy the song accompanied.",r:true},
+    {t:"Wayne Rooney scored 253 goals for Manchester United — the most by any player for a single Premier League club.",r:false},
+  ]},
+  { cat:"science", emoji:"🧬", label:"Biology Surprises", stmts:[
+    {t:"Your body replaces most of its cells every 7-10 years — though brain neurons and heart cells largely remain from birth.",r:true},
+    {t:"Tardigrades (water bears) can survive in the vacuum of space, withstand 1,000 times more radiation than would kill a human, and live through desiccation for decades.",r:true},
+    {t:"The immortal jellyfish (Turritopsis dohrnii) can revert to its juvenile polyp state after reaching maturity — making it theoretically immortal.",r:true},
+    {t:"Octopuses have photoreceptors in their skin, meaning they can detect light and possibly 'see' color through their skin without using their eyes.",r:true},
+    {t:"Humans share approximately 60% of their DNA with a banana — a commonly cited fact in genetics textbooks worldwide.",r:false},
+  ]},
+  { cat:"sports_laliga", emoji:"⚽", label:"La Liga Drama", stmts:[
+    {t:"FC Barcelona's La Masia academy produced 7 of the 11 starters in Spain's 2010 World Cup-winning squad.",r:true},
+    {t:"Real Madrid's Bernabéu stadium underwent a complete renovation between 2020 and 2023 costing over €900 million.",r:true},
+    {t:"Jude Bellingham scored 23 La Liga goals in his debut season at Real Madrid — a record for a midfielder in their first season.",r:true},
+    {t:"Sevilla FC has won the UEFA Europa League (or its predecessor the UEFA Cup) a record six times.",r:true},
+    {t:"Lionel Messi won La Liga exactly 10 times during his career at Barcelona between 2004 and 2021.",r:true},
+  ]},
+  { cat:"weird_facts", emoji:"🌌", label:"Mind-Bending Facts", stmts:[
+    {t:"Every blue-eyed person on Earth is descended from a single ancestor who lived 6,000-10,000 years ago when a genetic mutation first appeared.",r:true},
+    {t:"The number 0.999... (zero point nine repeating forever) is mathematically exactly equal to 1, not just an approximation.",r:true},
+    {t:"There is a planet where it rains glass sideways at 4,350 mph — HD 189733b, located 63 light-years from Earth.",r:true},
+    {t:"Our solar system travels through the Milky Way galaxy at approximately 828,000 km/h — yet we feel nothing because everything around us moves at the same speed.",r:true},
+    {t:"Scientists have experimentally confirmed that quantum entanglement allows information to travel faster than the speed of light.",r:false},
+  ]},
+];
+
+// ═══════════════════════════════════════════════════════════════
+// WEB AUDIO ENGINE — sintetizovani zvuci, nula eksternih fajlova
+// ═══════════════════════════════════════════════════════════════
+const AudioEngine = (() => {
+  let ctx = null;
+  let master = null;
+  let muted = false;
+
+  const init = () => {
+    if (ctx) return;
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain();
+      master.gain.value = 0.65;
+      master.connect(ctx.destination);
+    } catch(e) { console.warn("Audio init failed", e); }
+  };
+
+  const play = (fn) => {
+    if (muted || !ctx) return;
+    if (ctx.state === "suspended") ctx.resume();
+    try { fn(ctx, master); } catch(e) {}
+  };
+
+  return {
+    init,
+    setMuted: (v) => { muted = v; if (master) master.gain.value = v ? 0 : 0.65; },
+
+    tick(urgency = 1) {
+      play((ctx, dst) => {
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        const t = ctx.currentTime;
+        o.frequency.value = 500 + urgency * 180;
+        o.type = "sine";
+        g.gain.setValueAtTime(0.25 + urgency * 0.08, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.055);
+        o.connect(g); g.connect(dst);
+        o.start(t); o.stop(t + 0.06);
+
+        // Double-tick na urgency 2+
+        if (urgency >= 2) {
+          const o2 = ctx.createOscillator();
+          const g2 = ctx.createGain();
+          const t2 = t + 0.28;
+          o2.frequency.value = 350;
+          g2.gain.setValueAtTime(0.15, t2);
+          g2.gain.exponentialRampToValueAtTime(0.001, t2 + 0.04);
+          o2.connect(g2); g2.connect(dst);
+          o2.start(t2); o2.stop(t2 + 0.05);
+        }
+      });
+    },
+
+    whoosh() {
+      play((ctx, dst) => {
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.15, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 3);
+        const src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        const f = ctx.createBiquadFilter();
+        src.buffer = buf; f.type = "highpass"; f.frequency.value = 1800;
+        g.gain.setValueAtTime(0.18, ctx.currentTime);
+        src.connect(f); f.connect(g); g.connect(dst); src.start();
+      });
+    },
+
+    lockIn() {
+      // Snare hit
+      play((ctx, dst) => {
+        const buf = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/d.length, 1.5);
+        const src = ctx.createBufferSource();
+        const g = ctx.createGain();
+        src.buffer = buf; g.gain.setValueAtTime(0.5, ctx.currentTime);
+        src.connect(g); g.connect(dst); src.start();
+      });
+    },
+
+    fanfare() {
+      play((ctx, dst) => {
+        [523, 659, 784, 1047].forEach((freq, i) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const t = ctx.currentTime + i * 0.11;
+          o.frequency.value = freq; o.type = "triangle";
+          g.gain.setValueAtTime(0, t);
+          g.gain.linearRampToValueAtTime(0.35, t + 0.02);
+          g.gain.setValueAtTime(0.35, t + 0.09);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.5);
+        });
+        // Chord
+        [523, 659, 784].forEach(freq => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const t = ctx.currentTime + 0.5;
+          o.frequency.value = freq; o.type = "sine";
+          g.gain.setValueAtTime(0.2, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.9);
+          o.connect(g); g.connect(dst); o.start(t); o.stop(t + 1);
+        });
+      });
+    },
+
+    buzzer() {
+      play((ctx, dst) => {
+        [[466,0],[370,0.03],[311,0.06]].forEach(([freq,delay]) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const t = ctx.currentTime + delay;
+          o.frequency.value = freq; o.type = "sawtooth";
+          g.gain.setValueAtTime(0.3, t);
+          g.gain.setValueAtTime(0.3, t + 0.15);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.55);
+        });
+      });
+    },
+
+    levelUp() {
+      play((ctx, dst) => {
+        [440, 554, 659, 880].forEach((freq, i) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const t = ctx.currentTime + i * 0.07;
+          o.frequency.value = freq; o.type = "sine";
+          g.gain.setValueAtTime(0.28, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+          o.connect(g); g.connect(dst); o.start(t); o.stop(t + 0.3);
+        });
+      });
+    },
+  };
+})();
+
+// ═══════════════════════════════════════════════════════════════
+// AXIOS FACE — SVG animated AI character
+// ═══════════════════════════════════════════════════════════════
+function AxiosFace({ emotion, roundNum }) {
+  const [blink, setBlink] = useState(false);
+  const [microExpr, setMicroExpr] = useState(null);
+
+  // Blink cycle
+  useEffect(() => {
+    const b = setInterval(() => {
+      setBlink(true);
+      setTimeout(() => setBlink(false), 110);
+    }, 2600 + Math.random() * 2000);
+    return () => clearInterval(b);
+  }, []);
+
+  // Micro-expressions (ispod svesnog praga)
+  useEffect(() => {
+    if (emotion !== "idle") return;
+    const m = setInterval(() => {
+      const exprs = ["smug","thinking"];
+      setMicroExpr(exprs[Math.floor(Math.random()*exprs.length)]);
+      setTimeout(() => setMicroExpr(null), 90);
+    }, 18000 + Math.random() * 10000);
+    return () => clearInterval(m);
+  }, [emotion]);
+
+  const eff = microExpr || emotion;
+
+  // Boja po rundi
+  const axColor = roundNum <= 3 ? "#4a9eff"
+    : roundNum <= 6 ? "#e8c547"
+    : roundNum <= 8 ? "#ff8c42"
+    : "#ff3366";
+
+  const eyeRy = blink ? 0.5
+    : eff === "shocked" ? 13
+    : (eff === "smug" || eff === "thinking") ? 4.5
+    : 9;
+
+  const mouth = eff === "smug" ? "M 37,65 Q 52,61 65,60"
+    : eff === "shocked" ? "M 34,60 Q 50,74 66,60 Q 50,70 34,60"
+    : eff === "taunting" ? "M 33,62 Q 50,73 67,62"
+    : eff === "defeated" ? "M 35,68 Q 50,62 65,68"
+    : eff === "thinking" ? "M 36,65 Q 50,67 63,63"
+    : "M 37,64 Q 50,67 63,64";
+
+  const anim = eff === "defeated" ? "ax-meltdown 0.6s ease-in-out infinite"
+    : eff === "taunting" ? "ax-laugh 0.4s ease-in-out infinite"
+    : eff === "thinking" ? "ax-tilt 2.5s ease-in-out infinite"
+    : "ax-breathe 4s ease-in-out infinite";
+
   return (
-    <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:0}}>
-      {ps.map((p,i)=><div key={i} style={{position:"absolute",width:p.s,height:p.s,borderRadius:"50%",background:"#e8c547",opacity:.06,left:`${p.x}%`,top:`${p.y}%`,animation:`g-float ${p.d}s ease-in-out ${p.dl}s infinite`}}/>)}
+    <div style={{position:"relative",width:90,height:90,animation:anim,flexShrink:0}}>
+      {/* Outer glow */}
+      <div style={{
+        position:"absolute",inset:-3,borderRadius:"50%",
+        boxShadow:`0 0 ${eff==="defeated"?35:14}px ${axColor}`,
+        opacity:eff==="defeated"?0.9:0.35,
+        transition:"all 0.4s",
+      }}/>
+      <svg viewBox="0 0 100 100" width={90} height={90}>
+        <circle cx="50" cy="50" r="46" fill="#0d0d1a" stroke={axColor} strokeWidth="2"/>
+        {/* Scan lines */}
+        <rect x="4" y="4" width="92" height="92" rx="42" fill="url(#sl)" opacity="0.06"/>
+        <defs>
+          <pattern id="sl" x="0" y="0" width="100" height="3" patternUnits="userSpaceOnUse">
+            <rect x="0" y="0" width="100" height="1" fill="white"/>
+          </pattern>
+        </defs>
+        {/* Eyes */}
+        {[33, 67].map((cx, i) => (
+          <g key={i}>
+            <ellipse cx={cx} cy="42" rx="10" ry={eyeRy} fill="#111"
+              style={{transition:"ry 0.1s"}}/>
+            <ellipse cx={cx} cy="42" rx="10" ry={eyeRy} fill="none"
+              stroke={axColor} strokeWidth="1.5" opacity="0.7"
+              style={{filter:`drop-shadow(0 0 4px ${axColor})`,transition:"ry 0.1s"}}/>
+            <circle cx={cx + (i===0?1:-1)} cy="42" r={eyeRy > 3 ? 3 : 0.5}
+              fill="#000" style={{transition:"r 0.1s"}}/>
+            {/* Iris glow */}
+            <circle cx={cx} cy="39" r={eyeRy > 5 ? 2.5 : 0}
+              fill="white" opacity="0.4" style={{transition:"r 0.1s"}}/>
+          </g>
+        ))}
+        {/* Nose dot */}
+        <circle cx="50" cy="55" r="1.5" fill={axColor} opacity="0.3"/>
+        {/* Mouth */}
+        <path d={mouth} fill={eff==="shocked"||eff==="taunting"?"rgba(0,0,0,0.6)":"none"}
+          stroke={axColor} strokeWidth="2.5" strokeLinecap="round"
+          style={{transition:"d 0.2s",filter:`drop-shadow(0 0 3px ${axColor})`}}/>
+        {/* Sentiment bar */}
+        <rect x="22" y="82" width="56" height="2.5" rx="1.25" fill={axColor} opacity="0.15"/>
+        <rect x="22" y="82" rx="1.25" height="2.5"
+          width={eff==="shocked"||eff==="taunting"?56:eff==="defeated"?4:28}
+          fill={axColor} style={{transition:"width 0.7s ease"}}/>
+        {/* Defeated cracks */}
+        {eff==="defeated" && <>
+          <line x1="28" y1="22" x2="42" y2="46" stroke="#f43f5e" strokeWidth="1" opacity="0.5"/>
+          <line x1="58" y1="18" x2="72" y2="48" stroke="#f43f5e" strokeWidth="1" opacity="0.4"/>
+        </>}
+      </svg>
+      {/* AXIOS label */}
+      <div style={{position:"absolute",bottom:-15,left:0,right:0,textAlign:"center",fontSize:8,letterSpacing:3.5,color:axColor,opacity:0.6,textTransform:"uppercase",fontWeight:600}}>AXIOS</div>
     </div>
   );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function shuffle(a) {
+  const b=[...a];
+  for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}
+  return b;
+}
+
+function Particles({count=20}) {
+  const ps=useRef(Array.from({length:count},()=>({
+    x:Math.random()*100,y:Math.random()*100,s:2+Math.random()*4,
+    d:3+Math.random()*6,dl:Math.random()*4,o:0.05+Math.random()*0.12
+  }))).current;
+  return <div style={{position:"absolute",inset:0,overflow:"hidden",pointerEvents:"none",zIndex:0}}>
+    {ps.map((p,i)=><div key={i} style={{position:"absolute",width:p.s,height:p.s,borderRadius:"50%",background:"#e8c547",opacity:p.o,left:`${p.x}%`,top:`${p.y}%`,animation:`g-float ${p.d}s ease-in-out ${p.dl}s infinite`}}/>)}
+  </div>;
 }
 
 function Confetti() {
-  const colors=["#e8c547","#2dd4a0","#60a5fa","#f43f5e","#a78bfa","#fb923c"];
-  const ps=useRef(Array.from({length:44},()=>({
-    x:Math.random()*100,dl:Math.random()*1.1,
-    c:colors[Math.floor(Math.random()*colors.length)],
-    w:4+Math.random()*9,h:4+Math.random()*9,
-    r:Math.random()>.5,dur:1.4+Math.random()*1.2
-  }))).current;
-  return (
-    <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999,overflow:"hidden"}}>
-      {ps.map((p,i)=><div key={i} style={{position:"absolute",top:-20,left:`${p.x}%`,width:p.w,height:p.h,background:p.c,borderRadius:p.r?"50%":"2px",animation:`g-confetti ${p.dur}s ease-in ${p.dl}s forwards`}}/>)}
-    </div>
-  );
+  const colors=["#e8c547","#2dd4a0","#f0d878","#60a5fa","#f43f5e","#a78bfa","#fb923c"];
+  const ps=useRef(Array.from({length:50},()=>({x:Math.random()*100,dl:Math.random()*1.2,c:colors[Math.floor(Math.random()*colors.length)],w:4+Math.random()*10,h:4+Math.random()*10,r:Math.random()>0.5,dur:1.5+Math.random()*1.5}))).current;
+  return <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:9999,overflow:"hidden"}}>
+    {ps.map((p,i)=><div key={i} style={{position:"absolute",top:-20,left:`${p.x}%`,width:p.w,height:p.h,background:p.c,borderRadius:p.r?"50%":"2px",animation:`g-confetti ${p.dur}s ease-in ${p.dl}s forwards`}}/>)}
+  </div>;
 }
 
-function TimerRing({time,max=45,size=48}) {
-  const r=(size-6)/2,circ=2*Math.PI*r;
-  const pct=Math.max(0,time/max);
-  const urgency=pct<0.15?3:pct<0.35?2:pct<0.55?1:0;
-  const color=urgency>=3?"#f43f5e":urgency>=2?"#fb923c":urgency>=1?"#e8c547":"#e8c547";
-  const pulseAnim=urgency===3?"g-pulse .4s infinite":urgency===2?"g-pulse .7s infinite":urgency===1?"g-pulse 1.4s infinite":"none";
+// ═══════════════════════════════════════════════════════════════
+// TIMER RING — with urgency system based on % remaining
+// ═══════════════════════════════════════════════════════════════
+function TimerRing({time, max, size=52}) {
+  const r=(size-6)/2, circ=2*Math.PI*r, pct=time/max;
+  const urgency = pct < 0.15 ? 3 : pct < 0.30 ? 2 : pct < 0.50 ? 1 : 0;
+  const color = urgency===3 ? "#f43f5e" : urgency===2 ? "#fb923c" : "#e8c547";
+  const pulse = urgency===3 ? "g-pulse 0.35s ease-in-out infinite"
+    : urgency===2 ? "g-pulse 0.65s ease-in-out infinite"
+    : urgency===1 ? "g-pulse 1.4s ease-in-out infinite"
+    : "none";
   return (
-    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
-      {urgency>=2&&(
-        <div style={{
-          position:"absolute",inset:0,borderRadius:"50%",
-          border:`2px solid ${color}`,opacity:.4,
-          animation:"d-timerRipple .9s ease-out infinite",
-          pointerEvents:"none",
-        }}/>
-      )}
-      <svg width={size} height={size} style={{transform:"rotate(-90deg)",position:"relative",zIndex:1,
-        filter:urgency>=3?`drop-shadow(0 0 6px ${color})`:"none"}}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={3}/>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={3}
+    <div style={{position:"relative",width:size,height:size,animation:pulse,filter:urgency===3?`drop-shadow(0 0 8px ${color})`:"none"}}>
+      {/* Ripple ring */}
+      {urgency>=2&&<div style={{position:"absolute",inset:-4,borderRadius:"50%",border:`1.5px solid ${color}`,opacity:0,animation:`g-timerRipple ${urgency===3?"0.5s":"0.8s"} ease-out infinite`}}/>}
+      <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth={urgency>=2?4:3}/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={urgency>=2?4:3}
           strokeDasharray={circ} strokeDashoffset={circ*(1-pct)}
-          strokeLinecap="round" style={{transition:"stroke-dashoffset 1s linear,stroke .3s"}}/>
+          strokeLinecap="round" style={{transition:"stroke-dashoffset 1s linear,stroke 0.4s"}}/>
       </svg>
-      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color,zIndex:2,animation:urgency>0?pulseAnim:"none"}}>{time}</div>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:urgency>=2?17:15,fontWeight:800,color,fontVariantNumeric:"tabular-nums"}}>
+        {time}
+      </div>
     </div>
   );
-}
-
-// Fix 4: IsolatedTimer — timer state lives here, parent doesn't re-render every second
-function IsolatedTimer({ initialTime, paused, onTick, onExpire, size=46 }) {
-  const [time, setTime] = useState(initialTime);
-  const ref = useRef(null);
-  const onTickRef = useRef(onTick);
-  const onExpireRef = useRef(onExpire);
-  useEffect(() => { onTickRef.current = onTick; });
-  useEffect(() => { onExpireRef.current = onExpire; });
-  useEffect(() => {
-    if (paused) { clearInterval(ref.current); return; }
-    setTime(initialTime);
-    clearInterval(ref.current);
-    ref.current = setInterval(() => {
-      setTime(t => {
-        const next = t - 1;
-        onTickRef.current?.(next, initialTime);
-        if (next <= 0) { clearInterval(ref.current); onExpireRef.current?.(); return 0; }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(ref.current);
-  }, [paused, initialTime]);
-  return <TimerRing time={time} max={initialTime} size={size}/>;
-}
-
-function generateShareCard(score,total,best,speech,won) {
-  try {
-    const c=document.createElement("canvas");
-    c.width=900;c.height=500;
-    const ctx=c.getContext("2d");
-    ctx.fillStyle="#04060f";ctx.fillRect(0,0,900,500);
-    ctx.strokeStyle="rgba(34,211,238,.04)";ctx.lineWidth=1;
-    for(let x=0;x<900;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,500);ctx.stroke();}
-    for(let y=0;y<500;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(900,y);ctx.stroke();}
-    const grd=ctx.createRadialGradient(450,0,0,450,0,380);
-    grd.addColorStop(0,"rgba(232,197,71,.08)");grd.addColorStop(1,"transparent");
-    ctx.fillStyle=grd;ctx.fillRect(0,0,900,500);
-    ctx.textAlign="center";
-    ctx.fillStyle="rgba(255,255,255,.2)";ctx.font="500 11px system-ui";ctx.fillText("SIAL GAMES",450,48);
-    ctx.font="900 88px Georgia,serif";
-    const lg=ctx.createLinearGradient(300,0,600,0);
-    lg.addColorStop(0,"#e8c547");lg.addColorStop(.5,"#fff");lg.addColorStop(1,"#e8c547");
-    ctx.fillStyle=lg;ctx.fillText("BLUFF™",450,148);
-    ctx.strokeStyle="rgba(232,197,71,.22)";ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(300,168);ctx.lineTo(600,168);ctx.stroke();
-    ctx.fillStyle=won?"#2dd4a0":"rgba(244,63,94,.85)";ctx.font="700 26px system-ui";
-    ctx.fillText(won?"I defeated AXIOM":"AXIOM defeated me... for now",450,212);
-    ctx.fillStyle="#e8c547";ctx.font="900 68px Georgia,serif";
-    ctx.fillText(`${score}/${total}`,450,302);
-    ctx.fillStyle="rgba(255,255,255,.35)";ctx.font="500 14px system-ui";
-    ctx.fillText(`Accuracy: ${total?Math.round(score/total*100):0}%   ·   Best streak: ${best}🔥`,450,348);
-    if(speech&&speech!=="..."){ctx.fillStyle="rgba(34,211,238,.5)";ctx.font="italic 500 15px system-ui";ctx.fillText(`"${speech}"`,450,395);}
-    ctx.fillStyle="rgba(255,255,255,.14)";ctx.font="500 12px system-ui";
-    ctx.fillText("playbluff.games  ·  SIAL Consulting d.o.o.",450,458);
-    ctx.strokeStyle="rgba(232,197,71,.1)";ctx.lineWidth=2;ctx.strokeRect(1,1,898,498);
-    return c.toDataURL("image/png");
-  } catch(e) { console.error("[share-card]",e); return null; }
-}
-
-function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine) {
-  try {
-    const W = 540, H = 960; // 1:1.77 = 9:16 portrait
-    const c = document.createElement("canvas");
-    c.width = W; c.height = H;
-    const ctx = c.getContext("2d");
-
-    // Background
-    ctx.fillStyle = "#04060f";
-    ctx.fillRect(0, 0, W, H);
-
-    // Grid
-    ctx.strokeStyle = "rgba(34,211,238,.04)";
-    ctx.lineWidth = 1;
-    for (let x = 0; x < W; x += 30) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
-    }
-    for (let y = 0; y < H; y += 30) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-    }
-
-    // Top glow
-    const topGlow = ctx.createRadialGradient(W/2, 0, 0, W/2, 0, 300);
-    topGlow.addColorStop(0, "rgba(232,197,71,.12)");
-    topGlow.addColorStop(1, "transparent");
-    ctx.fillStyle = topGlow;
-    ctx.fillRect(0, 0, W, H);
-
-    // Bottom glow (AXIOM cyan)
-    const botGlow = ctx.createRadialGradient(W/2, H, 0, W/2, H, 300);
-    botGlow.addColorStop(0, "rgba(34,211,238,.08)");
-    botGlow.addColorStop(1, "transparent");
-    ctx.fillStyle = botGlow;
-    ctx.fillRect(0, 0, W, H);
-
-    ctx.textAlign = "center";
-
-    // ── Top section ──
-    // SIAL label
-    ctx.fillStyle = "rgba(255,255,255,.2)";
-    ctx.font = "500 10px system-ui";
-    ctx.fillText("SIAL GAMES PRESENTS", W/2, 60);
-
-    // BLUFF logo
-    ctx.font = "900 80px Georgia,serif";
-    const lg = ctx.createLinearGradient(150, 0, 390, 0);
-    lg.addColorStop(0, "#e8c547");
-    lg.addColorStop(.5, "#fff");
-    lg.addColorStop(1, "#e8c547");
-    ctx.fillStyle = lg;
-    ctx.fillText("BLUFF™", W/2, 148);
-
-    // Divider
-    ctx.strokeStyle = "rgba(232,197,71,.25)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(160, 168); ctx.lineTo(380, 168); ctx.stroke();
-
-    ctx.fillStyle = "rgba(255,255,255,.3)";
-    ctx.font = "500 11px system-ui";
-    ctx.fillText("THE AI DECEPTION GAME", W/2, 190);
-
-    // ── AXIOM hex face (SVG-like on canvas) ──
-    const cx = W/2, cy = 360, hr = 90;
-    // Outer hex
-    ctx.strokeStyle = won ? "rgba(45,212,160,.5)" : "rgba(244,63,94,.5)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 3) * i - Math.PI / 2;
-      const x = cx + hr * Math.cos(a), y = cy + hr * Math.sin(a);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.closePath(); ctx.stroke();
-
-    // Inner hex fill
-    ctx.fillStyle = "#030810";
-    ctx.beginPath();
-    const ir = 78;
-    for (let i = 0; i < 6; i++) {
-      const a = (Math.PI / 3) * i - Math.PI / 2;
-      const x = cx + ir * Math.cos(a), y = cy + ir * Math.sin(a);
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = won ? "rgba(45,212,160,.8)" : "rgba(244,63,94,.8)";
-    ctx.stroke();
-
-    // Eyes
-    const eyeColor = won ? "#2dd4a0" : "#f43f5e";
-    ctx.fillStyle = eyeColor;
-    ctx.shadowColor = eyeColor;
-    ctx.shadowBlur = 10;
-    ctx.beginPath(); ctx.arc(cx - 24, cy - 8, won ? 7 : 9, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 24, cy - 8, won ? 7 : 9, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#030810";
-    ctx.shadowBlur = 0;
-    ctx.beginPath(); ctx.arc(cx - 24, cy - 8, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx + 24, cy - 8, 3, 0, Math.PI * 2); ctx.fill();
-
-    // Mouth
-    ctx.strokeStyle = eyeColor;
-    ctx.shadowColor = eyeColor;
-    ctx.shadowBlur = 8;
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    if (won) {
-      // Defeated — downward curve
-      ctx.moveTo(cx - 20, cy + 20);
-      ctx.quadraticCurveTo(cx, cy + 28, cx + 20, cy + 20);
-    } else {
-      // Smug — upward curve
-      ctx.moveTo(cx - 20, cy + 22);
-      ctx.quadraticCurveTo(cx, cy + 16, cx + 20, cy + 22);
-    }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // AXIOM label under face
-    ctx.fillStyle = "rgba(34,211,238,.45)";
-    ctx.font = "600 10px system-ui";
-    ctx.fillText("A X I O M", W/2, cy + 115);
-
-    // ── Score section ──
-    ctx.fillStyle = won ? "#2dd4a0" : "#f43f5e";
-    ctx.font = "700 18px system-ui";
-    ctx.fillText(won ? "I DEFEATED AXIOM" : "AXIOM DEFEATED ME", W/2, cy + 155);
-
-    ctx.fillStyle = "#e8c547";
-    ctx.font = "900 72px Georgia,serif";
-    ctx.fillText(`${score}/${total}`, W/2, cy + 240);
-
-    ctx.fillStyle = "rgba(255,255,255,.3)";
-    ctx.font = "500 13px system-ui";
-    ctx.fillText(
-      `${total ? Math.round(score/total*100) : 0}% accuracy  ·  ${best}🔥 best streak`,
-      W/2, cy + 272
-    );
-
-    // Divider
-    ctx.strokeStyle = "rgba(255,255,255,.08)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(60, cy + 295); ctx.lineTo(W - 60, cy + 295); ctx.stroke();
-
-    // AXIOM quote
-    const displayQuote = roastLine || axiomSpeech;
-    if (displayQuote && displayQuote !== "...") {
-      ctx.fillStyle = "rgba(34,211,238,.55)";
-      ctx.font = "italic 500 13px system-ui";
-      const maxW = W - 80;
-      const words = `"${displayQuote}"`.split(" ");
-      let line = "", lines = [], y = cy + 322;
-      words.forEach(word => {
-        const test = line + word + " ";
-        if (ctx.measureText(test).width > maxW && line) {
-          lines.push(line.trim()); line = word + " ";
-        } else { line = test; }
-      });
-      lines.push(line.trim());
-      lines.slice(0, 2).forEach((l, i) => ctx.fillText(l, W/2, y + i * 20));
-    }
-
-    // The lie (if available)
-    if (lieText) {
-      const lieY = cy + 390;
-      ctx.fillStyle = "rgba(244,63,94,.15)";
-      ctx.beginPath();
-      ctx.roundRect(30, lieY - 20, W - 60, 56, 8);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(244,63,94,.3)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      ctx.fillStyle = "#f43f5e";
-      ctx.font = "700 9px system-ui";
-      ctx.fillText("🎭 THE LIE WAS:", W/2, lieY - 3);
-      ctx.fillStyle = "rgba(255,255,255,.7)";
-      ctx.font = "500 11px system-ui";
-      const lw = W - 100;
-      const lwords = lieText.split(" ");
-      let lline = "", llines = [];
-      lwords.forEach(word => {
-        const test = lline + word + " ";
-        if (ctx.measureText(test).width > lw && lline) {
-          llines.push(lline.trim()); lline = word + " ";
-        } else { lline = test; }
-      });
-      llines.push(lline.trim());
-      llines.slice(0, 2).forEach((l, i) => ctx.fillText(l, W/2, lieY + 16 + i * 16));
-    }
-
-    // ── Bottom CTA ──
-    ctx.fillStyle = "rgba(232,197,71,.1)";
-    ctx.beginPath();
-    ctx.roundRect(30, H - 160, W - 60, 50, 10);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(232,197,71,.3)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.fillStyle = "#e8c547";
-    ctx.font = "700 16px system-ui";
-    ctx.fillText("Can you beat me? 🎯", W/2, H - 129);
-
-    ctx.fillStyle = "rgba(255,255,255,.2)";
-    ctx.font = "500 11px system-ui";
-    ctx.fillText("playbluff.games", W/2, H - 100);
-
-    ctx.fillStyle = "rgba(255,255,255,.1)";
-    ctx.font = "500 10px system-ui";
-    ctx.fillText("#BluffGame  #SIAL", W/2, H - 78);
-
-    // Border glow
-    ctx.strokeStyle = "rgba(232,197,71,.08)";
-    ctx.lineWidth = 3;
-    ctx.strokeRect(1, 1, W - 2, H - 2);
-
-    return c.toDataURL("image/png");
-  } catch (e) {
-    console.error("[stories-card]", e);
-    return null;
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
-  const haptic = useHaptic();
-  const [showIntro, setShowIntro] = useState(
-    !localStorage.getItem("bluff_played")
-  );
+  const [showIntro, setShowIntro] = useState(true);
   const [screen, setScreen] = useState("home");
-  const [lang, setLang] = useState(()=>localStorage.getItem("bluff_lang")||"en");
-  const [stmts, setStmts] = useState([]);
   const [roundIdx, setRoundIdx] = useState(0);
-  const [category, setCategory] = useState("history");
+  const [stmts, setStmts] = useState([]);
   const [sel, setSel] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [score, setScore] = useState(0);
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(0);  // rounds played
+  const [roundNum, setRoundNum] = useState(1); // 1-10 ladder position
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
-  const [confetti, setConfetti] = useState(false);
-  const [loadingRound, setLoadingRound] = useState(false);
-  const [axiomMood, setAxiomMood] = useState("idle");
-  const [axiomSpeech, setAxiomSpeech] = useState("Your confidence is endearing. Begin.");
-  const [axiomLoading, setAxiomLoading] = useState(false);
-  const [shareImg, setShareImg] = useState(null);
-  const [storiesImg, setStoriesImg] = useState(null);
-  const [challengeURL, setChallengeURL] = useState(null);
-  const [challenge, setChallenge] = useState(null);
-  const [activeSkin, setActiveSkin] = useState(
-    () => localStorage.getItem("bluff_skin") || "default"
-  );
-  const [ownedSkins, setOwnedSkins] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("bluff_owned_skins") || '["default"]'); }
-    catch { return ["default"]; }
-  });
-  const [showShop, setShowShop] = useState(false);
-  const [lastWrongStmt, setLastWrongStmt] = useState(null);
-  const [shameSent, setShameSent] = useState(false);
-  const [lastAxiomLine, setLastAxiomLine] = useState("");
-  const [voiceEnabled, setVoiceEnabled] = useState(
-    () => localStorage.getItem("bluff_voice") !== "off"
-  );
-  const [lastThreeCats, setLastThreeCats] = useState([]);
+  const [time, setTime] = useState(25);
+  const [timerMax, setTimerMax] = useState(25);
+  const [showConfetti, setShowConfetti] = useState(false);
   const [axiosEmotion, setAxiosEmotion] = useState("idle");
-  const [axiosSpeaking, setAxiosSpeaking] = useState(false);
-  const [axiosBubbleText, setAxiosBubbleText] = useState("");
-  const [axiosBubbleVisible, setAxiosBubbleVisible] = useState(false);
   const [flashColor, setFlashColor] = useState(null);
-  const [ladderPos, setLadderPos] = useState(1);
+  const [autoCount, setAutoCount] = useState(null);
+  const [confirmCount, setConfirmCount] = useState(null);
   const [muted, setMuted] = useState(false);
-  // Fix 2: single-tap confirm countdown
-  const [confirmCountdown, setConfirmCountdown] = useState(null);
-  // Fix 3: auto-advance after reveal
-  const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
-  // Bonus: reveal dramatika
-  const [revealPending, setRevealPending] = useState(false);
-  // AXIOS Presence tension system
-  const [isVoid, setIsVoid] = useState(false);
-  const [breathPhase, setBreathPhase] = useState(0);
-  const isVoidRef = useRef(false);
-  const revealedRef = useRef(false);
-  // Tension thresholds — one-shot flags, reset each round
-  const threshold65Ref = useRef(false);
-  const threshold40Ref = useRef(false);
-  const threshold20Ref = useRef(false);
-  const threshold8Ref  = useRef(false);
-  // Micro-expressions scheduler
-  const microExprRef = useRef(null);
-  const ladderPosRef = useRef(1);
+
+  const timerRef = useRef(null);
+  const autoRef = useRef(null);
   const confirmRef = useRef(null);
-  const autoAdvanceRef = useRef(null);
-  const nextRoundDataRef = useRef(null);
-  const lastThreeCatsRef = useRef([]);
-  const audioRef = useRef(null);
-  const audioQueueRef = useRef([]);
-  const isPlayingRef = useRef(false);
-  const axiomBusyRef = useRef(false); // prevents concurrent AXIOM calls
-  const wrongCountRef = useRef(0); // tracks consecutive wrongs for escalating taunts
-  const currentStmtsRef = useRef([]); // always-current stmts for timer callbacks
-  const currentSelRef = useRef(null);
+  const playedRef = useRef(new Set());
 
-  // ── FUNCTIONS ────────────────────────────────────────────────
+  const T = {
+    bg:"#08080f",card:"#111119",gold:"#e8c547",gold2:"#f0d878",
+    goldDim:"rgba(232,197,71,0.1)",ok:"#2dd4a0",bad:"#f43f5e",
+    dim:"#5a5a68",glass:"rgba(255,255,255,0.03)",glassBorder:"rgba(255,255,255,0.07)"
+  };
 
-  // Persist language
-  function changeLang(code) {
-    setLang(code);
-    localStorage.setItem("bluff_lang", code);
-  }
+  // Background color shifts with round difficulty
+  const bgTint = roundNum <= 3 ? "rgba(74,158,255,0.04)"
+    : roundNum <= 5 ? "rgba(232,197,71,0.05)"
+    : roundNum <= 7 ? "rgba(255,120,50,0.06)"
+    : "rgba(200,30,60,0.09)";
 
-  // ── AXIOS HELPERS ────────────────────────────────────────────
-  const showAxios = useCallback((emotion, event, delay = 0) => {
-    setTimeout(() => {
-      setAxiosEmotion(emotion);
-      axiosSay(event,
-        () => {
-          setAxiosSpeaking(true);
-          const lines = AXIOS_LINES[event];
-          if (lines) {
-            const text = lines[Math.floor(Math.random() * lines.length)];
-            setAxiosBubbleText(text);
-            setAxiosBubbleVisible(true);
-          }
-        },
-        () => {
-          setAxiosSpeaking(false);
-          setTimeout(() => {
-            setAxiosBubbleVisible(false);
-            setAxiosEmotion("idle");
-          }, 1000);
-        }
-      );
-    }, delay);
-  }, []);
+  // ─── GET NEXT ROUND (anti-repeat) ──────────────────────────
+  const getNextRound = useCallback(() => {
+    const available = ROUNDS
+      .map((r,i) => ({r,i}))
+      .filter(({i}) => !playedRef.current.has(i));
 
-  const triggerFlash = useCallback((color) => {
-    setFlashColor(color);
-    setTimeout(() => setFlashColor(null), 80);
-  }, []);
-
-  // ── AXIOM VOICE ─────────────────────────────────────────────
-  async function playAxiomVoice(text, skin) {
-    if (!voiceEnabled || !text || text === "...") return;
-
-    audioQueueRef.current.push({ text, skin });
-    if (isPlayingRef.current) return;
-
-    const playNext = async () => {
-      if (audioQueueRef.current.length === 0) {
-        isPlayingRef.current = false;
-        return;
-      }
-      isPlayingRef.current = true;
-      const { text: t, skin: s } = audioQueueRef.current.shift();
-      try {
-        const r = await fetch("/api/axiom-voice", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: t, skin: s }),
-        });
-        if (!r.ok) { isPlayingRef.current = false; playNext(); return; }
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        if (audioRef.current) {
-          audioRef.current.pause();
-          URL.revokeObjectURL(audioRef.current.src);
-        }
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => { URL.revokeObjectURL(url); isPlayingRef.current = false; playNext(); };
-        audio.onerror = () => { isPlayingRef.current = false; playNext(); };
-        const p = audio.play();
-        if (p !== undefined) p.catch(() => { isPlayingRef.current = false; });
-      } catch {
-        isPlayingRef.current = false;
-        playNext();
-      }
-    };
-
-    playNext();
-  }
-
-  // ── FETCH ROUND ─────────────────────────────────────────────
-  async function fetchRound(idx) {
-    setLoadingRound(true);
-    const pos = idx + 1; // rounds are 1-indexed in LADDER_DIFFICULTY
-    setLadderPos(pos);
-    ladderPosRef.current = pos;
-    const ladderPos = pos; // keep local alias for rest of function
-
-    // Determine difficulty from show-logic curve
-    const diff = LADDER_DIFFICULTY[ladderPos] ?? 3;
-
-    try {
-      const round = getNextRound(ladderPos, lastThreeCats);
-      const cat = round.cat;
-      setCategory(cat);
-      setLastThreeCats(prev => [...prev.slice(-2), cat]);
-
-      // Convert round format {t, r} to game format {text, real}
-      const normalized = round.stmts.map(s => ({ text: s.t, real: s.r }));
-      const shuffled = shuffle(normalized);
-      setStmts(shuffled);
-      currentStmtsRef.current = shuffled;
-
-      const timerSec = TIMER_BY_LADDER[pos] ?? 45;
-      console.log(`[round] ladder=${ladderPos} diff=${diff} timer=${timerSec}s cat=${cat} id=${round.id}`);
-      audio.startBackgroundMusic(pos);
-      showAxios("speaking", "round_start");
-      // Fix 7: preload next round 500ms after this one loads
-      nextRoundDataRef.current = null;
-      setTimeout(() => prepareNextRound(idx + 1), 500);
-    } catch(e) {
-      console.warn("[fetchRound] fallback:", e.message);
-      const fb = shuffle([
-        {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
-        {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
-        {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne.",real:true},
-        {text:"Ancient Romans built steam-powered door mechanisms making temple doors open by 'divine force.'",real:true},
-        {text:"Queen Victoria kept a diary in Urdu exclusively for the last 13 years of her reign.",real:false},
-      ]);
-      setStmts(fb);
-      currentStmtsRef.current = fb;
-    } finally {
-      setLoadingRound(false);
+    // Reset if all played
+    if (available.length === 0) {
+      playedRef.current.clear();
+      return Math.floor(Math.random() * ROUNDS.length);
     }
-  }
 
-  // ── AXIOM SPEAK ─────────────────────────────────────────────
-  async function axiomSpeak(context, mood) {
-    if(axiomBusyRef.current) return;
-    axiomBusyRef.current = true;
-    setAxiomMood(mood);
-    setAxiomLoading(true);
-    try {
-      const res = await fetch("/api/axiom-speak",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ context, lang, skin: activeSkin }),
+    const pick = available[Math.floor(Math.random() * available.length)];
+    playedRef.current.add(pick.i);
+    return pick.i;
+  }, []);
+
+  // ─── START ROUND ────────────────────────────────────────────
+  const startRound = useCallback(() => {
+    AudioEngine.init();
+
+    const newRoundNum = Math.min((total % 10) + 1, 10);
+    const newTimerMax = getTimer(newRoundNum);
+    const idx = getNextRound();
+
+    setRoundNum(newRoundNum);
+    setRoundIdx(idx);
+    setStmts(shuffle(ROUNDS[idx].stmts));
+    setSel(null);
+    setRevealed(false);
+    setTime(newTimerMax);
+    setTimerMax(newTimerMax);
+    setShowConfetti(false);
+    setAxiosEmotion("idle");
+    setAutoCount(null);
+    setConfirmCount(null);
+    clearTimeout(autoRef.current);
+    clearTimeout(confirmRef.current);
+    setScreen("play");
+
+    clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setTime(t => {
+        const next = t - 1;
+        if (next <= 0) return 0;
+        return next;
       });
-      const data = await res.json();
-      const speechText = data.speech || "...";
-      setAxiomSpeech(speechText);
-      setLastAxiomLine(speechText);
-      playAxiomVoice(speechText, activeSkin);
-    } catch {
-      const fb={idle:"Your confidence is endearing.",taunting:"Predictable.",shocked:"Impossible.",amused:"Delightful.",defeated:"I concede."};
-      const fallbackText = fb[mood] || "...";
-      setAxiomSpeech(fallbackText);
-      playAxiomVoice(fallbackText, activeSkin);
-    } finally {
-      setAxiomLoading(false);
-      axiomBusyRef.current = false;
-    }
-  }
+    }, 1000);
+  }, [total, getNextRound]);
 
-  // Fix 7: preload next round data synchronously
-  function prepareNextRound(idx) {
-    if (idx >= ROUND_DIFFICULTY.length) return;
-    const pos = idx + 1;
-    try {
-      const round = getNextRound(pos, lastThreeCatsRef.current);
-      const normalized = round.stmts.map(s => ({ text: s.t, real: s.r }));
-      nextRoundDataRef.current = { stmts: shuffle(normalized), cat: round.cat };
-    } catch(e) {
-      nextRoundDataRef.current = null;
-    }
-  }
+  // Timer tick effects
+  useEffect(() => {
+    if (screen !== "play" || revealed) return;
+    if (time <= 0) { reveal(); return; }
 
-  // Bonus: 400ms dramatika before revealing — AXIOM "thinks"
-  function triggerReveal() {
-    if (revealed || revealPending) return;
-    clearInterval(confirmRef.current);
-    confirmRef.current = null;
-    setConfirmCountdown(null);
-    setRevealPending(true);
-    setAxiosEmotion("thinking");
-    audio.drumRoll(1.5);
-    setTimeout(() => {
-      setRevealPending(false);
-      doReveal();
-    }, 400);
-  }
+    // Urgency sounds
+    const pct = time / timerMax;
+    if (pct < 0.15) AudioEngine.tick(3);
+    else if (pct < 0.30) AudioEngine.tick(2);
+    else if (time % 5 === 0) AudioEngine.tick(1);  // ogni 5s per round facile
+  }, [time]);
 
-  // Fix 2: single-tap confirm — 1.2s auto-lock, double-tap = immediate
-  function handleCardTap(i) {
-    if (revealed || revealPending) return;
-    haptic.tap();
-    audio.whoosh();
+  useEffect(() => () => clearInterval(timerRef.current), []);
 
-    // Double-tap same card: immediate reveal
-    if (sel === i && confirmRef.current) {
-      clearInterval(confirmRef.current);
-      confirmRef.current = null;
-      setConfirmCountdown(null);
-      haptic.lockIn();
-      triggerReveal();
+  // ─── CARD TAP — single tap confirm ──────────────────────────
+  const handleCardTap = (idx) => {
+    if (revealed) return;
+    AudioEngine.whoosh();
+
+    // Second tap on same card = immediate lock-in
+    if (sel === idx) {
+      clearTimeout(confirmRef.current);
+      setConfirmCount(null);
+      setAxiosEmotion("thinking");
+      reveal();
       return;
     }
 
-    // New card: reset countdown, select card
-    clearInterval(confirmRef.current);
-    confirmRef.current = null;
-    setSel(i);
-    currentSelRef.current = i;
+    setSel(idx);
     setAxiosEmotion("thinking");
-    showAxios("thinking", "player_selects", 500);
-    const s = currentStmtsRef.current[i];
-    if (!s) return;
-    setTimeout(() => {
-      if (s.real === false) axiomSpeak("selected_lie", "taunting");
-      else axiomSpeak("selected_truth", "amused");
-    }, 300);
+    clearTimeout(confirmRef.current);
 
-    // Start 1.2s auto-lock countdown (3 × 400ms)
-    let steps = 3;
-    setConfirmCountdown(steps);
-    confirmRef.current = setInterval(() => {
-      steps--;
-      if (steps <= 0) {
-        clearInterval(confirmRef.current);
-        confirmRef.current = null;
-        setConfirmCountdown(null);
-        haptic.lockIn();
-        triggerReveal();
+    // 1.2s auto-confirm countdown
+    let count = 3;
+    setConfirmCount(count);
+    const tick = () => {
+      count--;
+      if (count <= 0) {
+        setConfirmCount(null);
+        reveal();
       } else {
-        setConfirmCountdown(steps);
+        setConfirmCount(count);
+        confirmRef.current = setTimeout(tick, 380);
       }
-    }, 400);
-  }
+    };
+    confirmRef.current = setTimeout(tick, 380);
+  };
 
-  // ── REVEAL ───────────────────────────────────────────────────
-  function doReveal() {
-    const stmtsCurrent = currentStmtsRef.current;
-    const selCurrent = currentSelRef.current;
-    const bi = stmtsCurrent.findIndex(s=>!s.real);
-    const isCorrect = selCurrent===bi && bi!==-1;
+  // ─── REVEAL ─────────────────────────────────────────────────
+  const reveal = () => {
+    clearInterval(timerRef.current);
+    clearTimeout(confirmRef.current);
+    setConfirmCount(null);
+
+    const bi = stmts.findIndex(s => !s.r);
+    const isCorrect = sel === bi;
 
     setRevealed(true);
-    setTotal(t=>t+1);
+    setTotal(t => t + 1);
 
-    if(isCorrect){
-      haptic.correct();
-      audio.fanfare();
-      triggerFlash("#2dd4a0");
-      showAxios("shocked", "correct", 200);
-      setScore(s=>s+1);
-      wrongCountRef.current = 0;
-      setStreak(prev=>{
-        const next=prev+1;
-        setBest(b=>Math.max(b,next));
-        if(next>=2) setConfetti(true);
-        // Escalating shock based on streak
-        if(next>=5) axiomSpeak("streak_5","shocked");
-        else if(next>=3) axiomSpeak("streak_3","shocked");
-        else axiomSpeak("correct","shocked");
-        if(next===3) showAxios("nervous","streak_3");
-        if(next===5) showAxios("nervous","streak_5");
-        if(next===7) showAxios("nervous","streak_7");
-        return next;
-      });
+    if (isCorrect) {
+      setScore(s => s + 1);
+      setStreak(s => { const n=s+1; setBest(b=>Math.max(b,n)); return n; });
+      setShowConfetti(true);
+      setAxiosEmotion("shocked");
+      setFlashColor("#2dd4a0");
+      AudioEngine.fanfare();
     } else {
-      haptic.wrong();
-      audio.buzzer();
-      triggerFlash("#f43f5e");
-      showAxios("taunting", "wrong", 200);
-      wrongCountRef.current++;
-      const lieStmt = stmtsCurrent.find(s => !s.real);
-      setLastWrongStmt(lieStmt?.text || null);
-      setShameSent(false);
-      setStreak(prev=>{
-        if(prev>0) axiomSpeak("streak_broken","amused"); // broke their streak
-        else if(wrongCountRef.current>=2) axiomSpeak("wrong_celebrate","amused"); // consecutive wrongs
-        else axiomSpeak("wrong","taunting");
-        return 0;
-      });
+      setStreak(0);
+      setAxiosEmotion("taunting");
+      setFlashColor("#f43f5e");
+      AudioEngine.buzzer();
     }
 
-    // Fix 3: auto-advance 2.8s after reveal
-    clearTimeout(autoAdvanceRef.current);
-    setAutoAdvanceCount(1);
-    autoAdvanceRef.current = setTimeout(() => {
-      setAutoAdvanceCount(null);
-      if (roundIdx + 1 < ROUND_DIFFICULTY.length) nextRound();
-      else showResultScreen();
-    }, 2800);
-  }
+    setTimeout(() => setFlashColor(null), 90);
 
-  // ── NEXT ROUND ───────────────────────────────────────────────
-  function _resetTensionRound() {
-    threshold65Ref.current = false;
-    threshold40Ref.current = false;
-    threshold20Ref.current = false;
-    threshold8Ref.current  = false;
-    setIsVoid(false);
-    setBreathPhase(0);
-  }
-
-  function nextRound() {
-    const next = roundIdx + 1;
-    if (next >= ROUND_DIFFICULTY.length) { showResultScreen(); return; }
-    // Clear all pending timers
-    clearTimeout(autoAdvanceRef.current);
-    autoAdvanceRef.current = null;
-    clearInterval(confirmRef.current);
-    confirmRef.current = null;
-    setAutoAdvanceCount(null);
-    setConfirmCountdown(null);
-    setRevealPending(false);
-    _resetTensionRound();
-    setRoundIdx(next);
-    setSel(null);
-    currentSelRef.current = null;
-    setRevealed(false);
-    setConfetti(false);
-    fetchRound(next);
-    axiomSpeak("intro", "idle");
-  }
-
-  // ── START ────────────────────────────────────────────────────
-  function startGame() {
-    clearTimeout(autoAdvanceRef.current);
-    autoAdvanceRef.current = null;
-    clearInterval(confirmRef.current);
-    confirmRef.current = null;
-    audio.init();
-    wrongCountRef.current = 0;
-    setScreen("play");
-    setRoundIdx(0);
-    setSel(null);
-    currentSelRef.current = null;
-    setRevealed(false);
-    setRevealPending(false);
-    setConfirmCountdown(null);
-    setAutoAdvanceCount(null);
-    nextRoundDataRef.current = null;
-    _resetTensionRound();
-    setScore(0);
-    setTotal(0);
-    setStreak(0);
-    setConfetti(false);
-    setShareImg(null);
-    fetchRound(0);
-    axiomSpeak("intro", "idle");
-  }
-
-  // ── RESULT ───────────────────────────────────────────────────
-  function showResultScreen() {
-    clearTimeout(autoAdvanceRef.current);
-    autoAdvanceRef.current = null;
-    audio.stopBackgroundMusic();
-    setScreen("result");
-    setScore(sc=>{
-      setTotal(tt=>{
-        const won = sc>=Math.ceil(tt*.67);
-        axiomSpeak(won?"final_win":"final_lose", won?"defeated":"taunting");
-        if(won){ setConfetti(true); haptic.victory(); showAxios("defeated","grand_bluff"); }
-        return tt;
-      });
-      return sc;
-    });
-    setTimeout(()=>{
-      setAxiomSpeech(speech=>{
-        setScore(sc=>{
-          setTotal(tt=>{
-            setBest(b=>{
-              const won=sc>=Math.ceil(tt*.67);
-              const img=generateShareCard(sc,tt,b,speech,won);
-              setShareImg(img);
-              return b;
-            });
-            return tt;
-          });
-          return sc;
-        });
-        return speech;
-      });
-    },1000);
-
-    // Build Stories card and challenge URL
-    setTimeout(() => {
-      setScore(sc => {
-        setTotal(tt => {
-          setBest(b => {
-            setAxiomSpeech(speech => {
-              const won = sc >= Math.ceil(tt * .67);
-              const lieStmt = currentStmtsRef.current.find(s => !s.real);
-              const lieText = lieStmt?.text || "";
-              const img = generateStoriesCard(sc, tt, b, speech, won, lieText, lastAxiomLine);
-              setStoriesImg(img);
-              setChallengeURL(buildChallengeURL(sc, tt));
-              return speech;
-            });
-            return b;
-          });
-          return tt;
-        });
-        return sc;
-      });
-    }, 1200);
-  }
-
-  // ── USEEFFECTS ───────────────────────────────────────────────
-
-  // Keep refs in sync
-  useEffect(()=>{ currentStmtsRef.current = stmts; },[stmts]);
-  useEffect(()=>{ currentSelRef.current = sel; },[sel]);
-  // Fix 7: keep lastThreeCatsRef in sync for prepareNextRound (avoids stale closure)
-  useEffect(()=>{ lastThreeCatsRef.current = lastThreeCats; },[lastThreeCats]);
-  useEffect(()=>{ isVoidRef.current = isVoid; },[isVoid]);
-  useEffect(()=>{ revealedRef.current = revealed; },[revealed]);
-
-  // Audio event subscriptions — sync visual layer with audio events
-  useEffect(()=>{
-    const onBreathIn  = ()=>setBreathPhase(1);
-    const onBreathOut = ()=>setBreathPhase(0);
-    const onVoidEnter = ()=>setIsVoid(true);
-    audio.on("breathIn",  onBreathIn);
-    audio.on("breathOut", onBreathOut);
-    audio.on("voidEnter", onVoidEnter);
-    return ()=>{
-      audio.off("breathIn",  onBreathIn);
-      audio.off("breathOut", onBreathOut);
-      audio.off("voidEnter", onVoidEnter);
-    };
-  },[]);
-
-  // Micro-expressions — AXIOS flashes a reaction for 100ms every 15-25s
-  // Active on ladderPos ≥ 4, stops when revealed
-  useEffect(()=>{
-    clearTimeout(microExprRef.current);
-    if (screen !== "play") return;
-    const schedule = () => {
-      const delay = 15000 + Math.random() * 10000;
-      microExprRef.current = setTimeout(()=>{
-        if (!revealedRef.current && ladderPosRef.current >= 4) {
-          const exprs = ["smug","shocked","taunting"];
-          const expr = exprs[Math.floor(Math.random()*exprs.length)];
-          setAxiosEmotion(expr);
-          setTimeout(()=>setAxiosEmotion("idle"), 100);
-        }
-        schedule();
-      }, delay);
-    };
-    microExprRef.current = setTimeout(schedule, 10000);
-    return ()=>clearTimeout(microExprRef.current);
-  },[screen]);
-
-  // Re-trigger intro speech if language changes on home screen
-  useEffect(()=>{
-    if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
-  },[lang]);
-
-  // Detect challenge from URL
-  useEffect(() => {
-    const ch = getChallengeFromURL();
-    if (ch && ch.s !== undefined && ch.t > 0) {
-      setChallenge(ch);
-      // Clean URL without reload
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  // Verify Stripe skin purchase after redirect
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const skinPurchased = params.get("skin_purchased");
-    const sessionId = params.get("session_id");
-    if (skinPurchased && sessionId) {
-      window.history.replaceState({}, "", window.location.pathname);
-      const userId = localStorage.getItem("bluff_user_id") || "anon";
-      fetch("/api/shop", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId, sessionId }),
-      })
-      .then(r => r.json())
-      .then(data => {
-        if (data.success) {
-          setOwnedSkins(prev => {
-            const next = [...new Set([...prev, skinPurchased])];
-            localStorage.setItem("bluff_owned_skins", JSON.stringify(next));
-            return next;
-          });
-          setActiveSkin(skinPurchased);
-          localStorage.setItem("bluff_skin", skinPurchased);
-          alert(`${skinPurchased.toUpperCase()} AXIOM unlocked! 🎉`);
-        }
-      })
-      .catch(() => {});
-    }
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (audioRef.current) {
-        audioRef.current.pause();
-        URL.revokeObjectURL(audioRef.current.src);
+    // Auto-advance: 2.5s countdown
+    let ac = 3;
+    setAutoCount(ac);
+    const advTick = () => {
+      ac--;
+      if (ac <= 0) {
+        setAutoCount(null);
+        startRound();
+      } else {
+        setAutoCount(ac);
+        autoRef.current = setTimeout(advTick, 750);
       }
     };
-  }, []);
-
-  // ── THEME ────────────────────────────────────────────────────
-  const T = {
-    bg:"#04060f",card:"#0f0f1a",gold:"#e8c547",
-    goldDim:"rgba(232,197,71,.1)",ok:"#2dd4a0",bad:"#f43f5e",
-    dim:"#5a5a68",glass:"rgba(255,255,255,.03)",gb:"rgba(255,255,255,.07)",
+    autoRef.current = setTimeout(advTick, 800);
   };
-  const atmosphereColor = {
-    1:"rgba(74,158,255,0.04)", 2:"rgba(74,158,255,0.06)", 3:"rgba(232,197,71,0.04)",
-    4:"rgba(232,197,71,0.06)", 5:"rgba(255,140,66,0.06)", 6:"rgba(255,100,50,0.08)",
-    7:"rgba(255,60,80,0.07)", 8:"rgba(200,30,60,0.10)", 9:"rgba(150,20,50,0.12)",
-    10:"rgba(120,0,40,0.15)",
-  }[ladderPos] || "rgba(74,158,255,0.04)";
+
+  const cancelAutoAndGoHome = () => {
+    clearTimeout(autoRef.current);
+    setAutoCount(null);
+    setScreen("home");
+  };
+
+  const cancelAutoAndNext = () => {
+    clearTimeout(autoRef.current);
+    setAutoCount(null);
+    startRound();
+  };
+
+  const r = ROUNDS[roundIdx];
+  const bi = stmts.findIndex(s => !s.r);
+  const correct = sel === bi;
+
+  if (showIntro) return <CinematicIntro onComplete={() => setShowIntro(false)} />;
 
   const wrap = {
     minHeight:"100vh",
-    background:`radial-gradient(ellipse at 50% 0%,${atmosphereColor} 0%,${T.bg} 55%)`,
-    transition:"background 2s ease",
-    fontFamily:"'Segoe UI',system-ui,sans-serif",
+    background:`radial-gradient(ellipse at 50% 0%,${bgTint} 0%,${T.bg} 55%)`,
+    fontFamily:"'Instrument Sans','DM Sans',system-ui,sans-serif",
     display:"flex",flexDirection:"column",alignItems:"center",
     position:"relative",overflow:"hidden",color:"#e8e6e1",
-    paddingTop:"env(safe-area-inset-top)",
-    paddingBottom:"max(24px,env(safe-area-inset-bottom))",
+    transition:"background 2s ease",
   };
 
-  const bi = stmts.findIndex(s=>!s.real);
-  const correct = sel===bi && bi!==-1;
-  const diff = ROUND_DIFFICULTY[roundIdx]||3;
-
-  if(showIntro) return <><CinematicIntro onComplete={()=>{
-    setShowIntro(false);
-    localStorage.setItem("bluff_played","1");
-    axiomSpeak("intro","idle");
-  }}/><GameStyles/></>;
-
-  // ─── HOME ──────────────────────────────────────────────────
-  if(screen==="home") return (
+  // ─── HOME ────────────────────────────────────────────────────
+  if (screen === "home") return (
     <div style={wrap}>
       <Particles/>
-      {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
-      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
-        <div style={{textAlign:"center",marginBottom:"clamp(18px,4vw,26px)",animation:"g-fadeUp .5s ease both"}}>
-          <div style={{fontSize:"clamp(10px,2.5vw,11px)",letterSpacing:"6px",color:T.dim,marginBottom:14,fontWeight:500}}>SIAL GAMES</div>
-          <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(52px,13vw,78px)",fontWeight:900,letterSpacing:-2,margin:"0 0 4px",lineHeight:1,background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.5),#e8c547)",backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"g-shimmer 4s linear infinite",filter:"drop-shadow(0 0 22px rgba(232,197,71,.18))"}}>
-            BLUFF<sup style={{fontSize:"clamp(11px,2.5vw,14px)",WebkitTextFillColor:"rgba(232,197,71,.5)",position:"relative",top:"clamp(-22px,-5vw,-30px)",marginLeft:2,fontFamily:"system-ui",fontWeight:400}}>™</sup>
-          </h1>
-          <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,letterSpacing:"4px",textTransform:"uppercase",margin:0,fontWeight:500}}>The AI Deception Game</p>
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:440,padding:"50px 20px 40px",textAlign:"center"}}>
+        <div style={{fontSize:11,letterSpacing:7,color:T.dim,marginBottom:18,fontWeight:500}}>SIAL GAMES</div>
+        <h1 style={{
+          fontFamily:"Georgia,serif",fontSize:72,fontWeight:900,letterSpacing:-2,
+          margin:"0 0 2px",lineHeight:1,
+          background:`linear-gradient(135deg,${T.gold},${T.gold2},#fff8,${T.gold})`,
+          backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+          animation:"g-shimmer 4s linear infinite",
+          filter:"drop-shadow(0 0 30px rgba(232,197,71,0.2))",
+        }}>BLUFF<sup style={{fontSize:14,WebkitTextFillColor:"rgba(232,197,71,0.5)",position:"relative",top:-35,fontFamily:"system-ui",fontWeight:400}}>™</sup></h1>
+        <p style={{fontSize:13,color:T.dim,letterSpacing:4,textTransform:"uppercase",margin:"0 0 40px",fontWeight:500}}>The AI Deception Game</p>
+        <div style={{background:T.glass,backdropFilter:"blur(16px)",borderRadius:18,border:`1px solid ${T.glassBorder}`,padding:"24px 20px",marginBottom:20,textAlign:"left",animation:"g-fadeUp .6s .1s both"}}>
+          <div style={{fontSize:11,color:T.gold,letterSpacing:3,textTransform:"uppercase",fontWeight:600,marginBottom:14}}>How to play</div>
+          {[
+            ["🧠","5 statements — 4 true, 1 crafted LIE"],
+            ["🎭","Find the BLUFF before time runs out"],
+            ["⏱️","Harder rounds = more time. Easy = fast!"],
+            ["🔥","Build streaks · Beat AXIOS · Climb the ladder"],
+          ].map(([e,t],i)=>
+            <div key={i} style={{display:"flex",gap:10,marginBottom:i<3?11:0,fontSize:14,lineHeight:1.5,animation:`g-fadeUp .5s ${.15+i*.08}s both`}}>
+              <span style={{fontSize:16}}>{e}</span><span style={{opacity:.8}}>{t}</span>
+            </div>
+          )}
         </div>
-
-        <LangPicker lang={lang} onChange={changeLang}/>
-
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
-          borderRadius:12, padding:"10px 14px", marginBottom:12,
-        }}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:16}}>{voiceEnabled ? "🔊" : "🔇"}</span>
-            <div>
-              <div style={{fontSize:13,fontWeight:500,color:"#e8e6e1"}}>AXIOM Voice</div>
-              <div style={{fontSize:11,color:"#5a5a68"}}>{voiceEnabled ? "ElevenLabs TTS active" : "Text only"}</div>
+        {total>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20,animation:"g-fadeUp .6s .3s both"}}>
+          {[[score,"Correct",T.ok],[total,"Played",T.gold],[best,"Best streak","#a78bfa"]].map(([v,l,c],i)=>
+            <div key={i} style={{background:T.glass,borderRadius:14,border:`1px solid ${T.glassBorder}`,padding:"14px 8px",textAlign:"center"}}>
+              <div style={{fontSize:28,fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
+              <div style={{fontSize:10,color:T.dim,letterSpacing:1,textTransform:"uppercase",marginTop:3}}>{l}</div>
             </div>
-          </div>
-          <button
-            onClick={() => {
-              const next = !voiceEnabled;
-              setVoiceEnabled(next);
-              localStorage.setItem("bluff_voice", next ? "on" : "off");
-              if (!next && audioRef.current) {
-                audioRef.current.pause();
-                isPlayingRef.current = false;
-                audioQueueRef.current = [];
-              }
-            }}
-            style={{
-              width:44, height:24, borderRadius:12, cursor:"pointer",
-              background: voiceEnabled ? "rgba(45,212,160,.3)" : "rgba(255,255,255,.08)",
-              border: voiceEnabled ? "1px solid rgba(45,212,160,.5)" : "1px solid rgba(255,255,255,.1)",
-              position:"relative", transition:"all .25s",
-            }}>
-            <div style={{
-              width:16, height:16, borderRadius:"50%",
-              background: voiceEnabled ? "#2dd4a0" : "#5a5a68",
-              position:"absolute", top:3,
-              left: voiceEnabled ? 22 : 4,
-              transition:"all .25s",
-            }}/>
-          </button>
-        </div>
-
-        {challenge && (
-          <div style={{
-            background: "rgba(232,197,71,.08)",
-            border: "1px solid rgba(232,197,71,.3)",
-            borderRadius: 14, padding: "14px 16px",
-            marginBottom: 14, animation: "g-fadeUp .4s ease both",
-          }}>
-            <div style={{ fontSize: 10, letterSpacing: "3px", color: "#e8c547", fontWeight: 700, marginBottom: 6, textTransform: "uppercase" }}>
-              ⚔️ Challenge received
-            </div>
-            <div style={{ fontSize: "clamp(13px,3.5vw,15px)", color: "#e8e6e1", marginBottom: 8 }}>
-              Your friend scored{" "}
-              <span style={{ color: "#e8c547", fontWeight: 700, fontFamily: "Georgia,serif", fontSize: 18 }}>
-                {challenge.s}/{challenge.t}
-              </span>
-              {" "}({challenge.t ? Math.round(challenge.s / challenge.t * 100) : 0}% accuracy).
-              <br/>
-              <span style={{ opacity: .7 }}>Can you beat them?</span>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => { setChallenge(null); startGame(); }}
-                style={{ flex: 2, minHeight: 44, padding: "10px 14px", fontSize: 13, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8c547,#d4a830)", color: "#04060f", borderRadius: 10, fontFamily: "inherit", cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)", animation: "g-btnShimmer 2.5s infinite" }}/>
-                <span style={{ position: "relative" }}>Accept challenge</span>
-              </button>
-              <button
-                onClick={() => setChallenge(null)}
-                style={{ flex: 1, minHeight: 44, padding: "10px", fontSize: 13, fontWeight: 600, background: "transparent", color: "#5a5a68", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, fontFamily: "inherit", cursor: "pointer" }}>
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
-        <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={false}/>
-
-        <div style={{background:T.glass,borderRadius:16,border:`1px solid ${T.gb}`,padding:"clamp(16px,4vw,22px)",marginBottom:14,animation:"g-fadeUp .5s .1s both"}}>
-          <div style={{fontSize:"clamp(10px,2.5vw,11px)",color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:12}}>How to play</div>
-          {["🧠 AI generates 5 surprising statements","🎭 One is a masterfully crafted LIE","⏱️ Find the BLUFF before AXIOM wins","🔥 Build streaks — beat the machine"].map((t,i)=>(
-            <div key={i} style={{display:"flex",gap:10,marginBottom:i<3?10:0,fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.5,animation:`g-fadeUp .5s ${.15+i*.07}s both`}}>
-              <span style={{fontSize:16,flexShrink:0}}>{t.slice(0,2)}</span>
-              <span style={{opacity:.8}}>{t.slice(3)}</span>
-            </div>
-          ))}
-        </div>
-
-        {total>0&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14,animation:"g-fadeUp .5s .3s both"}}>
-            {[[score,"Correct",T.ok],[total,"Played",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
-              <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
-                <div style={{fontSize:"clamp(20px,6vw,28px)",fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
-                <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <button onClick={startGame} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
-          onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
-          onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
-          <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
-          <span style={{position:"relative"}}>{total>0?"⚔️ Challenge AXIOM again":"⚔️ Challenge AXIOM"}</span>
+          )}
+        </div>}
+        <button onClick={startRound} style={{
+          width:"100%",padding:"18px",fontSize:16,fontWeight:700,letterSpacing:2,textTransform:"uppercase",
+          background:`linear-gradient(135deg,${T.gold},#d4a830)`,color:T.bg,border:"none",borderRadius:16,
+          cursor:"pointer",position:"relative",overflow:"hidden",fontFamily:"inherit",
+          boxShadow:`0 0 50px ${T.goldDim},0 4px 20px rgba(232,197,71,0.2)`,
+          animation:"g-fadeUp .6s .4s both",transition:"transform .15s",
+        }}
+          onMouseDown={e=>e.currentTarget.style.transform="scale(0.97)"}
+          onMouseUp={e=>e.currentTarget.style.transform=""}
+        >
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
+          <span style={{position:"relative"}}>{total>0?"Play again":"Find the bluff"}</span>
         </button>
-        <button
-          onClick={() => setShowShop(true)}
-          style={{width:"100%",minHeight:48,padding:"13px",marginTop:10,
-            fontSize:"clamp(12px,3.5vw,14px)",fontWeight:600,letterSpacing:"1px",
-            textTransform:"uppercase",background:"rgba(255,255,255,.03)",
-            color:"#5a5a68",border:"1px solid rgba(255,255,255,.07)",
-            borderRadius:16,fontFamily:"inherit",cursor:"pointer",
-            display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <span style={{fontSize:16}}>🎭</span>
-          <span>AXIOM Skins</span>
-          {ownedSkins.length <= 1 &&
-            <span style={{fontSize:10,padding:"2px 7px",background:"rgba(232,197,71,.12)",
-              color:"#e8c547",borderRadius:10,letterSpacing:"1px"}}>NEW</span>
-          }
-        </button>
-        <div style={{marginTop:20,textAlign:"center",fontSize:10,color:"rgba(255,255,255,.1)",letterSpacing:"1px"}}>playbluff.games · SIAL Consulting d.o.o.</div>
+        <div style={{marginTop:28,fontSize:11,color:"rgba(255,255,255,0.15)",letterSpacing:1}}>
+          playbluff.games · SIAL Consulting d.o.o.
+        </div>
       </div>
-
-      {showShop && (
-        <div style={{position:"fixed",inset:0,zIndex:500,
-          background:"rgba(4,6,15,.95)",backdropFilter:"blur(8px)",
-          overflowY:"auto",padding:"24px 16px 48px"}}>
-          <div style={{maxWidth:460,margin:"0 auto"}}>
-            <div style={{display:"flex",justifyContent:"space-between",
-              alignItems:"center",marginBottom:20,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
-              <div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:900,color:"#e8c547"}}>AXIOM Skins</div>
-                <div style={{fontSize:11,color:"#5a5a68",letterSpacing:"2px"}}>Choose your villain's voice</div>
-              </div>
-              <button onClick={()=>setShowShop(false)}
-                style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.06)",
-                  border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",fontSize:16,
-                  cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-            </div>
-
-            {[
-              {id:"default",  emoji:"🤖", name:"Default AXIOM",   desc:"Chaotic Gen Z energy. Ships with the game.",           price:null,    preview:'"ratio 💀"'},
-              {id:"balkan",   emoji:"🇧🇦", name:"Balkan AXIOM",    desc:"Brate, majke mi humor. Roastuje na srpsko-hrvatskom.", price:"€2.99", preview:'"jbg brate 😂"'},
-              {id:"anime",    emoji:"🎌", name:"Anime AXIOM",     desc:"Dramatic villain arc. NANI energy.",                  price:"€2.99", preview:'"OMAE WA MOU SHINDEIRU 💀"'},
-              {id:"corporate",emoji:"💼", name:"Corporate AXIOM", desc:"Passive-aggressive LinkedIn energy.",                 price:"€2.99", preview:'"This is not a culture fit, answer-wise."'},
-              {id:"british",  emoji:"🎩", name:"British AXIOM",   desc:"Devastatingly polite. Dry sarcasm.",                 price:"€2.99", preview:'"Oh. Oh dear."'},
-              {id:"bundle",   emoji:"⚡", name:"All Skins Bundle", desc:"Balkan + Anime + Corporate + British. Best value.",  price:"€9.99", preview:null},
-            ].map(skin => {
-              const allFour = ["balkan","anime","corporate","british"].every(s => ownedSkins.includes(s));
-              const isOwned = skin.id === "default" || ownedSkins.includes(skin.id) ||
-                (skin.id === "bundle" && allFour);
-              const isActive = activeSkin === skin.id;
-              return (
-                <div key={skin.id} style={{
-                  background: isActive ? "rgba(232,197,71,.08)" : "rgba(15,15,26,.9)",
-                  border: isActive ? "1.5px solid rgba(232,197,71,.4)" : "1px solid rgba(255,255,255,.07)",
-                  borderRadius:16, padding:"16px", marginBottom:10,
-                }}>
-                  <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <span style={{fontSize:28}}>{skin.emoji}</span>
-                    <div style={{flex:1}}>
-                      <div style={{fontWeight:700,fontSize:15,color:"#e8e6e1",marginBottom:2}}>{skin.name}</div>
-                      <div style={{fontSize:12,color:"#5a5a68",lineHeight:1.4}}>{skin.desc}</div>
-                      {skin.preview && <div style={{fontSize:12,color:"rgba(34,211,238,.5)",marginTop:4,fontStyle:"italic"}}>{skin.preview}</div>}
-                    </div>
-                    <div style={{flexShrink:0}}>
-                      {isOwned ? (
-                        <button
-                          onClick={() => {
-                            if (skin.id !== "bundle") {
-                              setActiveSkin(skin.id);
-                              localStorage.setItem("bluff_skin", skin.id);
-                            }
-                          }}
-                          style={{padding:"8px 14px",fontSize:12,fontWeight:700,
-                            background: isActive ? "rgba(232,197,71,.2)" : "rgba(45,212,160,.1)",
-                            color: isActive ? "#e8c547" : "#2dd4a0",
-                            border: isActive ? "1px solid rgba(232,197,71,.3)" : "1px solid rgba(45,212,160,.2)",
-                            borderRadius:10,cursor:skin.id!=="bundle"?"pointer":"default",fontFamily:"inherit"}}>
-                          {isActive ? "✓ Active" : skin.id==="bundle" ? "Owned" : "Use"}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            const userId = localStorage.getItem("bluff_user_id") ||
-                              Math.random().toString(36).slice(2);
-                            localStorage.setItem("bluff_user_id", userId);
-                            fetch("/api/shop", {
-                              method:"POST",
-                              headers:{"Content-Type":"application/json"},
-                              body: JSON.stringify({action:"checkout", skinId:skin.id, userId}),
-                            })
-                            .then(r=>r.json())
-                            .then(data=>{ if(data.url) window.location.href = data.url; })
-                            .catch(()=>alert("Shop unavailable. Try again."));
-                          }}
-                          style={{padding:"14px 20px",fontSize:14,fontWeight:700,
-                            background:"linear-gradient(135deg,#e8c547,#d4a830)",
-                            color:"#04060f",border:"none",borderRadius:12,
-                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                            width:"100%",minHeight:"48px",marginTop:"8px",
-                            boxShadow:"0 0 20px rgba(232,197,71,0.4), 0 4px 12px rgba(232,197,71,0.2)",
-                            display:"block",letterSpacing:"0.5px"}}>
-                          {skin.price}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-
-            <a href="/shame.html" target="_blank"
-              style={{display:"block",textAlign:"center",marginTop:16,
-                fontSize:12,color:"rgba(244,63,94,.5)",textDecoration:"none",
-                letterSpacing:"2px"}}>
-              💀 Hall of Shame →
-            </a>
-          </div>
-        </div>
-      )}
-
       <GameStyles/>
     </div>
   );
 
-  // ─── PLAY ──────────────────────────────────────────────────
-  if(screen==="play") return (
+  // ─── PLAY ────────────────────────────────────────────────────
+  return (
     <div style={wrap}>
-      {/* Flash overlay */}
-      {flashColor && (
-        <div style={{
-          position: "fixed", inset: 0,
-          background: flashColor,
-          opacity: 0.15,
-          pointerEvents: "none",
-          zIndex: 9998,
-          animation: "ax-flash 0.08s ease-out forwards",
-        }} />
-      )}
-      {/* Background breathing — synced to AXIOS breath audio cycle */}
-      <div style={{
-        position:"fixed",inset:0,
-        background:`radial-gradient(ellipse at 50% 30%, rgba(232,197,71,${0.025 + breathPhase * 0.025}) 0%, transparent 65%)`,
-        transition:"background 0.8s ease-in-out",
-        pointerEvents:"none",zIndex:0,
-      }}/>
-      {/* The Void overlay — absolute silence + freeze frame */}
-      {isVoid && (
-        <div style={{
-          position:"fixed",inset:0,
-          background:"rgba(0,0,0,0.52)",
-          backdropFilter:"blur(1.5px)",
-          zIndex:60,pointerEvents:"none",
-          animation:"d-voidIn .35s ease both",
-        }}/>
-      )}
-      {/* Vignette */}
-      {ladderPos >= 6 && (
-        <div style={{
-          position: "fixed", inset: 0,
-          background: `radial-gradient(ellipse at 50% 50%, transparent ${30 + (10-ladderPos)*5}%, rgba(0,0,0,${0.1 + (ladderPos-6)*0.08}) 100%)`,
-          pointerEvents: "none", zIndex: 0,
-          transition: "all 1s ease",
-        }} />
-      )}
-      <Particles count={10}/>
-      {confetti&&<Confetti/>}
-      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
+      {/* Screen flash on reveal */}
+      {flashColor&&<div style={{position:"fixed",inset:0,background:flashColor,opacity:0.14,pointerEvents:"none",zIndex:9998,animation:"g-flash 0.09s ease-out forwards"}}/>}
+
+      {/* Vignette on high rounds */}
+      {roundNum>=6&&<div style={{position:"fixed",inset:0,background:`radial-gradient(ellipse at 50% 50%,transparent ${40-(roundNum-6)*4}%,rgba(0,0,0,${0.08+(roundNum-6)*0.05}) 100%)`,pointerEvents:"none",zIndex:0,transition:"all 1s ease"}}/>}
+
+      <Particles count={8}/>
+      {showConfetti&&<Confetti/>}
+
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"16px 16px 32px"}}>
+
         {/* Header */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:20}}>{CATEGORY_EMOJIS[category]||"🎯"}</span>
+            <span style={{fontSize:20}}>{r?.emoji}</span>
             <div>
-              <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
-              <div style={{display:"flex",alignItems:"center",gap:5}}>
-                <div style={{fontSize:9,color:T.dim}}>Round {roundIdx+1}/{ROUND_DIFFICULTY.length}</div>
-                <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {diff === 0 ? "Baby mode 👶" : DIFF_LABEL[diff]}</div>
-              </div>
+              <div style={{fontSize:11,color:T.gold,letterSpacing:3,textTransform:"uppercase",fontWeight:600}}>{r?.label}</div>
+              <div style={{fontSize:10,color:T.dim}}>Round {total+1} · {timerMax}s</div>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <button
-              onClick={() => {
-                const newMuted = !muted;
-                setMuted(newMuted);
-                audio.enabled = !newMuted;
-                if (newMuted) window.speechSynthesis?.cancel();
-              }}
-              style={{
-                background: "transparent", border: "none",
-                fontSize: 18, cursor: "pointer", opacity: 0.5,
-                color: "#e8e6e1", padding: "4px",
-              }}
-            >
-              {muted ? "🔇" : "🔊"}
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {streak>0&&<div style={{fontSize:13,color:T.gold,fontWeight:700,display:"flex",alignItems:"center",gap:3,background:T.goldDim,padding:"4px 10px",borderRadius:20,animation:streak>=3?"g-fire .6s infinite":"none"}}>🔥{streak}</div>}
+            <button onClick={()=>{setMuted(m=>{AudioEngine.setMuted(!m);return !m;})}} style={{background:"none",border:"none",cursor:"pointer",fontSize:16,opacity:0.45,padding:4,color:"#fff"}}>
+              {muted?"🔇":"🔊"}
             </button>
-            {streak>0&&<div style={{fontSize:12,color:T.gold,fontWeight:700,display:"flex",alignItems:"center",gap:3,background:T.goldDim,padding:"4px 10px",borderRadius:20,animation:streak>=3?"g-fire .6s infinite":"none"}}>🔥{streak}</div>}
-            {!revealed && !revealPending
-              ?<IsolatedTimer
-                  key={`r${roundIdx}`}
-                  initialTime={TIMER_BY_LADDER[roundIdx+1] ?? 45}
-                  paused={loadingRound || revealed || revealPending}
-                  onTick={(t, maxT) => {
-                    const frac = t / maxT;
-                    if (!isVoidRef.current) audio.tick(frac<0.15?3:frac<0.35?2:1);
-                    // One-time tension phase thresholds
-                    if (frac < 0.65 && !threshold65Ref.current) {
-                      threshold65Ref.current = true;
-                      audio.tensionShift(0.65);
-                    }
-                    if (frac < 0.40 && !threshold40Ref.current) {
-                      threshold40Ref.current = true;
-                      audio.tensionShift(0.40);
-                      audio.startHeartbeatLoop();
-                    }
-                    if (frac < 0.20 && !threshold20Ref.current) {
-                      threshold20Ref.current = true;
-                      audio.tensionShift(0.20);
-                      audio.intensifyHeartbeat();
-                    }
-                    // The Void — absolute silence at 8s remaining
-                    if (t <= 8 && !threshold8Ref.current) {
-                      threshold8Ref.current = true;
-                      audio.enterTheVoid();
-                      // setIsVoid(true) is handled via audio.on("voidEnter") listener
-                      setAxiosEmotion("smug");
-                    }
-                    // AXIOM taunts (skip during void)
-                    if (!isVoidRef.current) {
-                      if (t === Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting");
-                      if (t === 10) { axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); showAxios("smug","timer_10"); }
-                      if (t === 5) { haptic.timerWarning(); showAxios("taunting","timer_5"); }
-                    }
-                    if (t === 3) haptic.timerWarning();
-                  }}
-                  onExpire={() => {
-                    if(!revealed&&!revealPending&&screen==="play"&&currentStmtsRef.current.length>0) triggerReveal();
-                  }}
-                  size={46}
-                />
-              :<div style={{width:46,height:46,borderRadius:"50%",background:correct?"rgba(45,212,160,.12)":"rgba(244,63,94,.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,animation:"g-pulse .5s",color:correct?T.ok:T.bad}}>{correct?"✓":"✗"}</div>
+            {!revealed
+              ? <TimerRing time={time} max={timerMax}/>
+              : <div style={{width:52,height:52,borderRadius:"50%",background:correct?"rgba(45,212,160,0.12)":"rgba(244,63,94,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,animation:"g-pulse .5s",color:correct?T.ok:T.bad}}>
+                  {correct?"✓":"✗"}
+                </div>
             }
           </div>
         </div>
 
-        {loadingRound?(
-          <div style={{textAlign:"center",padding:"40px 0",color:T.dim,fontSize:14}}>
-            <div style={{animation:"g-pulse 1s infinite",marginBottom:8,fontSize:22}}>🤖</div>
-            AXIOM is preparing your deception...
-          </div>
-        ):(<>
-          {/* Hover tremor on L4+, glitch on L5 */}
-          {ladderPos >= 6 && !revealed && (
-            <style>{`
-              .bluff-card { transition: background-color .18s ease,border-color .18s ease,transform .15s ease !important; }
-              .bluff-card:hover { animation: d-hover-tremor 0.18s ease-in-out infinite !important; transform: none !important; }
-              @keyframes d-hover-tremor {
-                0%   { transform: perspective(500px) rotateX(-1deg) rotateY(0.5deg); }
-                33%  { transform: perspective(500px) rotateX(0.5deg) rotateY(-1deg); }
-                66%  { transform: perspective(500px) rotateX(1deg) rotateY(0.8deg); }
-                100% { transform: perspective(500px) rotateX(-1deg) rotateY(0.5deg); }
-              }
-            `}</style>
-          )}
-          {diff >= 5 && !revealed && (
-            <style>{`
-              @keyframes d-glitch {
-                0%,94%,100% { clip-path:none;transform:none;filter:none }
-                95% { clip-path:polygon(0 28%,100% 28%,100% 43%,0 43%);transform:translateX(3px);filter:hue-rotate(90deg) }
-                97% { clip-path:polygon(0 58%,100% 58%,100% 73%,0 73%);transform:translateX(-2px);filter:hue-rotate(180deg) }
-                98% { clip-path:none;transform:none;filter:none }
-              }
-              .bluff-card:nth-child(3) { animation: g-cardSnap .20s ease-out 0.036s both, d-glitch 9s ease-in-out 2.5s infinite !important; }
-            `}</style>
-          )}
-
-          {/* AXIOS section */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: 12,
-            marginBottom: 14,
-            animation: "g-fadeUp .4s ease",
-          }}>
-            <AxiosFace
-              emotion={axiosEmotion}
-              speaking={axiosSpeaking}
-              ladderPosition={ladderPos}
-              eyeTrack={ladderPos >= 8}
-            />
-            <AxiosBubble
-              text={axiosBubbleText}
-              visible={axiosBubbleVisible}
-            />
-          </div>
-
-          <div style={{textAlign:"center",marginBottom:12}}>
-            <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(17px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:revealed?(correct?T.ok:T.bad):"#fff",transition:"color .4s"}}>
-              {revealed?(correct?"You found it! 🎯":"AXIOM won this one 🎭"):"Which one is the BLUFF?"}
-            </h2>
-            <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:0}}>
-              {revealed?(correct?"Your instincts beat the machine":"The fabricated lie is highlighted below"):"One statement was invented by AI."}
-            </p>
-          </div>
-
-          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:14,animation:revealed&&!correct?"g-shake .5s":"none"}}>
-            {stmts.map((s,i)=>{
-              const isB=!s.real,isS=sel===i;
-              let bg=T.card,border=T.gb,anim="";
-              if(!revealed&&isS){bg=T.goldDim;border="rgba(232,197,71,.4)";}
-              if(revealed&&isB){bg="rgba(244,63,94,.07)";border="rgba(244,63,94,.4)";anim="g-glow .8s";}
-              if(revealed&&isS&&correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";anim="g-correctGlow .8s";}
-              // Bonus: selected card scales up during revealPending
-              const pendingScale = revealPending && isS ? "scale(1.025)" : "scale(1)";
-              return (
-                <button key={i} className="bluff-card" onClick={()=>handleCardTap(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||revealPending?"default":"pointer",transition:"background-color .18s ease,border-color .18s ease,transform .15s ease",transform:pendingScale,textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardSnap .20s ease-out ${i*0.018}s both, ${anim}`}}>
-                  <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
-                    {revealed&&isB?"!":String.fromCharCode(65+i)}
-                  </div>
-                  <div style={{flex:1}}>
-                    {s.text}
-                    {revealed&&<div style={{marginTop:6,fontSize:10,fontWeight:700,letterSpacing:"1.5px",color:isB?T.bad:isS?T.bad:T.ok,opacity:isB||isS?1:.4}}>
-                      {isB?"🎭 AI FABRICATION":isS?"✗ This is actually real":"✓ Verified fact"}
-                    </div>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {!revealed && !revealPending
-            ?<button
-              onClick={()=>{ if(sel!==null){ clearInterval(confirmRef.current); confirmRef.current=null; setConfirmCountdown(null); haptic.lockIn(); triggerReveal(); }}}
-              disabled={sel===null}
-              style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-              {/* Fix 2: lock progress bar (animates from 0→100% in 1.2s) */}
-              {sel!==null&&<div key={`lp${sel}`} style={{position:"absolute",inset:0,background:"rgba(255,255,255,.18)",transformOrigin:"left",animation:"d-lockProgress 1.2s linear forwards"}}/>}
-              {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
-              <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
-            </button>
-            : !revealed && revealPending
-            ? <button disabled style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(232,197,71,.1)",color:"#e8c547",border:"1.5px solid rgba(232,197,71,.2)",borderRadius:16,fontFamily:"inherit",animation:"g-pulse .4s infinite"}}>
-                ⏳ Revealing...
-              </button>
-            :<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); audio.stopBackgroundMusic(); setScreen("home"); }} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-              <button
-                onClick={()=>{ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); if(roundIdx+1<ROUND_DIFFICULTY.length) nextRound(); else showResultScreen(); }}
-                style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-                {/* Fix 3: auto-advance progress bar (2.8s) */}
-                {autoAdvanceCount!==null&&<div style={{position:"absolute",bottom:0,left:0,right:0,height:4,background:"rgba(4,6,15,.3)",transformOrigin:"left",animation:"d-autoProgress 2.8s linear forwards"}}/>}
-                <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>{roundIdx+1<ROUND_DIFFICULTY.length?"Next round →":"See results →"}</span>
-              </button>
+        {/* AXIOS + Speech */}
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14,padding:"10px 14px",background:"rgba(255,255,255,0.02)",borderRadius:16,border:"1px solid rgba(255,255,255,0.05)"}}>
+          <AxiosFace emotion={axiosEmotion} roundNum={roundNum}/>
+          <div style={{flex:1}}>
+            <div style={{fontSize:11,color:T.gold,letterSpacing:2,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>AXIOS</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,0.55)",lineHeight:1.5,fontStyle:"italic"}}>
+              {revealed
+                ? correct
+                  ? "Impressive. You found my lie."
+                  : "Too easy. You walked right into it."
+                : confirmCount
+                  ? `Locking in ${confirmCount}...`
+                  : sel !== null
+                    ? "Are you sure about that?"
+                    : "One of these is my creation. Find it."}
             </div>
-          }
+          </div>
+        </div>
 
-          {revealed && !correct && (
-            <div style={{
-              position:"fixed", inset:0, zIndex:100,
-              display:"flex", alignItems:"center", justifyContent:"center",
-              pointerEvents:"none",
-              animation:"g-fadeIn .1s ease both",
+        {/* Prompt */}
+        <div style={{textAlign:"center",marginBottom:14,animation:revealed&&!correct?"g-shake .5s":"none"}}>
+          <h2 style={{fontFamily:"Georgia,serif",fontSize:20,fontWeight:800,margin:"0 0 3px",color:revealed?(correct?T.ok:T.bad):"#fff",transition:"color .35s"}}>
+            {revealed?(correct?"You found the BLUFF 🎯":"The AI fooled you 🎭"):"Which one is the BLUFF?"}
+          </h2>
+          <p style={{fontSize:12,color:T.dim,margin:0}}>
+            {revealed
+              ? (correct?"Your instincts beat the machine":"The fabricated lie is highlighted below")
+              : "Tap to select · Tap again to confirm instantly"}
+          </p>
+        </div>
+
+        {/* Cards */}
+        <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:16}}>
+          {stmts.map((s,i)=>{
+            const isB=!s.r, isS=sel===i;
+            let bg=T.card, border=T.glassBorder, glow="none", anim="";
+            if(!revealed&&isS){bg=T.goldDim;border="rgba(232,197,71,0.5)";glow=`0 0 18px ${T.goldDim}`;}
+            if(revealed&&isB){bg="rgba(244,63,94,0.08)";border="rgba(244,63,94,0.5)";glow="0 0 18px rgba(244,63,94,0.15)";anim=",g-revealGlow .8s";}
+            if(revealed&&isS&&correct){bg="rgba(45,212,160,0.08)";border="rgba(45,212,160,0.5)";glow="0 0 18px rgba(45,212,160,0.15)";anim=",g-correctGlow .8s";}
+            if(revealed&&isS&&!correct&&!isB)anim=",g-shake .4s";
+
+            let tag=null;
+            if(revealed){
+              if(isB)tag=<div style={{marginTop:6,fontSize:11,fontWeight:700,color:T.bad,letterSpacing:1.5}}>🎭 AI FABRICATION</div>;
+              else if(isS)tag=<div style={{marginTop:6,fontSize:11,fontWeight:700,color:T.bad}}>✗ This is actually real</div>;
+              else tag=<div style={{marginTop:6,fontSize:11,color:T.ok,opacity:.4,letterSpacing:1}}>✓ Verified</div>;
+            }
+
+            return (
+              <button key={i} onClick={()=>!revealed&&handleCardTap(i)} style={{
+                width:"100%",display:"flex",alignItems:"flex-start",gap:11,
+                background:bg,border:`1.5px solid ${border}`,borderRadius:15,
+                padding:"13px",cursor:revealed?"default":"pointer",
+                textAlign:"left",color:"#e8e6e1",fontSize:14,lineHeight:1.6,
+                fontFamily:"inherit",boxShadow:glow,
+                animation:`g-cardSnap .18s ease-out ${i*.016}s both${anim}`,
+                transition:"background .12s,border-color .12s,box-shadow .12s,transform .1s",
+                position:"relative",overflow:"hidden",
+              }}>
+                {/* Confirm progress bar */}
+                {!revealed&&isS&&confirmCount!==null&&(
+                  <div style={{position:"absolute",bottom:0,left:0,right:0,height:3,background:"rgba(232,197,71,0.15)",borderRadius:"0 0 15px 15px"}}>
+                    <div style={{height:"100%",background:"#e8c547",borderRadius:"inherit",animation:"g-lockProgress 1.2s linear forwards"}}/>
+                  </div>
+                )}
+                <div style={{
+                  width:27,height:27,borderRadius:"50%",flexShrink:0,
+                  border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:"rgba(255,255,255,0.1)"}`,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:12,fontWeight:700,marginTop:1,
+                  background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,0.2)":"transparent",
+                  color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,
+                  transition:"all .25s",flexDirection:"column",
+                }}>
+                  {revealed&&isB?"!":String.fromCharCode(65+i)}
+                </div>
+                <div style={{flex:1}}>{s.t}{tag}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Action buttons */}
+        {!revealed?(
+          <button
+            onClick={()=>{if(sel!==null){AudioEngine.lockIn();clearTimeout(confirmRef.current);setConfirmCount(null);reveal();}}}
+            disabled={sel===null}
+            style={{
+              width:"100%",padding:"16px",fontSize:15,fontWeight:700,letterSpacing:1.5,textTransform:"uppercase",
+              background:sel!==null?`linear-gradient(135deg,${T.gold},#d4a830)`:T.card,
+              color:sel!==null?T.bg:T.dim,
+              border:sel!==null?"none":`1.5px solid ${T.glassBorder}`,
+              borderRadius:15,cursor:sel!==null?"pointer":"not-allowed",
+              transition:"all .2s",fontFamily:"inherit",
+              boxShadow:sel!==null?`0 0 35px ${T.goldDim}`:"none",
+              position:"relative",overflow:"hidden",
             }}>
-              <div style={{
-                fontSize:"clamp(48px,15vw,80px)",
-                fontFamily:"Georgia,serif", fontWeight:900,
-                color:"#f43f5e", letterSpacing:-2,
-                textShadow:"0 0 40px rgba(244,63,94,.5)",
-                animation:"g-glitchText .6s ease both",
-                opacity:.85,
-              }}>RATIO'D 💀</div>
-            </div>
-          )}
-
-          <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
-            <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
-            <span style={{opacity:.2}}>|</span>
-            <span>Accuracy <b style={{color:T.gold,fontSize:13}}>{total?Math.round(score/total*100):0}%</b></span>
-            <span style={{opacity:.2}}>|</span>
-            <span>Streak <b style={{color:streak>0?T.gold:T.dim,fontSize:13}}>{streak}🔥</b></span>
-          </div>
-        </>)}
-      </div>
-      <GameStyles/>
-    </div>
-  );
-
-  // ─── RESULT ────────────────────────────────────────────────
-  const won = score>=Math.ceil(total*.67);
-  return (
-    <div style={wrap}>
-      <Particles/>
-      {confetti&&<Confetti/>}
-      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(36px,env(safe-area-inset-top))"}}>
-        <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={false}/>
-        <div style={{background:T.glass,borderRadius:16,border:`1px solid ${T.gb}`,padding:"clamp(18px,4vw,24px)",marginBottom:16,textAlign:"center",animation:"g-fadeUp .5s .2s both"}}>
-          <div style={{fontSize:48,marginBottom:8}}>{won?"🏆":"💀"}</div>
-          <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(18px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:won?T.gold:T.bad}}>{won?"You beat AXIOM!":"AXIOM wins... this time."}</h2>
-          <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:"0 0 16px"}}>{won?"Impressive. AXIOM did not expect this.":"Train harder. AXIOM is patient."}</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {[[score+"/"+total,"Correct",T.ok],[Math.round(score/total*100)+"%","Accuracy",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
-              <div key={l} style={{background:"#07070e",borderRadius:10,border:`1px solid ${T.gb}`,padding:"12px 6px"}}>
-                <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
-                <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:2}}>{l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        {/* Share section */}
-        <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .5s both" }}>
-
-          {/* Stories card */}
-          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
-            📸 Instagram Stories
-          </div>
-          {storiesImg ? (
-            <div style={{ marginBottom: 14 }}>
-              <img
-                src={storiesImg}
-                alt="Stories card"
-                style={{ width: "50%", maxWidth: 180, borderRadius: 12, border: "1px solid rgba(255,255,255,.07)", marginBottom: 10, display: "block", margin: "0 auto 10px" }}
-              />
-              <a
-                href={storiesImg}
-                download="bluff-story.png"
-                style={{ display: "block", width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,rgba(131,58,180,.5),rgba(253,29,29,.5),rgba(252,176,69,.5))", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, textAlign: "center", textDecoration: "none", fontFamily: "inherit" }}>
-                📸 Save for Stories
-              </a>
-            </div>
-          ) : (
-            <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(255,255,255,.3)", marginBottom: 14 }}>
-              Generating...
-            </div>
-          )}
-
-          {/* Challenge link */}
-          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
-            ⚔️ Challenge a friend
-          </div>
-          {challengeURL ? (
-            <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: "BLUFF™ — Can you beat me?",
-                    text: `I scored ${score}/${total} against AXIOM. Think you can do better? 🎯`,
-                    url: challengeURL,
-                  }).catch(() => {
-                    navigator.clipboard?.writeText(challengeURL);
-                    alert("Link copied! Share it with a friend.");
-                  });
-                } else {
-                  navigator.clipboard?.writeText(challengeURL)
-                    .then(() => alert("Challenge link copied! 📋"))
-                    .catch(() => alert(challengeURL));
-                }
-              }}
-              style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "rgba(34,211,238,.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,.25)", borderRadius: 12, fontFamily: "inherit", cursor: "pointer" }}>
-              ⚔️ Send challenge link
-            </button>
-          ) : (
-            <div style={{ background: "rgba(34,211,238,.04)", border: "1px solid rgba(34,211,238,.1)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(34,211,238,.3)" }}>
-              Generating...
-            </div>
-          )}
-        </div>
-        {lastWrongStmt && !shameSent && (
-          <div style={{
-            background:"rgba(244,63,94,.06)",
-            border:"1px solid rgba(244,63,94,.2)",
-            borderRadius:14, padding:"14px 16px", marginBottom:16,
-            animation:"g-fadeUp .6s .7s both",
-          }}>
-            <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(244,63,94,.6)",
-              fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
-              💀 Submit to Hall of Shame?
-            </div>
-            <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:10,lineHeight:1.5}}>
-              AXIOM will write an anonymous funny entry about your mistake.
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <button
-                onClick={() => {
-                  fetch("/api/hall-of-shame", {
-                    method: "POST",
-                    headers: {"Content-Type":"application/json"},
-                    body: JSON.stringify({ wrongStatement: lastWrongStmt, category, roundNum: roundIdx + 1 }),
-                  }).then(() => setShameSent(true));
-                }}
-                style={{flex:2,minHeight:44,padding:"10px 14px",fontSize:13,
-                  fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",
-                  background:"rgba(244,63,94,.15)",color:"#f43f5e",
-                  border:"1px solid rgba(244,63,94,.3)",borderRadius:10,
-                  fontFamily:"inherit",cursor:"pointer"}}>
-                💀 Submit
-              </button>
-              <button
-                onClick={() => setLastWrongStmt(null)}
-                style={{flex:1,minHeight:44,padding:10,fontSize:13,fontWeight:600,
-                  background:"transparent",color:"#5a5a68",
-                  border:"1px solid rgba(255,255,255,.07)",borderRadius:10,
-                  fontFamily:"inherit",cursor:"pointer"}}>
-                Nope
-              </button>
-            </div>
-          </div>
-        )}
-        {shameSent && (
-          <div style={{textAlign:"center",fontSize:13,color:"rgba(244,63,94,.5)",
-            marginBottom:16,padding:"12px",animation:"g-fadeUp .3s ease both"}}>
-            💀 Submitted. playbluff.games/shame
-          </div>
-        )}
-
-        <div style={{display:"flex",gap:10,animation:"g-fadeUp .6s .6s both"}}>
-          <button onClick={()=>setScreen("home")} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-          <button onClick={startGame} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-            <span style={{position:"relative"}}>⚔️ Rematch</span>
+            {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
+            <span style={{position:"relative"}}>
+              {sel===null?"Select a statement"
+               :confirmCount!==null?`Locking in ${confirmCount}...`
+               :"🔒 Lock in — or tap card again"}
+            </span>
           </button>
+        ):(
+          <div style={{display:"flex",gap:9}}>
+            <button onClick={cancelAutoAndGoHome} style={{flex:1,padding:"14px",fontSize:13,fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.glassBorder}`,borderRadius:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Home
+            </button>
+            <button onClick={cancelAutoAndNext} style={{flex:2,padding:"14px",fontSize:14,fontWeight:700,letterSpacing:1,textTransform:"uppercase",background:`linear-gradient(135deg,${T.gold},#d4a830)`,color:T.bg,border:"none",borderRadius:13,cursor:"pointer",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",bottom:0,left:0,height:3,background:"rgba(255,255,255,0.35)",animation:autoCount!==null?"g-autoProgress 2.5s linear forwards":"none"}}/>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
+              <span style={{position:"relative"}}>{autoCount!==null?`Next in ${autoCount}...`:"Next round →"}</span>
+            </button>
+          </div>
+        )}
+
+        {/* Score bar */}
+        <div style={{display:"flex",justifyContent:"center",gap:18,marginTop:14,fontSize:12,color:T.dim}}>
+          <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
+          <span style={{color:"rgba(255,255,255,0.07)"}}>|</span>
+          <span>Accuracy <b style={{color:T.gold,fontSize:13}}>{total?Math.round(score/total*100):0}%</b></span>
+          <span style={{color:"rgba(255,255,255,0.07)"}}>|</span>
+          <span>Streak <b style={{color:streak>0?T.gold:T.dim,fontSize:13}}>{streak}🔥</b></span>
         </div>
       </div>
       <GameStyles/>
@@ -1809,50 +970,26 @@ export default function BluffGame() {
   );
 }
 
-function shuffle(a){let b=[...a];for(let i=b.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
-
-function GameStyles(){
+function GameStyles() {
   return <style>{`
-    @keyframes g-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+    @keyframes g-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+    @keyframes g-fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
     @keyframes g-shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
-    @keyframes g-fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
-    @keyframes g-cardIn{from{opacity:0;transform:translateX(-10px) scale(.97)}to{opacity:1;transform:none}}
-    @keyframes g-cardSnap{from{opacity:0;transform:translateX(12px) scale(0.98)}to{opacity:1;transform:none}}
-    @keyframes d-lockProgress{from{width:0}to{width:100%}}
-    @keyframes d-autoProgress{from{width:0}to{width:100%}}
-    @keyframes d-timerRipple{0%{transform:scale(1);opacity:0.6}100%{transform:scale(1.6);opacity:0}}
-    @keyframes d-voidIn{from{opacity:0}to{opacity:1}}
-    @keyframes g-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
-    @keyframes g-confetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0}}
+    @keyframes g-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+    @keyframes g-confetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(110vh) rotate(720deg);opacity:0}}
     @keyframes g-btnShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+    @keyframes g-cardSnap{from{opacity:0;transform:translateX(10px) scale(0.98)}to{opacity:1;transform:none}}
     @keyframes g-shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
-    @keyframes g-glow{0%{box-shadow:0 0 0}50%{box-shadow:0 0 22px rgba(244,63,94,.3)}100%{box-shadow:0 0 10px rgba(244,63,94,.1)}}
-    @keyframes g-correctGlow{0%{box-shadow:0 0 0}50%{box-shadow:0 0 22px rgba(45,212,160,.35)}100%{box-shadow:0 0 10px rgba(45,212,160,.15)}}
-    @keyframes g-fire{0%,100%{transform:scale(1)}50%{transform:scale(1.25)}}
-    @keyframes g-tapPulse{0%,100%{opacity:.25}50%{opacity:.65}}
-    @keyframes hexRotate{to{transform:rotate(360deg)}}
-    @keyframes hexRotateCCW{to{transform:rotate(-360deg)}}
-    @keyframes g-fadeIn{from{opacity:0}to{opacity:1}}
-    @keyframes g-glitchText{
-      0%{transform:scale(2) rotate(-5deg);opacity:0}
-      40%{transform:scale(1.1) rotate(1deg);opacity:1}
-      60%{transform:scale(1.05) rotate(-1deg)}
-      100%{transform:scale(1) rotate(0);opacity:.85}
-    }
-    @keyframes g-screenFlash{
-      0%{opacity:0} 20%{opacity:.15} 100%{opacity:0}
-    }
-    @keyframes scanDown{0%{transform:translateY(-50px)}100%{transform:translateY(220px)}}
-    @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
-    @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+    @keyframes g-revealGlow{0%{box-shadow:0 0 0 rgba(244,63,94,0)}50%{box-shadow:0 0 28px rgba(244,63,94,.3)}100%{box-shadow:0 0 14px rgba(244,63,94,.1)}}
+    @keyframes g-correctGlow{0%{box-shadow:0 0 0 rgba(45,212,160,0)}50%{box-shadow:0 0 28px rgba(45,212,160,.4)}100%{box-shadow:0 0 14px rgba(45,212,160,.15)}}
+    @keyframes g-fire{0%{transform:scale(1)}50%{transform:scale(1.3)}100%{transform:scale(1)}}
+    @keyframes g-flash{0%{opacity:0.14}100%{opacity:0}}
+    @keyframes g-timerRipple{0%{transform:scale(1);opacity:0.55}100%{transform:scale(1.7);opacity:0}}
+    @keyframes g-lockProgress{from{width:0}to{width:100%}}
+    @keyframes g-autoProgress{from{width:0}to{width:100%}}
     @keyframes ax-breathe{0%,100%{transform:scale(1) translateY(0)}50%{transform:scale(1.015) translateY(-1px)}}
     @keyframes ax-tilt{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-4deg) translateX(-2px)}}
-    @keyframes ax-shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-2px) rotate(-0.5deg)}75%{transform:translateX(2px) rotate(0.5deg)}}
-    @keyframes ax-meltdown{0%{transform:scale(1) rotate(0deg);filter:hue-rotate(0deg)}25%{transform:scale(1.02) rotate(-2deg);filter:hue-rotate(90deg)}50%{transform:scale(0.98) rotate(2deg);filter:hue-rotate(180deg)}75%{transform:scale(1.01) rotate(-1deg);filter:hue-rotate(270deg)}100%{transform:scale(1) rotate(0deg);filter:hue-rotate(360deg)}}
-    @keyframes ax-heartbeat{0%{transform:scale(1)}14%{transform:scale(1.1)}28%{transform:scale(1)}42%{transform:scale(1.06)}100%{transform:scale(1)}}
-    @keyframes ax-timerPulse{0%{transform:scale(1);opacity:0.6}100%{transform:scale(1.8);opacity:0}}
-    @keyframes ax-sweatDrop{0%{transform:translateY(0);opacity:0.8}100%{transform:translateY(14px);opacity:0}}
-    @keyframes ax-tauntGlow{0%,100%{opacity:0.4}50%{opacity:0.9}}
-    @keyframes ax-flash{0%{opacity:0.15}100%{opacity:0}}
+    @keyframes ax-laugh{0%,100%{transform:scale(1) rotate(0)}25%{transform:scale(1.04) rotate(-2deg)}75%{transform:scale(1.04) rotate(2deg)}}
+    @keyframes ax-meltdown{0%{transform:scale(1) rotate(0);filter:hue-rotate(0deg)}33%{transform:scale(1.03) rotate(-2deg);filter:hue-rotate(120deg)}66%{transform:scale(0.97) rotate(2deg);filter:hue-rotate(240deg)}100%{transform:scale(1) rotate(0);filter:hue-rotate(360deg)}}
   `}</style>;
 }
