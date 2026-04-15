@@ -272,39 +272,77 @@ function CinematicIntro({ onComplete }) {
           animation:`g-float ${p.d}s ease-in-out ${p.dl}s infinite`}}/>
       ))}
       {BETA_MODE&&<div style={{position:"absolute",top:"max(14px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600}}>β BETA</div>}
-      {/* Seal */}
-      <div style={{position:"absolute",opacity:phase>=1&&phase<3?1:0,
-        transform:phase===1?"scale(1)":phase>=3?"scale(1.5)":"scale(.25)",
+      {/* AXIOM Portrait — replaces SIAL seal */}
+      <div style={{
+        position:"absolute",
+        opacity:phase>=1&&phase<3?1:0,
+        transform:phase===1?"scale(1)":phase>=3?"scale(1.4)":"scale(.2)",
         transition:phase===1?"all .75s cubic-bezier(.34,1.56,.64,1)":"all .55s ease",
-        display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{width:ss,height:ss,borderRadius:"50%",border:"3px solid rgba(232,197,71,.4)",
-          display:"flex",alignItems:"center",justifyContent:"center",position:"relative",
-          boxShadow:"0 0 36px rgba(232,197,71,.1),inset 0 0 20px rgba(232,197,71,.05)"}}>
-          <div style={{width:sp(175),height:sp(175),borderRadius:"50%",border:"1.5px solid rgba(232,197,71,.2)",
-            display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}}>
-            <div style={{fontSize:sp(10),letterSpacing:sp(8),color:"rgba(232,197,71,.4)",marginBottom:sp(5)}}>★ ★ ★</div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:sp(36),fontWeight:700,letterSpacing:sp(5),color:"#e8c547",textShadow:"0 0 15px rgba(232,197,71,.3)"}}>SIAL</div>
-            <div style={{width:sp(80),height:1.5,margin:`${sp(7)}px 0`,background:"linear-gradient(90deg,transparent,rgba(232,197,71,.4),transparent)"}}/>
-            <div style={{fontSize:sp(12),letterSpacing:sp(6),fontWeight:600,color:"rgba(232,197,71,.55)"}}>GAMES</div>
-            <div style={{fontSize:sp(10),letterSpacing:sp(8),color:"rgba(232,197,71,.4)",marginTop:sp(5)}}>★ ★ ★</div>
-          </div>
-          <svg width={ss} height={ss} viewBox={`0 0 ${ss} ${ss}`}
-            style={{position:"absolute",top:0,left:0,animation:"hexRotate 18s linear infinite"}}>
-            <defs>
-              <path id="seal-ring"
-                d={`M ${ss/2},${ss/2} m -${ss*.42},0 a ${ss*.42},${ss*.42} 0 1,1 ${ss*.84},0 a ${ss*.42},${ss*.42} 0 1,1 -${ss*.84},0`}/>
-            </defs>
-            <text fill="rgba(232,197,71,.28)"
-              fontSize={Math.round(ss*.058)}
-              letterSpacing={Math.round(ss*.032)}
-              fontFamily="Georgia,serif">
-              <textPath href="#seal-ring">
-                · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 · SIAL DIGITAL FACTORY · MADE IN SLOVENIA · EST. 2000 ·
-              </textPath>
-            </text>
+        display:"flex",flexDirection:"column",alignItems:"center",
+      }}>
+        <div style={{width:Math.min(window.innerWidth*.7,280),height:Math.min(window.innerWidth*.7,280)}}>
+          <svg width="100%" viewBox="0 0 680 680" style={{display:"block"}}>
+            <style>{`
+              .ic-rCW{animation:ic-rCW 28s linear infinite;transform-box:fill-box;transform-origin:center}
+              .ic-rCCW{animation:ic-rCCW 18s linear infinite;transform-box:fill-box;transform-origin:center}
+              .ic-rSl{animation:ic-rCW 60s linear infinite;transform-box:fill-box;transform-origin:center}
+              .ic-sc{animation:ic-sc 3.2s ease-in-out infinite}
+              .ic-pd{animation:ic-pd 2s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+              .ic-if{animation:ic-if 4s ease-in-out infinite}
+              .ic-bl{animation:ic-bl 7s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+              @keyframes ic-rCW{to{transform:rotate(360deg)}}
+              @keyframes ic-rCCW{to{transform:rotate(-360deg)}}
+              @keyframes ic-sc{0%{transform:translateY(-68px);opacity:0}15%{opacity:.65}85%{opacity:.65}100%{transform:translateY(68px);opacity:0}}
+              @keyframes ic-pd{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.4}}
+              @keyframes ic-if{0%,100%{opacity:.9}45%{opacity:.5}55%{opacity:.8}60%{opacity:.4}65%{opacity:.9}}
+              @keyframes ic-bl{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.04)}}
+            `}</style>
+            <rect width="680" height="680" fill="#020810"/>
+            <line x1="340" y1="0" x2="340" y2="680" stroke="#22d3ee" strokeWidth=".3" opacity=".06"/>
+            <line x1="0" y1="340" x2="680" y2="340" stroke="#22d3ee" strokeWidth=".3" opacity=".06"/>
+            <g className="ic-rSl"><polygon points="340,28 622,190 622,490 340,652 58,490 58,190" fill="none" stroke="#22d3ee" strokeWidth=".5" strokeOpacity=".15" strokeDasharray="18 10"/></g>
+            <g className="ic-rCCW" opacity=".2"><polygon points="340,45 608,197 608,483 340,635 72,483 72,197" fill="none" stroke="#22d3ee" strokeWidth=".5" strokeDasharray="4 20"/></g>
+            <polygon points="340,72 583,212 583,468 340,608 97,468 97,212" fill="#040c1c" stroke="#22d3ee" strokeWidth="1.8"/>
+            <line x1="97" y1="212" x2="57" y2="188" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="57" y1="188" x2="57" y2="148" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="340" y1="72" x2="340" y2="32" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="583" y1="212" x2="622" y2="190" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="622" y1="190" x2="650" y2="190" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="583" y1="468" x2="622" y2="490" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="97" y1="468" x2="58" y2="490" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <line x1="340" y1="608" x2="340" y2="648" stroke="#22d3ee" strokeWidth="1" opacity=".5"/>
+            <g className="ic-rCCW" opacity=".5"><polygon points="340,120 530,228 530,452 340,560 150,452 150,228" fill="none" stroke="#0891b2" strokeWidth=".8" strokeDasharray="8 6"/></g>
+            <polygon points="340,166 494,256 494,424 340,514 186,424 186,256" fill="#030a19" stroke="#0e7490" strokeWidth="1.2"/>
+            <g className="ic-rCW" opacity=".35"><polygon points="340,208 470,282 470,398 340,472 210,398 210,282" fill="none" stroke="#22d3ee" strokeWidth=".6" strokeDasharray="3 8"/></g>
+            <defs><clipPath id="ic-hc"><polygon points="340,166 494,256 494,424 340,514 186,424 186,256"/></clipPath></defs>
+            <rect className="ic-sc" x="175" y="335" width="330" height="2" fill="#22d3ee" opacity=".6" clipPath="url(#ic-hc)"/>
+            <ellipse cx="330" cy="330" rx="108" ry="86" fill="#010508"/>
+            <ellipse cx="330" cy="330" rx="80" ry="80" fill="none" stroke="#22d3ee" strokeWidth="2.5"/>
+            <circle cx="330" cy="330" r="78" fill="#050f20"/>
+            <circle cx="330" cy="330" r="64" fill="none" stroke="#0e7490" strokeWidth="1" className="ic-if"/>
+            <circle cx="330" cy="330" r="52" fill="none" stroke="#0891b2" strokeWidth=".75" opacity=".6"/>
+            <line x1="330" y1="252" x2="330" y2="265" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+            <line x1="330" y1="395" x2="330" y2="408" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+            <line x1="252" y1="330" x2="265" y2="330" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+            <line x1="395" y1="330" x2="408" y2="330" stroke="#22d3ee" strokeWidth="1.5" opacity=".7"/>
+            <line x1="385" y1="275" x2="395" y2="267" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+            <line x1="275" y1="275" x2="265" y2="267" stroke="#22d3ee" strokeWidth="1.2" opacity=".5"/>
+            <g className="ic-bl">
+              <circle cx="330" cy="330" r="30" fill="#020912"/>
+              <circle cx="330" cy="330" r="22" fill="#030d1a"/>
+              <circle cx="330" cy="330" r="14" fill="#22d3ee"/>
+              <circle cx="330" cy="330" r="8"  fill="#0891b2"/>
+              <circle cx="330" cy="330" r="4"  fill="#e0f7ff"/>
+            </g>
+            <ellipse cx="350" cy="312" rx="12" ry="8" fill="#67e8f9" opacity=".55"/>
+            <line x1="218" y1="266" x2="428" y2="252" stroke="#22d3ee" strokeWidth="2.2" strokeLinecap="round"/>
+            <line x1="428" y1="252" x2="448" y2="264" stroke="#22d3ee" strokeWidth="2.2" strokeLinecap="round"/>
+            <polygon points="296,259 316,244 322,260" fill="#22d3ee" opacity=".5"/>
+            <circle cx="460" cy="370" r="7" fill="#22d3ee" className="ic-pd"/>
+            <text x="340" y="580" textAnchor="middle" fontFamily="'Courier New',monospace" fontSize="26" fontWeight="700" letterSpacing="14" fill="#22d3ee" opacity=".95">AXIOM</text>
+            <text x="340" y="598" textAnchor="middle" fontFamily="'Courier New',monospace" fontSize="11" letterSpacing="5" fill="#0891b2" opacity=".65">SIAL GAMES</text>
           </svg>
         </div>
-        <div style={{marginTop:sp(16),fontSize:sp(11),letterSpacing:sp(6),color:"rgba(232,197,71,.4)",fontWeight:500,opacity:phase>=1?1:0,transition:"opacity .5s ease .3s"}}>PRESENTS</div>
       </div>
       {/* Logo */}
       <div style={{position:"absolute",display:"flex",flexDirection:"column",alignItems:"center",
