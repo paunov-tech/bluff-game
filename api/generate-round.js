@@ -413,32 +413,41 @@ Category guidance: ${catHint}
 ${langNote}${dedupNote}
 
 STRICT RULES:
-- Create exactly 5 statements
-- Exactly 4 TRUE — genuinely real, verifiable facts
+- Create exactly 4 statements
+- Exactly 3 TRUE — genuinely real, verifiable facts
 - Exactly 1 CONVINCING LIE — same style/length as truths
 - Lie must have specific details (names, numbers, dates)
 - Each statement: 1-2 sentences, clear and specific
 - Randomize the lie position
 - Make truths SURPRISING and interesting — reward curiosity
 - NEVER use profanity, vulgar words, crude language, or explicit content in any statement
-- For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES — make every fact feel like insider knowledge that rewards true fans
-- ALL STARS RULE: At least 2 of the 4 truths must be facts that even hardcore fans would find surprising or didn't know
+- For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES
+- ALL STARS RULE: At least 1 of the 3 truths must surprise even hardcore fans
+
+ROTATION RULES — avoid these overused fact types:
+- DO NOT use: specific player point/goal/score records
+- DO NOT use: birth years, ages, or heights of famous people
+- DO NOT use: capital cities or basic geography facts
+- DO NOT use: founding years of companies
+INSTEAD use:
+- Unexpected consequences of famous events
+- Behind-the-scenes process facts
+- Contradictions between popular belief and reality
+- Surprising connections between unrelated things
 
 CRITICAL JSON:
 - "real": true or false (boolean, NOT string)
-- Exactly 4 true, exactly 1 false
+- Exactly 3 true, exactly 1 false
 - Return ONLY JSON, no markdown, no explanation
-
 Format:
 {
   "statements": [
     {"text": "A true fact.", "real": true},
-    {"text": "Another true fact.", "real": true},
     {"text": "The convincing lie.", "real": false},
     {"text": "Another true fact.", "real": true},
     {"text": "Another true fact.", "real": true}
   ]
-}`;
+}`
 
   try {
     const msg = await client.messages.create({
@@ -477,7 +486,7 @@ function repair(stmts) {
     let f = false;
     stmts.forEach(s => { if (!s.real) { if (f) s.real = true; else f = true; }});
   }
-  if (stmts.length !== 5) throw new Error(`bad length: ${stmts.length}`);
+  if (stmts.length !== 4) throw new Error(`bad length: ${stmts.length}`);
 }
 
 function extractJSON(raw) {
@@ -495,21 +504,18 @@ function getFallback(cat) {
       {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
       {text:"Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.",real:true},
       {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne in 1914.",real:true},
-      {text:"Ancient Romans built steam-powered door mechanisms that made temple doors appear to open by divine force.",real:true},
       {text:"The Eiffel Tower was built in Brussels in 1889 as a symbol of Belgium.",real:false},
     ]},
     science: { category:"science", difficulty:1, statements:[
       {text:"Honey never spoils — archaeologists have found 3,000-year-old edible honey in Egyptian tombs.",real:true},
       {text:"A teaspoon of neutron star material would weigh around 6 billion tons on Earth.",real:true},
       {text:"Bananas are mildly radioactive due to their potassium-40 content.",real:true},
-      {text:"Hot water can freeze faster than cold water under certain conditions — the Mpemba effect — and is still not fully explained.",real:true},
       {text:"The Sun rises in the west and sets in the east, opposite to the direction of clock hands.",real:false},
     ]},
     animals: { category:"animals", difficulty:1, statements:[
       {text:"A group of flamingos is officially called a 'flamboyance'.",real:true},
       {text:"Octopuses have three hearts and blue blood.",real:true},
       {text:"Crows can recognize individual human faces and remember grudges for years.",real:true},
-      {text:"The mimic octopus can imitate over 15 marine species including lionfish and sea snakes.",real:true},
       {text:"Elephants are the only animals that cannot jump due to their weight, but can fly short distances by flapping their ears.",real:false},
     ]},
     internet: { category:"internet", difficulty:1, statements:[
