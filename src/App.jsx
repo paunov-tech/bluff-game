@@ -824,27 +824,23 @@ export default function BluffGame() {
   const userInteractedRef = useRef(false);
   const onMultiplierMilestone = (threshold) => {
     if (!userInteractedRef.current) return;
+    const tap = haptic.streakFire || haptic.timerWarning;
     try {
       if (threshold === 1.5) {
-        haptic.streakFire?.() || haptic.timerWarning?.();
+        tap?.();
       } else if (threshold === 2.0) {
-        haptic.streakFire?.() || haptic.timerWarning?.();
-        if (typeof AudioTension?.tick === 'function') AudioTension.tick();
+        tap?.();
+        AudioTension.tick(1);
       } else if (threshold === 2.5) {
-        haptic.streakFire?.() || haptic.timerWarning?.();
-        if (typeof AudioTension?.tick === 'function') AudioTension.tick();
+        tap?.();
+        AudioTension.tick(2);
       } else if (threshold === 3.0) {
-        haptic.streakFire?.() || haptic.timerWarning?.();
-        // 3.0x courage threshold — reuse existing primitive if tensionHit absent
-        if (typeof AudioTension?.tensionHit === 'function') AudioTension.tensionHit();
-        else if (typeof AudioTension?.lockIn === 'function') AudioTension.lockIn();
+        tap?.();
+        AudioTension.tick(3);
       }
     } catch (e) {
-      console.warn('[cashout milestone] audio fallback failed:', e.message);
+      console.warn('[cashout milestone] audio failed:', e.message);
     }
-    // TODO(cashout-audio): add dedicated milestone sounds (tick_up_1.5,
-    // tick_up_2.0, tick_up_2.5, tick_up_3.0) in future sprint. Current
-    // implementation reuses existing haptic + AudioTension primitives.
   };
   const audioQueueRef = useRef([]);
   const isPlayingRef = useRef(false);
