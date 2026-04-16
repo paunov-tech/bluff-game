@@ -70,14 +70,27 @@ function CategoryIcon({ category, size=26 }) {
   if (!svg) return <span style={{fontSize:size*0.75}}>{CATEGORY_EMOJIS[category]||"🎯"}</span>;
   return <span dangerouslySetInnerHTML={{__html:svg.replace(/\${size}/g,size)}} style={{display:"inline-flex",alignItems:"center"}}/>;
 }
-// Round 1 = difficulty 0 (baby mode), gradual ramp
-const ROUND_DIFFICULTY = [0, 1, 1, 2, 2, 3, 3, 4, 4, 5];
-const BLITZ_DIFFICULTY = [3, 4, 4, 5]; // 4 rounds only, hard
+// 3 WAVES × 4 QUESTIONS = 12 rounds total
+// Wave 1: Warm-up (diff 1-2), Wave 2: Rising (diff 3-4), Wave 3: Finale (diff 4-5)
+const ROUND_DIFFICULTY = [1, 1, 2, 2, 3, 3, 4, 4, 4, 5, 5, 5];
+const WAVE_BOUNDARIES = [0, 4, 8, 12]; // wave starts at these indices
+const WAVE_LABELS = ["WARM-UP", "RISING", "FINALE"];
+const WAVE_COLORS = ["#2dd4a0", "#fb923c", "#f43f5e"];
+const WAVE_AXIOM_INTRO = [
+  "Beginner's luck is a myth. Prove me wrong.",
+  "Now we begin.",
+  "Everything ends here.",
+];
+const BLITZ_DIFFICULTY = [4, 5, 5, 5]; // Blitz = Wave 3 only, hardest
 const BLITZ_TIMER = 12; // 12 seconds per question
 const BLITZ_ROUNDS = 4;
-const TIMER_PER_DIFF = { 0:22, 1:26, 2:32, 3:40, 4:52, 5:65 };
+const TIMER_PER_DIFF = { 0:22, 1:28, 2:34, 3:40, 4:48, 5:60 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
+// Helper — which wave is a given round index in?
+function getWave(idx) { return idx < 4 ? 0 : idx < 8 ? 1 : 2; }
+function isWaveStart(idx) { return idx === 0 || idx === 4 || idx === 8; }
+function isWaveEnd(idx) { return idx === 3 || idx === 7 || idx === 11; }
 
 // ── Challenge system ──────────────────────────
 function encodeChallenge(score, total, roundDifficulties) {
@@ -736,6 +749,8 @@ export default function BluffGame() {
 
   // ── Blitz Mode ───────────────────────────────────────────────
   const [blitzMode, setBlitzMode] = useState(false);
+  const [currentWave, setCurrentWave] = useState(0);
+  const [showWaveIntro, setShowWaveIntro] = useState(false);
   const [blitzScore, setBlitzScore] = useState(0);
   const [blitzTimeBonus, setBlitzTimeBonus] = useState(0);
 
@@ -848,6 +863,8 @@ export default function BluffGame() {
     setStreak(0);
     setConfetti(false);
     setShareImg(null);
+    setCurrentWave(0);
+    setShowWaveIntro(false);
     setStoriesImg(null);
     fetchRound(0);
     axiomSpeak("intro", "idle");
@@ -1085,15 +1102,25 @@ export default function BluffGame() {
   // ── NEXT ROUND ───────────────────────────────────────────────
   function nextRound() {
     const next = roundIdx+1;
-    if(next>=(blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length)){ showResultScreen(); return; }
+    const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
+    if(next>=totalRounds){ showResultScreen(); return; }
     clearInterval(timerRef.current);
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current=null;
     setRevealed(false);
     setConfetti(false);
+    // Check if entering new wave
+    if(!blitzMode && isWaveStart(next)) {
+      const wave = getWave(next);
+      setCurrentWave(wave);
+      setShowWaveIntro(true);
+      setTimeout(() => setShowWaveIntro(false), 1800);
+      axiomSpeak("intro", wave === 2 ? "taunting" : "idle");
+    } else {
+      axiomSpeak("intro","idle");
+    }
     fetchRound(next);
-    axiomSpeak("intro","idle");
   }
 
   // ── BLITZ ────────────────────────────────────────────────────
@@ -2177,6 +2204,23 @@ export default function BluffGame() {
     <div style={wrap}>
       <Particles count={10}/>
       {confetti&&<Confetti/>}
+      {showWaveIntro&&(
+        <div style={{position:"fixed",inset:0,zIndex:150,display:"flex",flexDirection:"column",
+          alignItems:"center",justifyContent:"center",pointerEvents:"none",
+          background:"rgba(4,6,15,.92)",animation:"g-fadeUp .3s ease"}}>
+          <div style={{fontSize:11,letterSpacing:"6px",color:WAVE_COLORS[currentWave],
+            marginBottom:10,fontWeight:700,textTransform:"uppercase"}}>
+            {currentWave===0?"🟢":currentWave===1?"🟠":"🔴"} WAVE {currentWave+1}
+          </div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:"clamp(28px,8vw,42px)",
+            fontWeight:900,color:"#fff",marginBottom:8,letterSpacing:-1}}>
+            {WAVE_LABELS[currentWave]}
+          </div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.4)",fontStyle:"italic"}}>
+            "{WAVE_AXIOM_INTRO[currentWave]}"
+          </div>
+        </div>
+      )}
       {!revealed&&time<=3&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:50,background:"rgba(244,63,94," + (0.08 + (3-time)*0.07) + ")",animation:"g-pulse .4s ease-in-out infinite",transition:"background .5s"}}/>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
         {/* Header */}
@@ -2186,8 +2230,8 @@ export default function BluffGame() {
             <div>
               <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
-                <div style={{fontSize:9,color:T.dim}}>Round {roundIdx+1}/{blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length}{blitzMode ? " ⚡" : ""}</div>
-                <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {diff === 0 ? "Baby mode 👶" : DIFF_LABEL[diff]}</div>
+                <div style={{fontSize:9,color:T.dim}}>Q{(roundIdx%4)+1}/4{blitzMode?" ⚡":""}</div>
+                <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {DIFF_LABEL[diff]||"Baby"}</div>
               </div>
             </div>
           </div>
@@ -2272,6 +2316,12 @@ export default function BluffGame() {
             </div>
           )}
 
+          {/* Wave progress dots */}
+          <div style={{display:"flex",justifyContent:"center",gap:5,marginTop:10,marginBottom:4}}>
+            {Array.from({length:12},(_,i)=>(
+              <div key={i} style={{width:i===roundIdx?8:5,height:i===roundIdx?8:5,borderRadius:"50%",transition:"all .2s",background:i<roundIdx?"rgba(255,255,255,.45)":i===roundIdx?WAVE_COLORS[getWave(i)]:"rgba(255,255,255,.1)",marginTop:i===roundIdx?-1.5:0}}/>
+            ))}
+          </div>
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
             <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
             <span style={{opacity:.2}}>|</span>
