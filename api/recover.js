@@ -2,6 +2,9 @@
 // ENV: STRIPE_SECRET_KEY, FIREBASE_API_KEY, PRODUCT_NAME
 import Stripe from "stripe";
 
+const CORS_ORIGINS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
+  .split(",").map(d => `https://${d.trim()}`);
+
 const _rl = new Map();
 function rlOk(ip) {
   const now = Date.now(), WIN = 3600000;
@@ -27,7 +30,8 @@ async function writePremium(deviceId, data) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  const origin = req.headers.origin || "";
+  res.setHeader("Access-Control-Allow-Origin", CORS_ORIGINS.includes(origin) ? origin : CORS_ORIGINS[0]);
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
   if (req.method === "OPTIONS") return res.status(200).end();

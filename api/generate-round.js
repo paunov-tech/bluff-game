@@ -378,6 +378,18 @@ async function saveUsedFacts(category, lang, statements) {
   } catch { /* non-critical */ }
 }
 
+const RL_MAX = 30;
+const RL_WINDOW = 3600;
+
+async function rateLimitOk(ip) {
+  try {
+    const key = `rl:gen:${ip}`;
+    const count = await kv.incr(key);
+    if (count === 1) await kv.expire(key, RL_WINDOW);
+    return count <= RL_MAX;
+  } catch { return true; }
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
   res.setHeader("Access-Control-Allow-Origin",  CORS.includes(origin) ? origin : (CORS[0] || "*"));
@@ -387,6 +399,10 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
+
+  const clientIp = (req.headers["x-forwarded-for"] || "unknown").split(",")[0].trim();
+  if (!(await rateLimitOk(clientIp)))
+    return res.status(429).json({ error: "Too many rounds, slow down" });
 
   const { category = "history", difficulty = 3, lang = "en", mode = "regular" } = req.body;
   const schema = SCHEMA[mode] || SCHEMA.regular;
