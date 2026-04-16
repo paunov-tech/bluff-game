@@ -1,6 +1,8 @@
 // api/daily-challenge.js
 import { kv } from "@vercel/kv";
 import Anthropic from "@anthropic-ai/sdk";
+import { SCHEMA } from "../src/config/schema.js";
+const { total: TOTAL, truths: TRUTHS, lies: LIES } = SCHEMA.regular;
 
 const CATEGORIES = ["history","internet","animals","science","popculture","geography","food","culture","sports","history"];
 const ROUND_DIFFICULTY = [0,1,1,2,2,3,3,4,4,5];
@@ -33,7 +35,7 @@ async function generateRound(category, difficulty) {
     max_tokens: 600,
     messages: [{
       role: "user",
-      content: `Generate 5 factual statements about "${category}" in English. EXACTLY 4 must be TRUE, EXACTLY 1 must be FALSE (subtle, realistic-sounding lie). Difficulty: ${DIFF_PROMPTS[difficulty] || "moderate"}. Return ONLY valid JSON: {"statements":[{"text":"...","real":true},...]} No markdown, no explanation.`,
+      content: `Generate ${TOTAL} factual statements about "${category}" in English. EXACTLY ${TRUTHS} must be TRUE, EXACTLY ${LIES} must be FALSE (subtle, realistic-sounding lie). Difficulty: ${DIFF_PROMPTS[difficulty] || "moderate"}. Return ONLY valid JSON: {"statements":[{"text":"...","real":true},...]} No markdown, no explanation.`,
     }],
   });
   const raw = msg.content[0].text.trim();

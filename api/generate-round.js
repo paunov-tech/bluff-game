@@ -1,6 +1,7 @@
 // api/generate-round.js
 import Anthropic from "@anthropic-ai/sdk";
 import { kv } from "@vercel/kv";
+import { SCHEMA } from "../src/config/schema.js";
 
 const client = new Anthropic();
 
@@ -387,7 +388,11 @@ export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { category = "history", difficulty = 3, lang = "en" } = req.body;
+  const { category = "history", difficulty = 3, lang = "en", mode = "regular" } = req.body;
+  const schema = SCHEMA[mode] || SCHEMA.regular;
+  const isBlitz = mode === "blitz";
+  const stmtCount = schema.total;
+  const truthCount = schema.truths;
   const diffRules = DIFFICULTY_RULES[difficulty] ?? DIFFICULTY_RULES[3];
   const subtopics = SUBTOPICS[category];
   const catHint = subtopics
@@ -404,8 +409,16 @@ export default async function handler(req, res) {
     ? `\nIMPORTANT — AVOID REPETITION: You have already used ${usedHashes.length} fact combinations in this category. Generate FRESH facts and topics not recently used. Vary your subjects widely.`
     : "";
 
-  const prompt = `Generate a BLUFF round for the "${category}" category.
+  const extraTruthExamples = Array(truthCount - 1)
+    .fill(`    {"text": "Another true fact.", "real": true}`)
+    .join(",\n");
+  const surpriseMin = Math.max(1, Math.ceil(truthCount / 2));
+  const blitzNote = isBlitz
+    ? `\nBLITZ MODE: Generate exactly ${truthCount} truths + 1 lie (${stmtCount} statements total). Shorter round, same quality bar.\n`
+    : "";
 
+  const prompt = `Generate a BLUFF round for the "${category}" category.
+${blitzNote}
 ${diffRules}
 
 Category guidance: ${catHint}
@@ -413,8 +426,8 @@ Category guidance: ${catHint}
 ${langNote}${dedupNote}
 
 STRICT RULES:
-- Create exactly 4 statements
-- Exactly 3 TRUE — genuinely real, verifiable facts
+- Create exactly ${stmtCount} statements
+- Exactly ${truthCount} TRUE — genuinely real, verifiable facts
 - Exactly 1 CONVINCING LIE — same style/length as truths
 - Lie must have specific details (names, numbers, dates)
 - Each statement: 1-2 sentences, clear and specific
@@ -422,7 +435,7 @@ STRICT RULES:
 - Make truths SURPRISING and interesting — reward curiosity
 - NEVER use profanity, vulgar words, crude language, or explicit content in any statement
 - For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES
-- ALL STARS RULE: At least 1 of the 3 truths must surprise even hardcore fans
+- ALL STARS RULE: At least ${surpriseMin} of the ${truthCount} truths must surprise even hardcore fans
 
 ROTATION RULES — avoid these overused fact types:
 - DO NOT use: specific player point/goal/score records
@@ -437,38 +450,46 @@ INSTEAD use:
 
 CRITICAL JSON:
 - "real": true or false (boolean, NOT string)
-- Exactly 3 true, exactly 1 false
+- Exactly ${truthCount} true, exactly 1 false
 - Return ONLY JSON, no markdown, no explanation
 Format:
 {
   "statements": [
     {"text": "A true fact.", "real": true},
     {"text": "The convincing lie.", "real": false},
-    {"text": "Another true fact.", "real": true},
-    {"text": "Another true fact.", "real": true}
+${extraTruthExamples}
   ]
 }`
 
-  try {
+  async function attempt() {
     const msg = await client.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 1000,
       messages: [{ role: "user", content: prompt }],
     });
-
     const raw = msg.content[0]?.text || "";
     const parsed = extractJSON(raw);
     const normalized = normalize(parsed.statements);
-    repair(normalized);
-
-    await saveUsedFacts(category, lang, normalized);
-
-    console.log(`[round] cat=${category} diff=${difficulty} lang=${lang} used=${usedHashes.length} lies=${normalized.filter(s=>!s.real).length}`);
-    return res.status(200).json({ category, difficulty, statements: normalized });
-  } catch (err) {
-    console.error("[round] error:", err.message);
-    return res.status(200).json(getFallback(category));
+    repair(normalized, stmtCount);
+    return normalized;
   }
+
+  let normalized;
+  try {
+    normalized = await attempt();
+  } catch (err1) {
+    console.warn(`[round] attempt 1 failed (${err1.message}), retrying once`);
+    try {
+      normalized = await attempt();
+    } catch (err2) {
+      console.error("[round] both attempts failed:", err2.message);
+      return res.status(200).json(getFallback(category, stmtCount));
+    }
+  }
+
+  await saveUsedFacts(category, lang, normalized);
+  console.log(`[round] cat=${category} diff=${difficulty} lang=${lang} mode=${mode} used=${usedHashes.length} lies=${normalized.filter(s=>!s.real).length}`);
+  return res.status(200).json({ category, difficulty, statements: normalized });
 }
 
 function normalize(statements) {
@@ -479,14 +500,14 @@ function normalize(statements) {
   }));
 }
 
-function repair(stmts) {
+function repair(stmts, expectedLen) {
   const lies = stmts.filter(s => !s.real).length;
   if (lies === 0) { stmts[stmts.length - 1].real = false; }
   if (lies > 1) {
     let f = false;
     stmts.forEach(s => { if (!s.real) { if (f) s.real = true; else f = true; }});
   }
-  if (stmts.length !== 4) throw new Error(`bad length: ${stmts.length}`);
+  if (stmts.length !== expectedLen) throw new Error(`bad length: ${stmts.length} (expected ${expectedLen})`);
 }
 
 function extractJSON(raw) {
@@ -498,24 +519,28 @@ function extractJSON(raw) {
   throw new Error("no JSON");
 }
 
-function getFallback(cat) {
+function getFallback(cat, stmtCount = SCHEMA.regular.total) {
+  // Pool = 4 truths + 1 lie per category; slice to stmtCount for the caller's schema
   const map = {
     history: { category:"history", difficulty:1, statements:[
       {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
       {text:"Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.",real:true},
       {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne in 1914.",real:true},
+      {text:"Ancient Romans built steam-powered door mechanisms that made temple doors appear to open by divine force.",real:true},
       {text:"The Eiffel Tower was built in Brussels in 1889 as a symbol of Belgium.",real:false},
     ]},
     science: { category:"science", difficulty:1, statements:[
       {text:"Honey never spoils — archaeologists have found 3,000-year-old edible honey in Egyptian tombs.",real:true},
       {text:"A teaspoon of neutron star material would weigh around 6 billion tons on Earth.",real:true},
       {text:"Bananas are mildly radioactive due to their potassium-40 content.",real:true},
+      {text:"Hot water can freeze faster than cold water under certain conditions — the Mpemba effect — and is still not fully explained.",real:true},
       {text:"The Sun rises in the west and sets in the east, opposite to the direction of clock hands.",real:false},
     ]},
     animals: { category:"animals", difficulty:1, statements:[
       {text:"A group of flamingos is officially called a 'flamboyance'.",real:true},
       {text:"Octopuses have three hearts and blue blood.",real:true},
       {text:"Crows can recognize individual human faces and remember grudges for years.",real:true},
+      {text:"The mimic octopus can imitate over 15 marine species including lionfish and sea snakes.",real:true},
       {text:"Elephants are the only animals that cannot jump due to their weight, but can fly short distances by flapping their ears.",real:false},
     ]},
     internet: { category:"internet", difficulty:1, statements:[
@@ -533,5 +558,11 @@ function getFallback(cat) {
       {text:"The Harry Potter books were originally written in Latin and only later translated into English.",real:false},
     ]},
   };
-  return map[cat] || map.history;
+  const entry = map[cat] || map.history;
+  if (stmtCount >= entry.statements.length) return entry;
+  // Blitz trim: keep the lie + (stmtCount - 1) truths, then shuffle
+  const lie = entry.statements.find(s => !s.real);
+  const truths = entry.statements.filter(s => s.real).slice(0, stmtCount - 1);
+  const trimmed = [...truths, lie].sort(() => Math.random() - 0.5);
+  return { ...entry, statements: trimmed };
 }

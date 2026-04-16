@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { PartySocket } from "partysocket";
+import { SCHEMA, QUESTIONS_PER_WAVE } from "./config/schema";
+import { getFallback } from "./config/fallbacks";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
@@ -993,7 +995,7 @@ export default function BluffGame() {
       const res = await fetch("/api/generate-round",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ category:cat, difficulty:diff, lang }),
+        body: JSON.stringify({ category:cat, difficulty:diff, lang, mode: blitzModeRef.current ? "blitz" : "regular" }),
         signal: controller.signal,
       });
       const data = await res.json();
@@ -1011,13 +1013,7 @@ export default function BluffGame() {
     } catch(e) {
       console.warn("[fetchRound] fallback:", e.name === "AbortError" ? "timeout 9s" : e.message);
       setFetchError(true);
-      const fb = shuffle([
-        {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
-        {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
-        {text:"The French army used over 600 Paris taxis to rush troops to the Battle of the Marne.",real:true},
-        {text:"Ancient Romans built steam-powered door mechanisms making temple doors open by 'divine force.'",real:true},
-        {text:"Queen Victoria kept a diary in Urdu exclusively for the last 13 years of her reign.",real:false},
-      ]);
+      const fb = shuffle(getFallback(blitzModeRef.current ? "blitz" : "regular"));
       setStmts(fb);
       currentStmtsRef.current = fb;
       roundsPlayedRef.current[idx] = { statements: fb, category: cat };
@@ -1079,7 +1075,7 @@ export default function BluffGame() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ result: isCorrect ? "win" : "loss" }),
-    }).then(r => r.json()).then(d => setAxiomPower(d.power)).catch(() => {});
+    }).then(r => r.json()).then(d => setAxiomPower(typeof d?.power === 'number' ? d.power : null)).catch(() => {});
 
     setRevealed(true);
     setTotal(t=>t+1);
@@ -1172,6 +1168,9 @@ export default function BluffGame() {
     roundsPlayedRef.current = [];
     resultsHistoryRef.current = [];
     gameStartTimeRef.current = Date.now();
+    setCurrentWave(0);
+    setShowWaveIntro(false);
+    setFetchError(false);
     setLoadingRound(true);
     fetchRound(0);
     axiomSpeak("intro", "idle");
@@ -1307,6 +1306,10 @@ export default function BluffGame() {
     roundsPlayedRef.current = [];
     resultsHistoryRef.current = [];
     gameStartTimeRef.current = Date.now();
+    setCurrentWave(0);
+    setShowWaveIntro(true);
+    setTimeout(() => setShowWaveIntro(false), 1800);
+    setFetchError(false);
     fetchRound(0);
     axiomSpeak("intro","idle");
   }
@@ -1424,7 +1427,7 @@ export default function BluffGame() {
   useEffect(() => {
     fetch("/api/axiom-power")
       .then(r => r.json())
-      .then(d => setAxiomPower(d.power))
+      .then(d => setAxiomPower(typeof d?.power === 'number' ? d.power : null))
       .catch(() => {});
     fetch("/api/slayer-event")
       .then(r => r.json())
@@ -1531,7 +1534,8 @@ export default function BluffGame() {
 
   // Timer starts only after round finishes loading
   useEffect(() => {
-    if (!loadingRound && screen === "play" && stmts.length > 0) {
+    if (fetchError || !stmts.length || loadingRound) return;
+    if (screen === "play") {
       clearInterval(timerRef.current);
       const diff = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
       const maxT = blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[diff] || 60);
@@ -1657,6 +1661,7 @@ export default function BluffGame() {
   const bi = stmts.findIndex(s=>!s.real);
   const correct = sel===bi && bi!==-1;
   const diff = ROUND_DIFFICULTY[roundIdx]||3;
+  const qpw = QUESTIONS_PER_WAVE[blitzMode ? "blitz" : "regular"];
 
   if(showIntro) return <><CinematicIntro onComplete={()=>{
     setShowIntro(false);
@@ -2081,7 +2086,7 @@ export default function BluffGame() {
           </div>
         )}
 
-        {axiomPower !== null && (
+        {axiomPower !== null && !Number.isNaN(axiomPower) && (
           <div style={{
             background:"rgba(4,6,15,.8)",border:"1px solid rgba(34,211,238,.15)",
             borderRadius:14,padding:"12px 16px",marginBottom:14,
@@ -2353,7 +2358,7 @@ export default function BluffGame() {
             <div>
               <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
-                <div style={{fontSize:9,color:T.dim}}>Q{(roundIdx%4)+1}/4{blitzMode?" ⚡":""}</div>
+                <div style={{fontSize:9,color:T.dim}}>Q{(roundIdx%qpw)+1}/{qpw}{blitzMode?" ⚡":""}</div>
                 <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {DIFF_LABEL[diff]||"Baby"}</div>
               </div>
             </div>

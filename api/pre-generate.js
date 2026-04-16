@@ -1,11 +1,17 @@
 // api/pre-generate.js — BLUFF v2 — Pre-generate cache rounds into Firestore
-// Vercel cron: every 6h  →  1 round per (category × level) = 40 rounds/run
-// Stored in bluff_cache with used=false; generate-round.js pops them on demand
+// Vercel cron: every 6h  →  1 round per (category × level) per mode
+// Regular mode → bluff_cache; blitz mode → bluff_rounds_blitz
+// Invoke with ?mode=blitz for the blitz pass.
+
+import { SCHEMA } from "../src/config/schema.js";
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const FB_KEY        = process.env.FIREBASE_API_KEY;
 const FB_PROJECT    = "molty-portal";
-const CACHE_COL     = "bluff_cache";
+const COLLECTION_BY_MODE = {
+  regular: "bluff_cache",
+  blitz:   "bluff_rounds_blitz",
+};
 
 const CATS = ["history","science","animals","geography","food","technology","culture","sports"];
 const LEVELS = [1,2,3,4,5];
@@ -129,47 +135,49 @@ const SUBTOPICS_PRE = {
 // Keep backwards-compat keys for any lingering references
 const CAT_DESCS = Object.fromEntries(Object.keys(SUBTOPICS_PRE).map(k => [k, null]));
 
-const LEVEL_RULES = {
-  1: `LEVEL 1 — WARM-UP: The lie should be obvious to anyone with basic general knowledge.
-      Use clearly wrong details: wrong country, obviously wrong date, implausible number.
-      Example: "The Eiffel Tower was built in 1820" (wrong era is obvious).`,
-  2: `LEVEL 2 — TRICKY: The lie sounds plausible but has one wrong specific detail.
-      A curious person might catch it. About 60% of players should get it wrong.
-      Example: Wrong by a factor of 2, or a plausible-sounding but wrong person.`,
-  3: `LEVEL 3 — SNEAKY: Take a real fact structure and change ONE precise detail
-      (a number, a name, a date) to make it false. The lie should fool most people on first read.
-      True facts should also be surprising. About 50/50 correct.`,
-  4: `LEVEL 4 — DEVIOUS: The lie exploits a common misconception — something most people THINK
-      is true but isn't. The 4 true statements should sound counterintuitive or unbelievable.
-      Most players will choose a true statement thinking it's the lie.`,
-  5: `LEVEL 5 — DIABOLICAL: ALL 4 TRUE statements must be so bizarre, unexpected, and
-      counterintuitive that they sound completely fabricated.
-      The lie must be the most NORMAL-SOUNDING statement of the five.
-      This is maximum cognitive warfare. Players will doubt every true fact.`,
-};
+function buildLevelRules({ truths, total }) {
+  return {
+    1: `LEVEL 1 — WARM-UP: The lie should be obvious to anyone with basic general knowledge.
+        Use clearly wrong details: wrong country, obviously wrong date, implausible number.
+        Example: "The Eiffel Tower was built in 1820" (wrong era is obvious).`,
+    2: `LEVEL 2 — TRICKY: The lie sounds plausible but has one wrong specific detail.
+        A curious person might catch it. About 60% of players should get it wrong.
+        Example: Wrong by a factor of 2, or a plausible-sounding but wrong person.`,
+    3: `LEVEL 3 — SNEAKY: Take a real fact structure and change ONE precise detail
+        (a number, a name, a date) to make it false. The lie should fool most people on first read.
+        True facts should also be surprising. About 50/50 correct.`,
+    4: `LEVEL 4 — DEVIOUS: The lie exploits a common misconception — something most people THINK
+        is true but isn't. The ${truths} true statements should sound counterintuitive or unbelievable.
+        Most players will choose a true statement thinking it's the lie.`,
+    5: `LEVEL 5 — DIABOLICAL: ALL ${truths} TRUE statements must be so bizarre, unexpected, and
+        counterintuitive that they sound completely fabricated.
+        The lie must be the most NORMAL-SOUNDING of the ${total} statements.
+        This is maximum cognitive warfare. Players will doubt every true fact.`,
+  };
+}
 
 // ── Build Claude prompt ──────────────────────────────────────
-function buildPrompt(category, level) {
-  const rules = LEVEL_RULES[level] || LEVEL_RULES[3];
+function buildPrompt(category, level, mode) {
+  const schema = SCHEMA[mode] || SCHEMA.regular;
+  const { total, truths, lies } = schema;
+  const rules = buildLevelRules(schema)[level] || buildLevelRules(schema)[3];
   const subtopicList = SUBTOPICS_PRE[category];
   const catDesc = subtopicList
     ? `${category}. Sub-topic for this round: ${subtopicList[Math.floor(Math.random() * subtopicList.length)]}. Use specific names, dates, records, and surprising statistics.`
     : category;
+  const truthEntries = Array(truths).fill(`    {"text": "...", "real": true}`).join(",\n");
   return `Generate a BLUFF game round. Category: ${catDesc}.
 
 ${rules}
 
-Create EXACTLY 5 statements: 4 TRUE + 1 FALSE.
-Randomize which position (1–5) contains the lie — NOT always second.
+Create EXACTLY ${total} statements: ${truths} TRUE + ${lies} FALSE.
+Randomize which position (1–${total}) contains the lie — NOT always second.
 
 Respond ONLY with valid JSON, no markdown fences:
 {
   "statements": [
-    {"text": "...", "real": true},
     {"text": "...", "real": false},
-    {"text": "...", "real": true},
-    {"text": "...", "real": true},
-    {"text": "...", "real": true}
+${truthEntries}
   ],
   "bluffExplanation": "One concise sentence: why the false statement is wrong."
 }
@@ -196,7 +204,8 @@ async function fsPatch(col, id, fields) {
 }
 
 // ── Generate one round via Claude ────────────────────────────
-async function generateOne(category, level) {
+async function generateOne(category, level, mode) {
+  const schema = SCHEMA[mode] || SCHEMA.regular;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method:  "POST",
     headers: {
@@ -207,7 +216,7 @@ async function generateOne(category, level) {
     body: JSON.stringify({
       model:      "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      messages:   [{ role: "user", content: buildPrompt(category, level) }],
+      messages:   [{ role: "user", content: buildPrompt(category, level, mode) }],
     }),
     signal: AbortSignal.timeout(28000),
   });
@@ -223,8 +232,8 @@ async function generateOne(category, level) {
   if (!match) throw new Error("No JSON from AI");
   const parsed = JSON.parse(match[0]);
 
-  if (!Array.isArray(parsed.statements) || parsed.statements.length !== 5)
-    throw new Error("Bad structure");
+  if (!Array.isArray(parsed.statements) || parsed.statements.length !== schema.total)
+    throw new Error(`Bad structure (expected ${schema.total} statements)`);
   if (!parsed.statements.some(s => s.real === false))
     throw new Error("No bluff in response");
 
@@ -234,10 +243,11 @@ async function generateOne(category, level) {
   };
 }
 
-// ── Store round in bluff_cache ───────────────────────────────
-async function storeInCache(category, level, round) {
-  const id = `cache_${category}_${level}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-  await fsPatch(CACHE_COL, id, {
+// ── Store round in mode-specific Firestore collection ────────
+async function storeInCache(category, level, round, mode) {
+  const col = COLLECTION_BY_MODE[mode] || COLLECTION_BY_MODE.regular;
+  const id = `${category}_${level}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
+  await fsPatch(col, id, {
     category:         { stringValue:  category },
     level:            { integerValue: String(level) },
     used:             { booleanValue: false },
@@ -269,6 +279,8 @@ export default async function handler(req, res) {
   if (!FB_KEY)
     return res.status(503).json({ error: "Firestore not configured" });
 
+  const mode = req.query.mode === "blitz" ? "blitz" : "regular";
+
   // Build all 40 combos
   const combos = [];
   for (const cat of CATS) {
@@ -286,8 +298,8 @@ export default async function handler(req, res) {
     await Promise.all(
       batch.map(async ({ category, level }) => {
         try {
-          const round = await generateOne(category, level);
-          await storeInCache(category, level, round);
+          const round = await generateOne(category, level, mode);
+          await storeInCache(category, level, round, mode);
           results.ok++;
         } catch (e) {
           results.failed++;
@@ -298,9 +310,11 @@ export default async function handler(req, res) {
   }
 
   return res.status(200).json({
-    generated: results.ok,
-    failed:    results.failed,
-    errors:    results.errors,
-    timestamp: new Date().toISOString(),
+    mode,
+    collection: COLLECTION_BY_MODE[mode],
+    generated:  results.ok,
+    failed:     results.failed,
+    errors:     results.errors,
+    timestamp:  new Date().toISOString(),
   });
 }
