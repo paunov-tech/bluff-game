@@ -132,6 +132,25 @@ function getRingColor(mult) {
   return 'rgba(255,255,255,0.45)';
 }
 
+function BreakdownRow({ label, value, highlight, delay }) {
+  return (
+    <div style={{
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'baseline',
+      padding: '4px 0',
+      opacity: 0,
+      animation: `breakdownFadeIn 0.3s ease ${delay}ms forwards`,
+      fontWeight: highlight ? 700 : 400,
+      fontSize: highlight ? 15 : 13,
+      fontFamily: 'inherit',
+    }}>
+      <span style={{ color: highlight ? '#fff' : 'rgba(255,255,255,0.55)' }}>{label}</span>
+      <span style={{ color: highlight ? '#e8c547' : '#fff' }}>{value}</span>
+    </div>
+  );
+}
+
 // Helper — which wave is a given round index in?
 function getWave(idx) { return idx < 4 ? 0 : idx < 8 ? 1 : 2; }
 function isWaveStart(idx) { return idx === 0 || idx === 4 || idx === 8; }
@@ -2559,6 +2578,64 @@ export default function BluffGame() {
               );
             })}
           </div>
+
+          {lastRoundResult?.isCorrect && (
+            <div style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: '12px 16px',
+              background: 'rgba(45,212,160,0.08)',
+              border: '1px solid rgba(45,212,160,0.3)',
+              borderRadius: 12,
+              fontSize: 13,
+            }}>
+              <BreakdownRow label="Base" value={BASE_POINTS} delay={0} />
+              <BreakdownRow label="× Multiplier" value={`${lastRoundResult.lockedMult.toFixed(1)}x 💰`} delay={200} />
+              {lastRoundResult.streakMult > 1 && (
+                <BreakdownRow label="× Streak" value={`${lastRoundResult.streakMult.toFixed(1)}x 🔥`} delay={400} />
+              )}
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', marginTop: 8, paddingTop: 8 }}>
+                <BreakdownRow label="Earned" value={`+${lastRoundResult.earned}`} highlight delay={600} />
+              </div>
+            </div>
+          )}
+
+          {lastRoundResult && !lastRoundResult.isCorrect && !lastRoundResult.autoReveal && (
+            <div style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: '12px 16px',
+              background: 'rgba(244,63,94,0.08)',
+              border: '1px solid rgba(244,63,94,0.3)',
+              borderRadius: 12,
+              fontSize: 13,
+            }}>
+              <BreakdownRow label="Penalty" value={`-${lastRoundResult.penalty}`} delay={0} />
+              <BreakdownRow label="Locked at" value={`${lastRoundResult.lockedMult.toFixed(1)}x`} delay={200} />
+              {streak === 0 && lastRoundResult.streakMult > 1 && (
+                <BreakdownRow label="Streak" value="Broken 💔" delay={400} />
+              )}
+            </div>
+          )}
+
+          {lastRoundResult && !lastRoundResult.isCorrect && lastRoundResult.autoReveal && (
+            <div style={{
+              marginTop: 12,
+              marginBottom: 12,
+              padding: '12px 16px',
+              background: 'rgba(244,63,94,0.12)',
+              border: '1px solid rgba(244,63,94,0.4)',
+              borderRadius: 12,
+              fontSize: 13,
+            }}>
+              <BreakdownRow label="Timer expired" value="⏱" delay={0} />
+              <BreakdownRow label="Base penalty" value={`-${Math.round(BASE_PENALTY * 0.3)}`} delay={200} />
+              <BreakdownRow label="Negligence" value={`-${blitzMode ? NEGLIGENCE_PENALTY_BLITZ : NEGLIGENCE_PENALTY_REGULAR}`} delay={400} />
+              <div style={{ borderTop: '1px solid rgba(255,255,255,0.12)', marginTop: 8, paddingTop: 8 }}>
+                <BreakdownRow label="Total" value={`-${lastRoundResult.penalty}`} highlight delay={600} />
+              </div>
+            </div>
+          )}
 
           {!revealed
             ?<button
