@@ -1,6 +1,7 @@
 // api/webhook.js — SIAL Shared Stripe Webhook
 // ENV: STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, FIREBASE_API_KEY, PRODUCT_NAME
 import Stripe from "stripe";
+import { kv } from "@vercel/kv";
 
 async function writePremium(deviceId, data) {
   const apiKey = process.env.FIREBASE_API_KEY;
@@ -37,6 +38,14 @@ export default async function handler(req, res) {
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
     const meta = session.metadata || {};
+
+    // Slayer Event entry confirmation
+    if (meta.type === "slayer_entry" && meta.userId && meta.weekKey) {
+      await kv.sadd(`slayer:${meta.weekKey}:entrants`, meta.userId);
+      console.log(`[slayer] Entry confirmed for ${meta.userId} week ${meta.weekKey}`);
+    }
+
+    // Device Firebase premium
     const deviceId = meta.deviceId;
     if (deviceId) {
       await writePremium(deviceId, {

@@ -157,9 +157,18 @@ function AxiomFace({ mood="idle", size=64 }) {
   return (
     <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-        style={{position:"absolute",inset:0,animation:"hexRotate 22s linear infinite"}}>
+        style={{position:"absolute",inset:0,animation:"hexRotate 22s linear infinite, axiomPulse 3s ease-in-out infinite"}}>
         <polygon points={`${s2(100)},${s2(12)} ${s2(178)},${s2(56)} ${s2(178)},${s2(144)} ${s2(100)},${s2(188)} ${s2(22)},${s2(144)} ${s2(22)},${s2(56)}`}
           fill="none" stroke={m.eye} strokeWidth={sc*1.2} strokeOpacity=".15" strokeDasharray={`${s2(10)} ${s2(7)}`}/>
+        {/* Circuit lines */}
+        <line x1={s2(100)} y1={s2(12)} x2={s2(100)} y2={s2(0)}
+          stroke={m.eye} strokeWidth={sc*0.8} opacity=".4" strokeLinecap="round"/>
+        <line x1={s2(178)} y1={s2(56)} x2={s2(196)} y2={s2(46)}
+          stroke={m.eye} strokeWidth={sc*0.8} opacity=".4" strokeLinecap="round"/>
+        <line x1={s2(178)} y1={s2(144)} x2={s2(196)} y2={s2(154)}
+          stroke={m.eye} strokeWidth={sc*0.8} opacity=".4" strokeLinecap="round"/>
+        <line x1={s2(22)} y1={s2(144)} x2={s2(4)} y2={s2(154)}
+          stroke={m.eye} strokeWidth={sc*0.8} opacity=".4" strokeLinecap="round"/>
       </svg>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
         style={{position:"absolute",inset:0,animation:"hexRotateCCW 14s linear infinite"}}>
@@ -178,7 +187,8 @@ function AxiomFace({ mood="idle", size=64 }) {
         <circle cx={ex} cy={ey} r={r2} fill="none" stroke={m.eye} strokeWidth={sc*.8} opacity=".5" style={{animation:"axiomPulse 2s infinite"}}/>
         <circle cx={ex} cy={ey} r={r3} fill="none" stroke="rgba(34,211,238,.3)" strokeWidth={sc*.6}/>
         <circle cx={ex} cy={ey} r={r4} fill="#020912"/>
-        <circle cx={ex} cy={ey} r={r5} fill={m.eye} filter={`url(#${fid})`}/>
+        <circle cx={ex} cy={ey} r={r5} fill={m.eye} filter={`url(#${fid})`}
+          style={{animation:"ic-blink 7s ease-in-out infinite",transformBox:"fill-box",transformOrigin:"center"}}/>
         <ellipse cx={ex+s2(8)} cy={ey-s2(8)} rx={s2(5)} ry={s2(3.5)} fill="rgba(224,247,255,.5)"/>
         <rect x={s2(58)} y={ey} width={s2(74)} height={sc*.9} fill={m.eye} opacity=".35" style={{animation:"scanDown 3s linear infinite"}}/>
         {m.mouth.type==="path"
@@ -689,6 +699,10 @@ export default function BluffGame() {
   const [confetti, setConfetti] = useState(false);
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   const [loadingRound, setLoadingRound] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
+  const [axiomPower, setAxiomPower] = useState(null);
+  const [slayerEvent, setSlayerEvent] = useState(null);
+  const [slayerEntered, setSlayerEntered] = useState(false);
   const [axiomMood, setAxiomMood] = useState("idle");
   const [axiomSpeech, setAxiomSpeech] = useState("Your confidence is endearing. Begin.");
   const [axiomLoading, setAxiomLoading] = useState(false);
@@ -948,6 +962,7 @@ export default function BluffGame() {
   // ── FETCH ROUND ─────────────────────────────────────────────
   async function fetchRound(idx) {
     setLoadingRound(true);
+    setFetchError(false);
 
     // Daily mode: use pre-generated rounds instead of fetching
     if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
@@ -994,7 +1009,8 @@ export default function BluffGame() {
       currentStmtsRef.current = shuffled;
       roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
     } catch(e) {
-      console.warn("[fetchRound] fallback:",e.message);
+      console.warn("[fetchRound] fallback:", e.name === "AbortError" ? "timeout 9s" : e.message);
+      setFetchError(true);
       const fb = shuffle([
         {text:"Napoleon was once attacked by a horde of rabbits during a hunting party after the Treaty of Tilsit.",real:true},
         {text:"Cleopatra lived closer in time to the Moon landing than to the Great Pyramid's construction.",real:true},
@@ -1058,6 +1074,12 @@ export default function BluffGame() {
     const isCorrect = selCurrent===bi && bi!==-1;
 
     resultsHistoryRef.current[roundIdx] = isCorrect;
+
+    fetch("/api/axiom-power", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ result: isCorrect ? "win" : "loss" }),
+    }).then(r => r.json()).then(d => setAxiomPower(d.power)).catch(() => {});
 
     setRevealed(true);
     setTotal(t=>t+1);
@@ -1240,6 +1262,11 @@ export default function BluffGame() {
     }
     if (msg.type === "player_left") {
       setDuelPhase("abandoned");
+      setTimeout(() => {
+        duelSocketRef.current?.close();
+        setDuelScreen(null);
+        setDuelPlayers({});
+      }, 4000);
     }
   }
 
@@ -1393,6 +1420,18 @@ export default function BluffGame() {
     if(screen==="home" && !showIntro) axiomSpeak("intro","idle");
   },[lang, screen, showIntro]);
 
+  // Fetch AXIOM power + slayer event on mount
+  useEffect(() => {
+    fetch("/api/axiom-power")
+      .then(r => r.json())
+      .then(d => setAxiomPower(d.power))
+      .catch(() => {});
+    fetch("/api/slayer-event")
+      .then(r => r.json())
+      .then(d => setSlayerEvent(d))
+      .catch(() => {});
+  }, []);
+
   // Detect challenge from URL
   useEffect(() => {
     const ch = getChallengeFromURL();
@@ -1400,6 +1439,24 @@ export default function BluffGame() {
       setChallenge(ch);
       // Clean URL without reload
       window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Handle slayer_success redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("slayer_success") === "1") {
+      const userId = params.get("userId") || localStorage.getItem("bluff_user_id");
+      window.history.replaceState({}, "", window.location.pathname);
+      setSlayerEntered(true);
+      // Verify entry server-side
+      if (userId) {
+        fetch("/api/slayer-event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "verify_entry", userId }),
+        }).then(r => r.json()).then(d => { if (d.entered) setSlayerEntered(true); }).catch(() => {});
+      }
     }
   }, []);
 
@@ -1802,14 +1859,8 @@ export default function BluffGame() {
         )}
 
         {duelPhase==="abandoned" && (
-          <div style={{textAlign:"center",padding:20,color:"rgba(255,255,255,.4)",fontSize:14}}>
-            Opponent disconnected.
-            <button onClick={()=>{duelSocketRef.current?.close();setDuelScreen(null);}}
-              style={{display:"block",margin:"12px auto 0",padding:"10px 20px",fontSize:13,
-                background:"rgba(255,255,255,.06)",color:"#e8e6e1",border:"1px solid rgba(255,255,255,.1)",
-                borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
-              Back to home
-            </button>
+          <div style={{textAlign:"center",padding:20,color:"#f43f5e",fontSize:14}}>
+            Opponent disconnected. Returning to home...
           </div>
         )}
       </div>
@@ -2027,6 +2078,78 @@ export default function BluffGame() {
         {tg.isInsideTelegram && (
           <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginBottom:12,fontSize:11,color:"rgba(41,182,246,.45)",letterSpacing:"1px"}}>
             <span>✈️</span><span>Running inside Telegram</span>
+          </div>
+        )}
+
+        {axiomPower !== null && (
+          <div style={{
+            background:"rgba(4,6,15,.8)",border:"1px solid rgba(34,211,238,.15)",
+            borderRadius:14,padding:"12px 16px",marginBottom:14,
+          }}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(34,211,238,.6)",fontWeight:700}}>
+                AXIOM POWER
+              </div>
+              <div style={{fontSize:11,fontWeight:700,
+                color:axiomPower<200?"#f43f5e":axiomPower<500?"#fb923c":"#22d3ee"}}>
+                {Math.round(axiomPower)}/1000
+              </div>
+            </div>
+            <div style={{height:6,background:"rgba(255,255,255,.06)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{
+                height:"100%",borderRadius:3,transition:"width 1s ease",
+                width:`${(axiomPower/1000)*100}%`,
+                background:axiomPower<200
+                  ?"linear-gradient(90deg,#f43f5e,#fb923c)"
+                  :axiomPower<500
+                  ?"linear-gradient(90deg,#fb923c,#e8c547)"
+                  :"linear-gradient(90deg,#22d3ee,#0891b2)",
+              }}/>
+            </div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.25)",marginTop:6}}>
+              {axiomPower <= 0
+                ? "⚡ AXIOM is weakened — Slayer Event OPEN"
+                : axiomPower < 100
+                ? "🔴 AXIOM is nearly defeated"
+                : axiomPower < 300
+                ? "🟠 AXIOM is struggling"
+                : "Every win chips away at AXIOM's power"}
+            </div>
+          </div>
+        )}
+
+        {slayerEvent?.isOpen && (
+          <div style={{
+            background:"linear-gradient(135deg,rgba(244,63,94,.12),rgba(251,146,60,.08))",
+            border:"1px solid rgba(244,63,94,.4)",borderRadius:16,
+            padding:"16px",marginBottom:14,position:"relative",overflow:"hidden",
+          }}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,
+              background:"linear-gradient(90deg,#f43f5e,#fb923c,#f43f5e)",
+              animation:"g-btnShimmer 2s infinite"}}/>
+            <div style={{fontSize:10,letterSpacing:"3px",color:"#f43f5e",fontWeight:700,marginBottom:4}}>
+              ⚡ AXIOM SLAYER EVENT — OPEN
+            </div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.7)",marginBottom:10}}>
+              {slayerEvent.entrantCount} challengers · Prize pool: €{slayerEvent.pool}
+            </div>
+            {slayerEntered ? (
+              <div style={{fontSize:12,color:"#2dd4a0",fontWeight:600}}>✓ You're in — play to win</div>
+            ) : (
+              <button
+                onClick={() => {
+                  fetch("/api/slayer-event", {
+                    method: "POST",
+                    headers: {"Content-Type":"application/json"},
+                    body: JSON.stringify({ action: "enter", userId: localStorage.getItem("bluff_user_id") }),
+                  }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; }).catch(()=>{});
+                }}
+                style={{width:"100%",padding:"12px",fontSize:13,fontWeight:700,
+                  background:"linear-gradient(135deg,#f43f5e,#d4294a)",color:"#fff",
+                  border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px"}}>
+                ⚡ Enter for €0.99
+              </button>
+            )}
           </div>
         )}
 
@@ -2248,6 +2371,17 @@ export default function BluffGame() {
           <div style={{textAlign:"center",padding:"40px 0",color:T.dim,fontSize:14}}>
             <div style={{animation:"g-pulse 1s infinite",marginBottom:8,fontSize:22}}>🤖</div>
             AXIOM is preparing your deception...
+          </div>
+        ):fetchError?(
+          <div style={{textAlign:"center",padding:"40px 20px"}}>
+            <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
+            <div style={{color:"rgba(255,255,255,.5)",marginBottom:16,fontSize:14}}>AXIOM is unreachable.</div>
+            <button onClick={()=>{setFetchError(false);fetchRound(roundIdx);}}
+              style={{padding:"12px 24px",background:"rgba(232,197,71,.1)",color:"#e8c547",
+                border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
+                fontFamily:"inherit",fontSize:14,fontWeight:700}}>
+              Try again
+            </button>
           </div>
         ):(<>
           <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={true}/>
@@ -2622,5 +2756,6 @@ function GameStyles(){
     @keyframes scanDown{0%{transform:translateY(-50px)}100%{transform:translateY(220px)}}
     @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+    @keyframes ic-blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(0.05)}}
   `}</style>;
 }
