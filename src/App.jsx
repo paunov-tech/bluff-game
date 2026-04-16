@@ -81,9 +81,9 @@ const WAVE_AXIOM_INTRO = [
   "Now we begin.",
   "Everything ends here.",
 ];
-const BLITZ_DIFFICULTY = [4, 5, 5, 5]; // Blitz = Wave 3 only, hardest
+const BLITZ_DIFFICULTY = [4, 4, 5, 5, 4, 5, 5, 4, 5, 5, 5, 5]; // 3 questions x 4 sets
 const BLITZ_TIMER = 12; // 12 seconds per question
-const BLITZ_ROUNDS = 4;
+const BLITZ_ROUNDS = 12; // 3q x 4 sets
 const TIMER_PER_DIFF = { 0:22, 1:28, 2:34, 3:40, 4:48, 5:60 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
