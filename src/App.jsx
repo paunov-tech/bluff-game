@@ -1123,6 +1123,9 @@ export default function BluffGame() {
     const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
     if(next>=totalRounds){ showResultScreen(); return; }
     clearInterval(timerRef.current);
+    // Reset time synchronously so transient time=0 from prior round can't trigger auto-reveal
+    const nextDiff = blitzMode ? (BLITZ_DIFFICULTY[next] || 4) : (ROUND_DIFFICULTY[next] || 3);
+    setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[nextDiff] || 60));
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current=null;
@@ -1530,8 +1533,9 @@ export default function BluffGame() {
 
   // Auto-reveal at 0
   useEffect(()=>{
-    if(time<=0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0) doReveal();
-  },[time,revealed,screen]);
+    // Guard loadingRound/fetchError: stale time=0 from prior round races with transition
+    if(time<=0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0&&!loadingRound&&!fetchError) doReveal();
+  },[time,revealed,screen,loadingRound,fetchError]);
 
   // Timer starts only after round finishes loading
   useEffect(() => {
