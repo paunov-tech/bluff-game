@@ -868,6 +868,10 @@ export default function BluffGame() {
     setDailyMode(true);
     setDailyRank(null);
     clearInterval(timerRef.current);
+    // Reset time + loadingRound before any other state so auto-reveal effect
+    // can't fire with stale time=0 from a previous session on first render.
+    setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
+    setLoadingRound(true);
     wrongCountRef.current = 0;
     setScreen("play");
     setRoundIdx(0);
@@ -1149,6 +1153,10 @@ export default function BluffGame() {
     userInteractedRef.current = true;
     AudioTension.init();
     clearInterval(timerRef.current);
+    // Reset time + loadingRound before any other state so auto-reveal effect
+    // can't fire with stale time=0 from a previous session on first render.
+    setTime(BLITZ_TIMER);
+    setLoadingRound(true);
     wrongCountRef.current = 0;
     blitzModeRef.current = true;
     setBlitzMode(true);
@@ -1175,7 +1183,6 @@ export default function BluffGame() {
     setShowWaveIntro(true);
     setTimeout(() => setShowWaveIntro(false), 1800);
     setFetchError(false);
-    setLoadingRound(true);
     fetchRound(0);
     axiomSpeak("intro", "idle");
   }
@@ -1288,6 +1295,10 @@ export default function BluffGame() {
     userInteractedRef.current = true;
     AudioTension.init();
     clearInterval(timerRef.current);
+    // Reset time + loadingRound before any other state so auto-reveal effect
+    // can't fire with stale time=0 from a previous session on first render.
+    setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
+    setLoadingRound(true);
     wrongCountRef.current=0;
     setBlitzMode(false);
     blitzModeRef.current = false;
@@ -1533,9 +1544,10 @@ export default function BluffGame() {
 
   // Auto-reveal at 0
   useEffect(()=>{
-    // Guard loadingRound/fetchError: stale time=0 from prior round races with transition
-    if(time<=0&&!revealed&&screen==="play"&&currentStmtsRef.current.length>0&&!loadingRound&&!fetchError) doReveal();
-  },[time,revealed,screen,loadingRound,fetchError]);
+    // Guard loadingRound/fetchError: stale time=0 from prior round races with transition.
+    // Use stmts.length (not ref) so effect re-runs on setStmts and deps stay accurate.
+    if(time<=0&&!revealed&&screen==="play"&&stmts.length>0&&!loadingRound&&!fetchError) doReveal();
+  },[time,revealed,screen,stmts.length,loadingRound,fetchError]);
 
   // Timer starts only after round finishes loading
   useEffect(() => {
@@ -2386,7 +2398,13 @@ export default function BluffGame() {
           <div style={{textAlign:"center",padding:"40px 20px"}}>
             <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
             <div style={{color:"rgba(255,255,255,.5)",marginBottom:16,fontSize:14}}>AXIOM is unreachable.</div>
-            <button onClick={()=>{setFetchError(false);fetchRound(roundIdx);}}
+            <button onClick={()=>{
+              const d = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
+              setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[d] || 60));
+              setLoadingRound(true);
+              setFetchError(false);
+              fetchRound(roundIdx);
+            }}
               style={{padding:"12px 24px",background:"rgba(232,197,71,.1)",color:"#e8c547",
                 border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
                 fontFamily:"inherit",fontSize:14,fontWeight:700}}>
