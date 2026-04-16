@@ -378,7 +378,7 @@ async function saveUsedFacts(category, lang, statements) {
   } catch { /* non-critical */ }
 }
 
-const RL_MAX = 30;
+const RL_MAX = 200;
 const RL_WINDOW = 3600;
 
 async function rateLimitOk(ip) {
