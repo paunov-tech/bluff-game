@@ -117,6 +117,13 @@ function onMultiplierMilestone(threshold) {
   if (threshold >= 2.5) haptic.timerWarning();
 }
 
+function getStreakMultiplier(streak) {
+  if (streak >= 7) return 3.0;
+  if (streak >= 5) return 2.0;
+  if (streak >= 3) return 1.5;
+  return 1.0;
+}
+
 // Helper — which wave is a given round index in?
 function getWave(idx) { return idx < 4 ? 0 : idx < 8 ? 1 : 2; }
 function isWaveStart(idx) { return idx === 0 || idx === 4 || idx === 8; }
@@ -427,6 +434,9 @@ function TimerRing({time,max=45,size=48}) {
   );
 }
 
+// TODO(cashout-cleanup) URGENT: `score` is now points (100s-1000s range),
+// not correct-answer count. The rendered "score/total" and accuracy math
+// below will look broken until Deploy 1b rewrites this card.
 function generateShareCard(score,total,best,speech,won) {
   try {
     const c=document.createElement("canvas");
@@ -461,6 +471,9 @@ function generateShareCard(score,total,best,speech,won) {
   } catch(e) { console.error("[share-card]",e); return null; }
 }
 
+// TODO(cashout-cleanup) URGENT: `score` is now points (100s-1000s range),
+// not correct-answer count. The rendered "score/total" and accuracy math
+// below will look broken until Deploy 1b rewrites this card.
 function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine) {
   try {
     const W = 540, H = 960; // 1:1.77 = 9:16 portrait
@@ -730,6 +743,7 @@ export default function BluffGame() {
   const multiplierRef = useRef(1.0);
   const [multiplierLocked, setMultiplierLocked] = useState(null);
   const milestonesFiredRef = useRef(new Set());
+  const [lastRoundResult, setLastRoundResult] = useState(null);
   const [confetti, setConfetti] = useState(false);
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   const [loadingRound, setLoadingRound] = useState(false);
@@ -908,6 +922,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    setLastRoundResult(null);
     wrongCountRef.current = 0;
     setScreen("play");
     setRoundIdx(0);
@@ -1124,11 +1139,20 @@ export default function BluffGame() {
       dailyResultsRef.current = [...dailyResultsRef.current, isCorrect];
     }
 
+    const autoReveal = time <= 0;
+    const lockedMult = multiplierRef.current;
+    setMultiplierLocked(lockedMult);
+    const streakMultAtLock = getStreakMultiplier(streak);
+
+    let earned = 0;
+    let penalty = 0;
+
     if(isCorrect){
       haptic.correct();
       AudioTension.stopDrone();
       AudioTension.fanfare();
-      setScore(s=>s+1);
+      earned = Math.round(BASE_POINTS * lockedMult * streakMultAtLock);
+      setScore(s=>s+earned);
       wrongCountRef.current = 0;
       setStreak(prev=>{
         const next=prev+1;
@@ -1144,6 +1168,11 @@ export default function BluffGame() {
       haptic.wrong();
       AudioTension.stopDrone();
       AudioTension.buzzer();
+      penalty = Math.round(BASE_PENALTY * lockedMult * 0.3);
+      if (autoReveal) {
+        penalty += blitzMode ? NEGLIGENCE_PENALTY_BLITZ : NEGLIGENCE_PENALTY_REGULAR;
+      }
+      setScore(s=>Math.max(0, s - penalty));
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -1155,6 +1184,12 @@ export default function BluffGame() {
         return 0;
       });
     }
+
+    setLastRoundResult({
+      earned, penalty, lockedMult,
+      isCorrect, autoReveal,
+      streakMult: streakMultAtLock,
+    });
   }
 
   // ── NEXT ROUND ───────────────────────────────────────────────
@@ -1170,6 +1205,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    setLastRoundResult(null);
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current=null;
@@ -1201,6 +1237,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    setLastRoundResult(null);
     wrongCountRef.current = 0;
     blitzModeRef.current = true;
     setBlitzMode(true);
@@ -1343,6 +1380,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    setLastRoundResult(null);
     // Reset time + loadingRound before any other state so auto-reveal effect
     // can't fire with stale time=0 from a previous session on first render.
     setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
@@ -1407,6 +1445,7 @@ export default function BluffGame() {
         if (navigator.share) {
           navigator.share({
             title: "BLUFF™ Duel Challenge",
+            // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
             text:  `I scored ${score}/${total} on BLUFF™. Can you beat me? 🎯`,
             url,
           }).catch(() => {});
@@ -2109,6 +2148,7 @@ export default function BluffGame() {
         </div>
 
         {total>0&&(
+          // TODO(cashout-cleanup): `score` is now points, not a correct count — "Correct" tile now shows points.
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14,animation:"g-fadeUp .5s .3s both"}}>
             {[[score,"Correct",T.ok],[total,"Played",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
               <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
@@ -2465,6 +2505,7 @@ export default function BluffGame() {
               multiplierRef.current = 1.0;
               setMultiplierLocked(null);
               milestonesFiredRef.current = new Set();
+              setLastRoundResult(null);
               setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[d] || 60));
               setLoadingRound(true);
               setFetchError(false);
@@ -2549,6 +2590,7 @@ export default function BluffGame() {
               <div key={i} style={{width:i===roundIdx?8:5,height:i===roundIdx?8:5,borderRadius:"50%",transition:"all .2s",background:i<roundIdx?"rgba(255,255,255,.45)":i===roundIdx?WAVE_COLORS[getWave(i)]:"rgba(255,255,255,.1)",marginTop:i===roundIdx?-1.5:0}}/>
             ))}
           </div>
+          {/* TODO(cashout-cleanup) URGENT: `{score}/{total}` and accuracy percent will look broken — score is now points, not out-of-total. */}
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
             <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
             <span style={{opacity:.2}}>|</span>
@@ -2574,6 +2616,7 @@ export default function BluffGame() {
           <div style={{fontSize:48,marginBottom:8}}>{won?"🏆":"💀"}</div>
           <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(18px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:won?T.gold:T.bad}}>{won?"You beat AXIOM!":"AXIOM wins... this time."}</h2>
           <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:"0 0 16px"}}>{won?"Impressive. AXIOM did not expect this.":"Train harder. AXIOM is patient."}</p>
+          {/* TODO(cashout-cleanup) URGENT: `score+"/"+total` and accuracy will look broken — score is now points, not out-of-total. */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
             {[[score+"/"+total,"Correct",T.ok],[Math.round(score/total*100)+"%","Accuracy",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
               <div key={l} style={{background:"#07070e",borderRadius:10,border:`1px solid ${T.gb}`,padding:"12px 6px"}}>
@@ -2605,6 +2648,7 @@ export default function BluffGame() {
               onClick={() => {
                 const grid = dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("");
                 const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
+                // TODO(cashout-cleanup) URGENT: score is points now — "2847/12" will look wrong.
                 const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${score}/${total}${rankStr}\nplaybluff.games`;
                 if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
                 else navigator.clipboard?.writeText(text).then(() => alert("Copied! 📋")).catch(() => alert(text));
@@ -2621,6 +2665,7 @@ export default function BluffGame() {
             background:"rgba(244,63,94,.08)",border:"1px solid rgba(244,63,94,.2)",
             borderRadius:12,animation:"g-fadeUp .5s .35s both"}}>
             <div style={{fontSize:11,letterSpacing:"3px",color:"#f43f5e",marginBottom:4}}>⚡ BLITZ RESULT</div>
+            {/* TODO(cashout-cleanup) URGENT: `{score}/4` and tier thresholds (score>=3, etc.) assume count 0-12; score is now points in the 100s-1000s. */}
             <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,color:"#f43f5e"}}>{score}/4</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.4)",marginTop:4}}>
               {score===4?"AXIOM demolished. 🔥":score>=3?"Sharp. Very sharp.":score>=2?"Decent.":"AXIOM wins."}
@@ -2665,6 +2710,7 @@ export default function BluffGame() {
                 if (navigator.share) {
                   navigator.share({
                     title: "BLUFF™ — Can you beat me?",
+                    // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
                     text: `I scored ${score}/${total} against AXIOM. Think you can do better? 🎯`,
                     url: challengeURL,
                   }).catch(() => {
@@ -2707,6 +2753,7 @@ export default function BluffGame() {
                     if (navigator.share) {
                       navigator.share({
                         title: "BLUFF™ Duel Challenge",
+                        // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
                         text:  `I scored ${score}/${total} on BLUFF™. Can you beat me with the same questions? 🎯`,
                         url,
                       }).catch(() => navigator.clipboard?.writeText(url));
@@ -2750,6 +2797,7 @@ export default function BluffGame() {
               const grid = dailyResultsRef.current.length > 0
                 ? "\n" + dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")
                 : "";
+              // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
               const text = `🎭 I scored ${score}/${total} against AXIOM in BLUFF!${grid}\nCan you beat me?`;
               tg.shareToChat(text, "https://playbluff.games");
             }}
