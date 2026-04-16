@@ -124,6 +124,14 @@ function getStreakMultiplier(streak) {
   return 1.0;
 }
 
+function getRingColor(mult) {
+  if (mult >= 3.0) return '#dc2626';
+  if (mult >= 2.5) return '#f43f5e';
+  if (mult >= 2.0) return '#fb923c';
+  if (mult >= 1.5) return '#e8c547';
+  return 'rgba(255,255,255,0.45)';
+}
+
 // Helper — which wave is a given round index in?
 function getWave(idx) { return idx < 4 ? 0 : idx < 8 ? 1 : 2; }
 function isWaveStart(idx) { return idx === 0 || idx === 4 || idx === 8; }
@@ -2553,9 +2561,58 @@ export default function BluffGame() {
           </div>
 
           {!revealed
-            ?<button onClick={()=>{ if(sel!==null){ haptic.lockIn(); AudioTension.lockIn(); doReveal(); }}} disabled={sel===null} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,16px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:sel!==null?"linear-gradient(135deg,#e8c547,#d4a830)":T.card,color:sel!==null?T.bg:T.dim,border:sel!==null?"none":`1.5px solid ${T.gb}`,borderRadius:16,cursor:sel!==null?"pointer":"not-allowed",transition:"all .25s",fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-              {sel!==null&&<div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
-              <span style={{position:"relative"}}>{sel!==null?"🔒 Lock in answer":"Select a statement"}</span>
+            ?<button
+              onClick={() => { if (sel !== null) { haptic.lockIn(); AudioTension.lockIn(); doReveal(); }}}
+              disabled={sel === null}
+              style={{
+                width: "100%",
+                minHeight: 52,
+                padding: "clamp(14px,3.5vw,16px)",
+                fontSize: "clamp(13px,3.5vw,15px)",
+                fontWeight: 700,
+                letterSpacing: "1.5px",
+                textTransform: "uppercase",
+                background: sel !== null ? "linear-gradient(135deg,#e8c547,#d4a830)" : T.card,
+                color: sel !== null ? T.bg : T.dim,
+                border: sel !== null ? "none" : `1.5px solid ${T.gb}`,
+                borderRadius: 16,
+                cursor: sel !== null ? "pointer" : "not-allowed",
+                transition: "all .25s",
+                fontFamily: "inherit",
+                position: "relative",
+                overflow: "hidden",
+              }}
+            >
+              {sel !== null && multiplier > 1.05 && (
+                <svg
+                  viewBox="0 0 100 100"
+                  preserveAspectRatio="none"
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    width: "100%",
+                    height: "100%",
+                    pointerEvents: "none",
+                    animation: multiplier >= 3.0 ? "cashoutPulse 0.8s ease-in-out infinite" : "none",
+                  }}
+                >
+                  <rect
+                    x="1" y="1" width="98" height="98" rx="12" ry="12"
+                    fill="none"
+                    stroke={getRingColor(multiplier)}
+                    strokeWidth="2"
+                    strokeDasharray={`${((multiplier - 1) / 2.5) * 392} 392`}
+                    style={{ transition: "stroke-dasharray 0.3s ease, stroke 0.5s ease" }}
+                  />
+                </svg>
+              )}
+              <span style={{ position: "relative", zIndex: 1 }}>
+                {sel === null
+                  ? "Select a statement"
+                  : multiplier > 1.05
+                    ? `🔒 Lock in @ ${multiplier.toFixed(1)}x 💰`
+                    : "🔒 Lock in answer"}
+              </span>
             </button>
             :<div style={{display:"flex",gap:10}}>
               <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
@@ -2877,6 +2934,8 @@ function GameStyles(){
     @keyframes g-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes g-confetti{0%{transform:translateY(-10px) rotate(0);opacity:1}100%{transform:translateY(105vh) rotate(720deg);opacity:0}}
     @keyframes g-btnShimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+    @keyframes cashoutPulse{0%,100%{opacity:1}50%{opacity:.55}}
+    @keyframes breakdownFadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
     @keyframes g-shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-5px)}40%,80%{transform:translateX(5px)}}
     @keyframes g-glow{0%{box-shadow:0 0 0}50%{box-shadow:0 0 22px rgba(244,63,94,.3)}100%{box-shadow:0 0 10px rgba(244,63,94,.1)}}
     @keyframes g-correctGlow{0%{box-shadow:0 0 0}50%{box-shadow:0 0 22px rgba(45,212,160,.35)}100%{box-shadow:0 0 10px rgba(45,212,160,.15)}}
