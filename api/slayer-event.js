@@ -1,7 +1,13 @@
 import { kv } from "@vercel/kv";
 import Stripe from "stripe";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let _stripe;
+function getStripe() {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) throw new Error("STRIPE_SECRET_KEY not set");
+  if (!_stripe) _stripe = new Stripe(key);
+  return _stripe;
+}
 
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
@@ -26,7 +32,7 @@ export default async function handler(req, res) {
     const { action, userId } = req.body;
 
     if (action === "enter") {
-      const session = await stripe.checkout.sessions.create({
+      const session = await getStripe().checkout.sessions.create({
         payment_method_types: ["card"],
         line_items: [{
           price_data: {

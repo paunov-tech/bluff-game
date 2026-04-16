@@ -1661,7 +1661,7 @@ export default function BluffGame() {
 
   const bi = stmts.findIndex(s=>!s.real);
   const correct = sel===bi && bi!==-1;
-  const diff = ROUND_DIFFICULTY[roundIdx]||3;
+  const diff = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
   const qpw = QUESTIONS_PER_WAVE[blitzMode ? "blitz" : "regular"];
 
   if(showIntro) return <><CinematicIntro onComplete={()=>{
