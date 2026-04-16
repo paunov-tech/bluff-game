@@ -84,7 +84,7 @@ const WAVE_AXIOM_INTRO = [
   "Everything ends here.",
 ];
 const BLITZ_DIFFICULTY = [4, 4, 5, 5, 4, 5, 5, 4, 5, 5, 5, 5]; // 3 questions x 4 sets
-const BLITZ_TIMER = 12; // 12 seconds per question
+const BLITZ_TIMER = 18; // 18 seconds per question
 const BLITZ_ROUNDS = 12; // 3q x 4 sets
 const TIMER_PER_DIFF = { 0:22, 1:28, 2:34, 3:40, 4:48, 5:60 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
@@ -2070,7 +2070,7 @@ export default function BluffGame() {
           animation:"g-fadeUp .5s .38s both",
         }}>
           <span>⚡</span>
-          <span>Blitz — 4 questions, 12 seconds</span>
+          <span>Blitz — 4 questions, 18 seconds</span>
         </button>
 
         {/* Duel buttons */}
