@@ -1075,7 +1075,7 @@ export default function BluffGame() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ result: isCorrect ? "win" : "loss" }),
-    }).then(r => r.json()).then(d => setAxiomPower(typeof d?.power === 'number' ? d.power : null)).catch(() => {});
+    }).then(r => r.json()).then(d => setAxiomPower(typeof d?.power === 'number' && !Number.isNaN(d.power) ? d.power : null)).catch(() => {});
 
     setRevealed(true);
     setTotal(t=>t+1);
@@ -1169,7 +1169,8 @@ export default function BluffGame() {
     resultsHistoryRef.current = [];
     gameStartTimeRef.current = Date.now();
     setCurrentWave(0);
-    setShowWaveIntro(false);
+    setShowWaveIntro(true);
+    setTimeout(() => setShowWaveIntro(false), 1800);
     setFetchError(false);
     setLoadingRound(true);
     fetchRound(0);
@@ -1427,7 +1428,7 @@ export default function BluffGame() {
   useEffect(() => {
     fetch("/api/axiom-power")
       .then(r => r.json())
-      .then(d => setAxiomPower(typeof d?.power === 'number' ? d.power : null))
+      .then(d => setAxiomPower(typeof d?.power === 'number' && !Number.isNaN(d.power) ? d.power : null))
       .catch(() => {});
     fetch("/api/slayer-event")
       .then(r => r.json())
@@ -1534,7 +1535,7 @@ export default function BluffGame() {
 
   // Timer starts only after round finishes loading
   useEffect(() => {
-    if (fetchError || !stmts.length || loadingRound) return;
+    if (fetchError || !stmts.length || loadingRound || revealed) return;
     if (screen === "play") {
       clearInterval(timerRef.current);
       const diff = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
@@ -1551,7 +1552,7 @@ export default function BluffGame() {
         });
       }, 1000);
     }
-  }, [loadingRound]);
+  }, [loadingRound, fetchError, stmts.length, revealed, roundIdx, blitzMode]);
 
   // ── TELEGRAM MAIN BUTTON sync ───────────────────────────────
   useEffect(() => {
