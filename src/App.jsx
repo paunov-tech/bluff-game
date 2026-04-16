@@ -89,6 +89,34 @@ const BLITZ_ROUNDS = 12; // 3q x 4 sets
 const TIMER_PER_DIFF = { 0:22, 1:28, 2:34, 3:40, 4:48, 5:60 };
 const DIFF_LABEL = ["","Warm-up","Easy","Sneaky","Devious","Diabolical"];
 const DIFF_COLOR = ["","#2dd4a0","#a3e635","#fb923c","#f43f5e","#a855f7"];
+
+// Cashout multiplier tuning — keep together for easy post-playtest adjustment
+const BASE_POINTS = 100;
+const BASE_PENALTY = 50;
+const NEGLIGENCE_PENALTY_REGULAR = 300;
+const NEGLIGENCE_PENALTY_BLITZ = 150;
+const MULTIPLIER_MILESTONES = [1.5, 2.0, 2.5, 3.0];
+
+function computeMultiplier(timeElapsed, maxTime, isBlitz) {
+  const p = Math.min(1, Math.max(0, timeElapsed / maxTime));
+  if (isBlitz) {
+    if (p < 0.11) return 1.0;
+    if (p < 0.44) return 1.0 + (p - 0.11) / 0.33 * 0.8;
+    if (p < 0.72) return 1.8 + (p - 0.44) / 0.28 * 0.7;
+    return 2.5 + (p - 0.72) / 0.28 * 0.5;
+  }
+  if (p < 0.10) return 1.0;
+  if (p < 0.25) return 1.0 + (p - 0.10) / 0.15 * 0.5;
+  if (p < 0.50) return 1.5 + (p - 0.25) / 0.25 * 0.5;
+  if (p < 0.75) return 2.0 + (p - 0.50) / 0.25 * 0.5;
+  if (p < 0.95) return 2.5 + (p - 0.75) / 0.20 * 0.5;
+  return 3.0 + (p - 0.95) / 0.05 * 0.5;
+}
+
+function onMultiplierMilestone(threshold) {
+  if (threshold >= 2.5) haptic.timerWarning();
+}
+
 // Helper — which wave is a given round index in?
 function getWave(idx) { return idx < 4 ? 0 : idx < 8 ? 1 : 2; }
 function isWaveStart(idx) { return idx === 0 || idx === 4 || idx === 8; }
@@ -698,6 +726,10 @@ export default function BluffGame() {
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
   const [time, setTime] = useState(45);
+  const [multiplier, setMultiplier] = useState(1.0);
+  const multiplierRef = useRef(1.0);
+  const [multiplierLocked, setMultiplierLocked] = useState(null);
+  const milestonesFiredRef = useRef(new Set());
   const [confetti, setConfetti] = useState(false);
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   const [loadingRound, setLoadingRound] = useState(false);
@@ -872,6 +904,10 @@ export default function BluffGame() {
     // can't fire with stale time=0 from a previous session on first render.
     setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
     setLoadingRound(true);
+    setMultiplier(1.0);
+    multiplierRef.current = 1.0;
+    setMultiplierLocked(null);
+    milestonesFiredRef.current = new Set();
     wrongCountRef.current = 0;
     setScreen("play");
     setRoundIdx(0);
@@ -1130,6 +1166,10 @@ export default function BluffGame() {
     // Reset time synchronously so transient time=0 from prior round can't trigger auto-reveal
     const nextDiff = blitzMode ? (BLITZ_DIFFICULTY[next] || 4) : (ROUND_DIFFICULTY[next] || 3);
     setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[nextDiff] || 60));
+    setMultiplier(1.0);
+    multiplierRef.current = 1.0;
+    setMultiplierLocked(null);
+    milestonesFiredRef.current = new Set();
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current=null;
@@ -1157,6 +1197,10 @@ export default function BluffGame() {
     // can't fire with stale time=0 from a previous session on first render.
     setTime(BLITZ_TIMER);
     setLoadingRound(true);
+    setMultiplier(1.0);
+    multiplierRef.current = 1.0;
+    setMultiplierLocked(null);
+    milestonesFiredRef.current = new Set();
     wrongCountRef.current = 0;
     blitzModeRef.current = true;
     setBlitzMode(true);
@@ -1295,6 +1339,10 @@ export default function BluffGame() {
     userInteractedRef.current = true;
     AudioTension.init();
     clearInterval(timerRef.current);
+    setMultiplier(1.0);
+    multiplierRef.current = 1.0;
+    setMultiplierLocked(null);
+    milestonesFiredRef.current = new Set();
     // Reset time + loadingRound before any other state so auto-reveal effect
     // can't fire with stale time=0 from a previous session on first render.
     setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
@@ -1559,6 +1607,19 @@ export default function BluffGame() {
       setTime(maxT);
       timerRef.current = setInterval(() => {
         setTime(t => {
+          const next = t <= 1 ? 0 : t - 1;
+          if (multiplierLocked === null) {
+            const elapsed = maxT - next;
+            const m = computeMultiplier(elapsed, maxT, blitzMode);
+            multiplierRef.current = m;
+            setMultiplier(m);
+            MULTIPLIER_MILESTONES.forEach(threshold => {
+              if (m >= threshold && !milestonesFiredRef.current.has(threshold)) {
+                milestonesFiredRef.current.add(threshold);
+                onMultiplierMilestone(threshold);
+              }
+            });
+          }
           if (t <= 1) { clearInterval(timerRef.current); return 0; }
           if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
           if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
@@ -2400,6 +2461,10 @@ export default function BluffGame() {
             <div style={{color:"rgba(255,255,255,.5)",marginBottom:16,fontSize:14}}>AXIOM is unreachable.</div>
             <button onClick={()=>{
               const d = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
+              setMultiplier(1.0);
+              multiplierRef.current = 1.0;
+              setMultiplierLocked(null);
+              milestonesFiredRef.current = new Set();
               setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[d] || 60));
               setLoadingRound(true);
               setFetchError(false);
