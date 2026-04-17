@@ -1569,8 +1569,7 @@ export default function BluffGame() {
         if (navigator.share) {
           navigator.share({
             title: "BLUFF™ Duel Challenge",
-            // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
-            text:  `I scored ${score}/${total} on BLUFF™. Can you beat me? 🎯`,
+            text:  `Crushed AXIOM with ${score.toLocaleString('en-US')} points. ${correctCount}/${total} reads. Can you beat me? 🎯`,
             url,
           }).catch(() => {});
         } else {
@@ -2884,8 +2883,8 @@ export default function BluffGame() {
               onClick={() => {
                 const grid = dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("");
                 const rankStr = dailyRank ? ` · #${dailyRank}/${dailyPlayers}` : "";
-                // TODO(cashout-cleanup) URGENT: score is points now — "2847/12" will look wrong.
-                const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${score}/${total}${rankStr}\nplaybluff.games`;
+                const scoreFmt = score.toLocaleString('en-US');
+                const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${scoreFmt} pts · ${correctCount}/${total}${rankStr}\nplaybluff.games`;
                 if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
                 else navigator.clipboard?.writeText(text).then(() => alert("Copied! 📋")).catch(() => alert(text));
               }}
@@ -2946,8 +2945,9 @@ export default function BluffGame() {
                 if (navigator.share) {
                   navigator.share({
                     title: "BLUFF™ — Can you beat me?",
-                    // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
-                    text: `I scored ${score}/${total} against AXIOM. Think you can do better? 🎯`,
+                    text: won
+                      ? `Crushed AXIOM with ${score.toLocaleString('en-US')} points. ${correctCount}/${total} reads. Think you can do better? 🎯`
+                      : `AXIOM got me with ${score.toLocaleString('en-US')} points. ${correctCount}/${total} reads. Think you can do better? 🎭`,
                     url: challengeURL,
                   }).catch(() => {
                     navigator.clipboard?.writeText(challengeURL);
@@ -2989,8 +2989,7 @@ export default function BluffGame() {
                     if (navigator.share) {
                       navigator.share({
                         title: "BLUFF™ Duel Challenge",
-                        // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
-                        text:  `I scored ${score}/${total} on BLUFF™. Can you beat me with the same questions? 🎯`,
+                        text:  `Crushed AXIOM with ${score.toLocaleString('en-US')} points on these questions. ${correctCount}/${total} reads. Can you beat me? 🎯`,
                         url,
                       }).catch(() => navigator.clipboard?.writeText(url));
                     } else {
@@ -3033,8 +3032,7 @@ export default function BluffGame() {
               const grid = dailyResultsRef.current.length > 0
                 ? "\n" + dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")
                 : "";
-              // TODO(cashout-cleanup) URGENT: score is points now — share copy will look wrong.
-              const text = `🎭 I scored ${score}/${total} against AXIOM in BLUFF!${grid}\nCan you beat me?`;
+              const text = `🎭 Crushed AXIOM with ${score.toLocaleString('en-US')} points in BLUFF! ${correctCount}/${total} reads.${grid}\nCan you beat me?`;
               tg.shareToChat(text, "https://playbluff.games");
             }}
             style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"rgba(255,255,255,.03)", color:"#5a5a68", border:"1px solid rgba(255,255,255,.07)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
