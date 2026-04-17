@@ -2272,9 +2272,8 @@ export default function BluffGame() {
         </div>
 
         {total>0&&(
-          // TODO(cashout-cleanup): `score` is now points, not a correct count — "Correct" tile now shows points.
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14,animation:"g-fadeUp .5s .3s both"}}>
-            {[[score,"Correct",T.ok],[total,"Played",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
+            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,"Correct",T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
               <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
                 <div style={{fontSize:"clamp(20px,6vw,28px)",fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
                 <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
@@ -2825,11 +2824,10 @@ export default function BluffGame() {
               <div key={i} style={{width:i===roundIdx?8:5,height:i===roundIdx?8:5,borderRadius:"50%",transition:"all .2s",background:i<roundIdx?"rgba(255,255,255,.45)":i===roundIdx?WAVE_COLORS[getWave(i)]:"rgba(255,255,255,.1)",marginTop:i===roundIdx?-1.5:0}}/>
             ))}
           </div>
-          {/* TODO(cashout-cleanup) URGENT: `{score}/{total}` and accuracy percent will look broken — score is now points, not out-of-total. */}
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
-            <span>Score <b style={{color:T.gold,fontSize:13}}>{score}/{total}</b></span>
+            <span>Points <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
             <span style={{opacity:.2}}>|</span>
-            <span>Accuracy <b style={{color:T.gold,fontSize:13}}>{total?Math.round(score/total*100):0}%</b></span>
+            <span>Hits <b style={{color:T.gold,fontSize:13}}>{correctCount}/{total}</b></span>
             <span style={{opacity:.2}}>|</span>
             <span>Streak <b style={{color:streak>0?T.gold:T.dim,fontSize:13}}>{streak}🔥</b></span>
           </div>
@@ -2851,9 +2849,8 @@ export default function BluffGame() {
           <div style={{fontSize:48,marginBottom:8}}>{won?"🏆":"💀"}</div>
           <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(18px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:won?T.gold:T.bad}}>{won?"You beat AXIOM!":"AXIOM wins... this time."}</h2>
           <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:"0 0 16px"}}>{won?"Impressive. AXIOM did not expect this.":"Train harder. AXIOM is patient."}</p>
-          {/* TODO(cashout-cleanup) URGENT: `score+"/"+total` and accuracy will look broken — score is now points, not out-of-total. */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {[[score+"/"+total,"Correct",T.ok],[Math.round(score/total*100)+"%","Accuracy",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
+            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,`Accuracy ${total?Math.round(correctCount/total*100):0}%`,T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
               <div key={l} style={{background:"#07070e",borderRadius:10,border:`1px solid ${T.gb}`,padding:"12px 6px"}}>
                 <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
                 <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:2}}>{l}</div>
@@ -2900,10 +2897,10 @@ export default function BluffGame() {
             background:"rgba(244,63,94,.08)",border:"1px solid rgba(244,63,94,.2)",
             borderRadius:12,animation:"g-fadeUp .5s .35s both"}}>
             <div style={{fontSize:11,letterSpacing:"3px",color:"#f43f5e",marginBottom:4}}>⚡ BLITZ RESULT</div>
-            {/* TODO(cashout-cleanup) URGENT: `{score}/4` and tier thresholds (score>=3, etc.) assume count 0-12; score is now points in the 100s-1000s. */}
-            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,color:"#f43f5e"}}>{score}/4</div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,color:"#f43f5e"}}>{correctCount}/4</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.55)",marginTop:2,fontFamily:"Georgia,serif"}}>{score.toLocaleString('en-US')} pts</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.4)",marginTop:4}}>
-              {score===4?"AXIOM demolished. 🔥":score>=3?"Sharp. Very sharp.":score>=2?"Decent.":"AXIOM wins."}
+              {correctCount===4?"AXIOM demolished. 🔥":correctCount>=3?"Sharp. Very sharp.":correctCount>=2?"Decent.":"AXIOM wins."}
             </div>
           </div>
         )}
