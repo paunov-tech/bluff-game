@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { PartySocket } from "partysocket";
 import { SCHEMA, QUESTIONS_PER_WAVE } from "./config/schema";
 import { getFallback } from "./config/fallbacks";
@@ -38,6 +38,14 @@ function useTelegram() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Safari Private mode and strict Firefox throw on any localStorage access.
+function safeLSGet(key, fallback = null) {
+  try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; }
+}
+function safeLSSet(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* quota/private mode — ignore */ }
+}
+
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
 const BETA_MODE = true;
@@ -810,7 +818,7 @@ export default function BluffGame() {
   const tg = useTelegram();
   const [showIntro, setShowIntro] = useState(true);
   const [screen, setScreen] = useState("home");
-  const [lang, setLang] = useState(()=>localStorage.getItem("bluff_lang")||"en");
+  const [lang, setLang] = useState(()=>safeLSGet("bluff_lang","en"));
   const [stmts, setStmts] = useState([]);
   const [roundIdx, setRoundIdx] = useState(0);
   const [category, setCategory] = useState("history");
@@ -846,7 +854,7 @@ export default function BluffGame() {
   const [challenge, setChallenge] = useState(null);
   const [duelId, setDuelId] = useState(null);
   const [duelCreating, setDuelCreating] = useState(false);
-  const [duelName, setDuelName] = useState(() => localStorage.getItem("bluff_duel_name") || "");
+  const [duelName, setDuelName] = useState(() => safeLSGet("bluff_duel_name", ""));
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -874,20 +882,16 @@ export default function BluffGame() {
   const [duelConnectionState, setDuelConnectionState] = useState("idle");
   const [duelRetryAttempt, setDuelRetryAttempt] = useState(0);
   const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.paunov-tech.partykit.dev";
-  const [activeSkin, setActiveSkin] = useState(
-    () => localStorage.getItem("bluff_skin") || "default"
-  );
+  const [activeSkin, setActiveSkin] = useState(() => safeLSGet("bluff_skin", "default"));
   const [ownedSkins, setOwnedSkins] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("bluff_owned_skins") || '["default"]'); }
+    try { return JSON.parse(safeLSGet("bluff_owned_skins", '["default"]')); }
     catch { return ["default"]; }
   });
   const [showShop, setShowShop] = useState(false);
   const [lastWrongStmt, setLastWrongStmt] = useState(null);
   const [shameSent, setShameSent] = useState(false);
   const [lastAxiomLine, setLastAxiomLine] = useState("");
-  const [voiceEnabled, setVoiceEnabled] = useState(
-    () => localStorage.getItem("bluff_voice") !== "off"
-  );
+  const [voiceEnabled, setVoiceEnabled] = useState(() => safeLSGet("bluff_voice") !== "off");
   const timerRef = useRef(null);
   const autoAdvanceRef = useRef(null);
   const audioRef = useRef(null);
@@ -1193,23 +1197,6 @@ export default function BluffGame() {
       clearTimeout(fetchTimeout);
       setLoadingRound(false);
     }
-  }
-
-  // ── TIMER ────────────────────────────────────────────────────
-  function startTimer(diff) {
-    clearInterval(timerRef.current);
-    const maxT = TIMER_PER_DIFF[diff]||45;
-    setTime(maxT);
-    timerRef.current = setInterval(()=>{
-      setTime(t=>{
-        if(t<=1){ clearInterval(timerRef.current); return 0; }
-        if(t===Math.floor(maxT*.45)) axiomSpeak("taunt_early","taunting"); // ~45% remaining
-        if(t===10){ axiomSpeak("taunt_late","taunting"); haptic.timerWarning(); }
-        if(t===5) haptic.timerWarning();
-        if(t===3) haptic.timerWarning();
-        return t-1;
-      });
-    },1000);
   }
 
   // ── CARD SELECT — psychological warfare ─────────────────────
