@@ -862,6 +862,8 @@ export default function BluffGame() {
   const [duelRoundData, setDuelRoundData] = useState(null);
   const [duelBluffIdx, setDuelBluffIdx] = useState(-1);
   const [duelWinner, setDuelWinner] = useState(null);
+  const [duelIsTie, setDuelIsTie] = useState(false);
+  const [duelSelection, setDuelSelection] = useState(null);
   const [duelBonusOpportunity, setDuelBonusOpportunity] = useState(false);
   const [myDuelId, setMyDuelId] = useState(null);
   const duelSocketRef = useRef(null);
@@ -1506,6 +1508,7 @@ export default function BluffGame() {
     }
     if (msg.type === "round_start") {
       duelAnswerSentRef.current = false;
+      setDuelSelection(null);
       setDuelCurrentRound(msg.round);
       setDuelRoundData(msg.data);
       setDuelPhase("playing");
@@ -1533,6 +1536,7 @@ export default function BluffGame() {
     }
     if (msg.type === "game_over") {
       setDuelWinner(msg.winner);
+      setDuelIsTie(!!msg.isTie);
       setDuelScores(msg.scores);
       setDuelPhase("finished");
       setDuelScreen("result");
@@ -1551,6 +1555,7 @@ export default function BluffGame() {
   function sendDuelAnswer(sel) {
     if (!duelSocketRef.current || duelAnswerSentRef.current) return;
     duelAnswerSentRef.current = true;
+    setDuelSelection(sel);
     duelSocketRef.current.send(JSON.stringify({
       type: "answer",
       sel,
@@ -2278,6 +2283,7 @@ export default function BluffGame() {
             const myAnswer = duelAnswers[myDuelId];
             const revealed = duelPhase==="round_result";
             let bg="rgba(15,15,26,.9)",border="rgba(255,255,255,.07)";
+            if(!revealed && duelSelection===i){bg="rgba(232,197,71,.12)";border="rgba(232,197,71,.5)";}
             if(revealed && i===duelBluffIdx){bg="rgba(244,63,94,.08)";border="rgba(244,63,94,.4)";}
             if(revealed && myAnswer?.sel===i && i!==duelBluffIdx){border="rgba(244,63,94,.3)";}
             if(revealed && myAnswer?.sel===i && myAnswer?.correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";}
@@ -2291,10 +2297,10 @@ export default function BluffGame() {
                   textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",
                   lineHeight:1.55,fontFamily:"inherit",minHeight:52,transition:"all .2s"}}>
                 <div style={{width:26,height:26,borderRadius:"50%",flexShrink:0,
-                  border:`2px solid ${revealed&&isBluff?"rgba(244,63,94,.5)":"rgba(255,255,255,.1)"}`,
+                  border:`2px solid ${revealed&&isBluff?"rgba(244,63,94,.5)":!revealed&&duelSelection===i?"#e8c547":"rgba(255,255,255,.1)"}`,
                   display:"flex",alignItems:"center",justifyContent:"center",
                   fontSize:12,fontWeight:700,marginTop:2,
-                  background:revealed&&isBluff?"rgba(244,63,94,.18)":"transparent",
+                  background:revealed&&isBluff?"rgba(244,63,94,.18)":!revealed&&duelSelection===i?"rgba(232,197,71,.2)":"transparent",
                   color:revealed&&isBluff?"#f43f5e":"rgba(90,90,104,1)"}}>
                   {revealed&&isBluff?"!":String.fromCharCode(65+i)}
                 </div>
@@ -2343,7 +2349,17 @@ export default function BluffGame() {
           DUEL OVER
         </div>
 
-        {duelWinner && (
+        {duelIsTie ? (
+          <div style={{marginBottom:24}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,
+              color:"#e8c547",marginBottom:8}}>
+              IT'S A TIE
+            </div>
+            <div style={{fontSize:14,color:"rgba(255,255,255,.4)"}}>
+              🤝 Equally matched deceivers
+            </div>
+          </div>
+        ) : duelWinner && (
           <div style={{marginBottom:24}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,
               color: duelWinner===myDuelId?"#e8c547":"#f43f5e",marginBottom:8}}>
@@ -2372,17 +2388,42 @@ export default function BluffGame() {
         ))}
 
         <button onClick={()=>{
-          duelSocketRef.current?.close();
-          setDuelScreen(null);
-          setDuelPlayers({});
-          setDuelScores({});
-          setDuelWinner(null);
-          setDuelConnectionState("idle"); setDuelRetryAttempt(0);
+          if (duelSocketRef.current?.readyState === 1) {
+            setDuelScores({});
+            setDuelWinner(null);
+            setDuelIsTie(false);
+            setDuelSelection(null);
+            duelAnswerSentRef.current = false;
+            duelSocketRef.current.send(JSON.stringify({ type: "new_game" }));
+          } else {
+            duelSocketRef.current?.close();
+            setDuelScreen(null);
+            setDuelPlayers({});
+            setDuelScores({});
+            setDuelWinner(null);
+            setDuelIsTie(false);
+            setDuelConnectionState("idle"); setDuelRetryAttempt(0);
+          }
         }} style={{width:"100%",marginTop:20,padding:"16px",fontSize:14,fontWeight:700,
           background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
           border:"none",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
           letterSpacing:"1px",textTransform:"uppercase"}}>
           Play again
+        </button>
+
+        <button onClick={()=>{
+          duelSocketRef.current?.close();
+          setDuelScreen(null);
+          setDuelPlayers({});
+          setDuelScores({});
+          setDuelWinner(null);
+          setDuelIsTie(false);
+          setDuelConnectionState("idle"); setDuelRetryAttempt(0);
+        }} style={{width:"100%",marginTop:10,padding:"14px",fontSize:13,fontWeight:600,
+          background:"transparent",color:"rgba(255,255,255,.5)",
+          border:"1px solid rgba(255,255,255,.1)",borderRadius:12,cursor:"pointer",
+          fontFamily:"inherit",letterSpacing:"1px"}}>
+          Exit to home
         </button>
       </div>
       <GameStyles/>

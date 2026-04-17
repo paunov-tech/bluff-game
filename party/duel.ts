@@ -27,6 +27,117 @@ const REGULAR_TIMER = 35_000; // 35 seconds per question
 export default class DuelServer implements Party.Server {
   state: DuelRoom;
 
+  static FALLBACK_POOL = [
+    {
+      category: "history",
+      statements: [
+        { text: "Napoleon was once attacked by a horde of rabbits during a hunt.", real: true },
+        { text: "Cleopatra lived closer in time to the Moon landing than the pyramids.", real: true },
+        { text: "Roman priests built steam-powered mechanisms for temple doors.", real: true },
+        { text: "The Eiffel Tower was originally built in Brussels in 1889.", real: false },
+      ],
+    },
+    {
+      category: "science",
+      statements: [
+        { text: "Honey never spoils — 3,000-year-old honey from tombs is still edible.", real: true },
+        { text: "A teaspoon of neutron star weighs about 6 billion tons.", real: true },
+        { text: "Bananas are slightly radioactive due to potassium-40.", real: true },
+        { text: "Jupiter's core is a single diamond the size of Earth.", real: false },
+      ],
+    },
+    {
+      category: "animals",
+      statements: [
+        { text: "A group of flamingos is called a flamboyance.", real: true },
+        { text: "Octopuses have three hearts and blue blood.", real: true },
+        { text: "Crows can recognize human faces and hold grudges for years.", real: true },
+        { text: "Dolphins sleep with both eyes closed using stereo dreaming.", real: false },
+      ],
+    },
+    {
+      category: "geography",
+      statements: [
+        { text: "Russia has 11 time zones across its territory.", real: true },
+        { text: "Australia is wider than the Moon is in diameter.", real: true },
+        { text: "Vatican City is the smallest country in the world.", real: true },
+        { text: "The Nile flows north-to-south across Africa.", real: false },
+      ],
+    },
+    {
+      category: "food",
+      statements: [
+        { text: "Carrots were originally purple, not orange.", real: true },
+        { text: "Peanuts are legumes, not nuts.", real: true },
+        { text: "Honey is the only food that never goes bad.", real: true },
+        { text: "Tomatoes were banned in France until 1850 as a poison.", real: false },
+      ],
+    },
+    {
+      category: "human_body",
+      statements: [
+        { text: "Your stomach gets a new lining every 3-4 days.", real: true },
+        { text: "The human eye can distinguish about 10 million colors.", real: true },
+        { text: "Your heart beats roughly 100,000 times per day.", real: true },
+        { text: "Humans share 80% of their DNA with bananas.", real: false },
+      ],
+    },
+    {
+      category: "space",
+      statements: [
+        { text: "Venus rotates backward compared to most planets.", real: true },
+        { text: "A day on Venus is longer than its year.", real: true },
+        { text: "Saturn's density is low enough that it would float in water.", real: true },
+        { text: "Neil Armstrong left a family photo on the Moon.", real: false },
+      ],
+    },
+    {
+      category: "technology",
+      statements: [
+        { text: "The first computer bug was an actual moth found in 1947.", real: true },
+        { text: "Email existed before the World Wide Web.", real: true },
+        { text: "The Firefox logo is actually a red panda, not a fox.", real: true },
+        { text: "The @ symbol was invented for email in 1971.", real: false },
+      ],
+    },
+    {
+      category: "music",
+      statements: [
+        { text: "Beethoven continued composing after going deaf.", real: true },
+        { text: "The Beatles were rejected by Decca Records in 1962.", real: true },
+        { text: "Mozart wrote his first symphony at age 8.", real: true },
+        { text: "Pianos have exactly 100 keys on a standard model.", real: false },
+      ],
+    },
+    {
+      category: "language",
+      statements: [
+        { text: "Mandarin has more native speakers than any other language.", real: true },
+        { text: "The shortest English sentence uses just 'Go.'", real: true },
+        { text: "The word 'set' has over 400 definitions in English.", real: true },
+        { text: "The word 'queue' uses 80% silent letters.", real: false },
+      ],
+    },
+    {
+      category: "sports",
+      statements: [
+        { text: "The Olympic flame is lit using sunlight in Olympia, Greece.", real: true },
+        { text: "Basketball was invented using a peach basket in 1891.", real: true },
+        { text: "Golf balls have an average of 336 dimples.", real: true },
+        { text: "Tennis scoring uses base-10 numbers like most sports.", real: false },
+      ],
+    },
+    {
+      category: "inventions",
+      statements: [
+        { text: "Bubble wrap was invented as textured wallpaper.", real: true },
+        { text: "Post-it notes were discovered from a failed glue experiment.", real: true },
+        { text: "The microwave was invented by accident in 1945.", real: true },
+        { text: "Velcro was inspired by fish scales in the 1950s.", real: false },
+      ],
+    },
+  ];
+
   constructor(readonly room: Party.Room) {
     this.state = {
       mode: "regular",
@@ -93,7 +204,16 @@ export default class DuelServer implements Party.Server {
 
   buildFallbackRounds() {
     const difficulties = this.state.mode === "blitz" ? [3, 4, 4, 5] : [2, 3, 3, 4, 3, 4];
-    return difficulties.map(diff => this.getFallbackRound(diff));
+    const pool = [...DuelServer.FALLBACK_POOL];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    return difficulties.map((diff, idx) => ({
+      category: pool[idx % pool.length].category,
+      difficulty: diff,
+      statements: pool[idx % pool.length].statements,
+    }));
   }
 
   startCountdown() {
@@ -180,6 +300,22 @@ export default class DuelServer implements Party.Server {
   onMessage(message: string, sender: Party.Connection) {
     const msg = JSON.parse(message);
 
+    if (msg.type === "new_game") {
+      this.state.rounds = this.buildFallbackRounds();
+      this.state.currentRound = 0;
+      this.state.answers = {};
+      this.state.phase = "countdown";
+      for (const pid in this.state.players) {
+        this.state.players[pid].score = 0;
+        this.state.players[pid].ready = false;
+        this.state.players[pid].timeLeft = BLITZ_CLOCK;
+        this.state.players[pid].clockRunning = false;
+      }
+      this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
+      this.startCountdown();
+      return;
+    }
+
     if (msg.type === "answer") {
       const player = this.state.players[sender.id];
       if (!player || this.state.answers[sender.id]) return;
@@ -251,12 +387,15 @@ export default class DuelServer implements Party.Server {
   finishGame() {
     this.state.phase = "finished";
     const players = Object.values(this.state.players);
-    const winner = players.reduce((a, b) => a.score > b.score ? a : b);
+    const sorted = [...players].sort((a, b) => b.score - a.score);
+    const top = sorted[0];
+    const isTie = sorted.length >= 2 && sorted[0].score === sorted[1].score;
 
     this.room.broadcast(JSON.stringify({
       type: "game_over",
-      winner: winner.id,
-      winnerName: winner.name,
+      winner: isTie ? null : top.id,
+      winnerName: isTie ? null : top.name,
+      isTie,
       scores: Object.fromEntries(players.map(p => [p.id, p.score])),
     }));
   }
