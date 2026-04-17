@@ -26,6 +26,21 @@ const REGULAR_TIMER = 45_000; // 45 seconds per round
 
 export default class DuelServer implements Party.Server {
   state: DuelRoom;
+  pendingTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+
+  schedule(fn: () => void, ms: number) {
+    const id = setTimeout(() => {
+      this.pendingTimers.delete(id);
+      fn();
+    }, ms);
+    this.pendingTimers.add(id);
+    return id;
+  }
+
+  clearPendingTimers() {
+    for (const id of this.pendingTimers) clearTimeout(id);
+    this.pendingTimers.clear();
+  }
 
   static FALLBACK_POOL = [
     { category: "history", statements: [
@@ -191,10 +206,11 @@ export default class DuelServer implements Party.Server {
   startCountdown() {
     this.state.phase = "countdown";
     this.room.broadcast(JSON.stringify({ type: "countdown", seconds: 3 }));
-    setTimeout(() => this.startRound(), 3000);
+    this.schedule(() => this.startRound(), 3000);
   }
 
   startRound() {
+    console.log(`[server] startRound #${this.state.currentRound} at ${Date.now()}`);
     this.state.phase = "playing";
     this.state.roundStartTime = Date.now();
     this.state.answers = {};
@@ -219,7 +235,7 @@ export default class DuelServer implements Party.Server {
 
     // Regular mode: auto-advance after timer
     if (this.state.mode === "regular") {
-      setTimeout(() => this.resolveRound(), REGULAR_TIMER);
+      this.schedule(() => this.resolveRound(), REGULAR_TIMER);
     }
   }
 
@@ -267,7 +283,7 @@ export default class DuelServer implements Party.Server {
     }));
 
     if (!anyFlagged && this.state.phase === "playing") {
-      setTimeout(() => this.tickClocks(), 200);
+      this.schedule(() => this.tickClocks(), 200);
     }
   }
 
@@ -275,6 +291,7 @@ export default class DuelServer implements Party.Server {
     const msg = JSON.parse(message);
 
     if (msg.type === "new_game") {
+      this.clearPendingTimers();
       this.state.rounds = this.buildFallbackRounds();
       this.state.currentRound = 0;
       this.state.answers = {};
@@ -306,6 +323,7 @@ export default class DuelServer implements Party.Server {
         time: timeUsed,
         correct,
       };
+      console.log(`[server] answer from ${sender.id.slice(0,8)}: sel=${msg.sel} correct=${correct}. total=${Object.keys(this.state.answers).length}/${Object.keys(this.state.players).length}`);
 
       if (correct) {
         player.score += points;
@@ -326,12 +344,13 @@ export default class DuelServer implements Party.Server {
 
       // If both answered, resolve round
       if (Object.keys(this.state.answers).length >= Object.keys(this.state.players).length) {
-        setTimeout(() => this.resolveRound(), 500);
+        this.schedule(() => this.resolveRound(), 500);
       }
     }
   }
 
   resolveRound() {
+    console.log(`[server] resolveRound called, phase=${this.state.phase}, answers=${Object.keys(this.state.answers).length}/${Object.keys(this.state.players).length}, t=${Date.now()}`);
     if (this.state.phase !== "playing") return;
     this.state.phase = "round_result";
 
@@ -351,14 +370,16 @@ export default class DuelServer implements Party.Server {
     const nextRound = this.state.currentRound + 1;
 
     if (nextRound >= totalRounds) {
-      setTimeout(() => this.finishGame(), this.state.mode === "blitz" ? 1500 : 2500);
+      this.schedule(() => this.finishGame(), this.state.mode === "blitz" ? 1500 : 2500);
     } else {
       this.state.currentRound = nextRound;
-      setTimeout(() => this.startRound(), this.state.mode === "blitz" ? 1500 : 2500);
+      this.schedule(() => this.startRound(), this.state.mode === "blitz" ? 1500 : 2500);
     }
   }
 
   finishGame() {
+    console.log(`[server] finishGame called at ${Date.now()}, scores=${JSON.stringify(Object.fromEntries(Object.values(this.state.players).map(p=>[p.id.slice(0,8), p.score])))}`);
+    this.clearPendingTimers();
     this.state.phase = "finished";
     const players = Object.values(this.state.players);
     const sorted = [...players].sort((a, b) => b.score - a.score);
@@ -380,6 +401,9 @@ export default class DuelServer implements Party.Server {
       delete this.state.players[conn.id];
       this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
       console.log(`[server] removed player ${conn.id}, remaining: ${Object.keys(this.state.players).length}`);
+    }
+    if (Object.keys(this.state.players).length === 0) {
+      this.clearPendingTimers();
     }
   }
 
