@@ -1791,6 +1791,17 @@ export default function BluffGame() {
     });
   }, []);
 
+  // Deep-link: ?duel=CODE&mode=regular|blitz → auto-join that room
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const duelCode = params.get("duel");
+    const mode = params.get("mode") || "regular";
+    if (duelCode && duelCode.length === 6) {
+      window.history.replaceState({}, "", window.location.pathname);
+      joinDuel(duelCode.toUpperCase(), mode);
+    }
+  }, []);
+
   // Load daily challenge on mount and on return to home
   useEffect(() => { loadDailyChallenge(); }, []);
   useEffect(() => {
@@ -1954,6 +1965,111 @@ export default function BluffGame() {
     axiomSpeak("intro","idle");
   }}/><GameStyles/></>;
 
+  // ─── DUEL MODE SELECT (Create vs Join) ─────────────────────
+  if (duelScreen === "mode-select") return (
+    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
+      fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
+      <div style={{width:"100%",maxWidth:420}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
+            DUEL MODE
+          </div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:900,color:"#e8c547"}}>
+            1v1 vs a friend
+          </div>
+        </div>
+
+        {/* CREATE */}
+        <div style={{marginBottom:20,padding:"20px",background:"rgba(232,197,71,.05)",
+          border:"1px solid rgba(232,197,71,.2)",borderRadius:14}}>
+          <div style={{fontSize:13,color:"#e8c547",fontWeight:700,marginBottom:10,letterSpacing:"2px"}}>
+            CREATE
+          </div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:14,lineHeight:1.5}}>
+            Start a room. Share the link with a friend.
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={() => openDuel("regular")}
+              style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
+                background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+                border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+                letterSpacing:"1px",textTransform:"uppercase"}}>
+              ⚔️ Regular
+            </button>
+            <button onClick={() => openDuel("blitz")}
+              style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
+                background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+                border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+                letterSpacing:"1px",textTransform:"uppercase"}}>
+              ⚡ Blitz
+            </button>
+          </div>
+        </div>
+
+        {/* JOIN */}
+        <div style={{padding:"20px",background:"rgba(255,255,255,.03)",
+          border:"1px solid rgba(255,255,255,.1)",borderRadius:14}}>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.9)",fontWeight:700,marginBottom:10,letterSpacing:"2px"}}>
+            JOIN
+          </div>
+          <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:14,lineHeight:1.5}}>
+            Got a code? Enter it here.
+          </div>
+          <input
+            placeholder="CODE"
+            maxLength={6}
+            autoCapitalize="characters"
+            autoFocus
+            style={{width:"100%",padding:"14px",fontSize:22,textAlign:"center",
+              background:"rgba(255,255,255,.04)",border:"1px solid rgba(255,255,255,.15)",
+              borderRadius:10,color:"#e8e6e1",fontFamily:"Georgia,serif",fontWeight:900,
+              letterSpacing:"6px",outline:"none",marginBottom:10,textTransform:"uppercase",
+              boxSizing:"border-box"}}
+            id="home-join-input"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const code = e.target.value.trim().toUpperCase();
+                if (code.length === 6) joinDuel(code, "regular");
+              }
+            }}
+          />
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={() => {
+              const code = document.getElementById("home-join-input").value.trim().toUpperCase();
+              if (code.length === 6) joinDuel(code, "regular");
+            }}
+              style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
+                background:"rgba(232,197,71,.12)",color:"#e8c547",
+                border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
+                fontFamily:"inherit",letterSpacing:"1px",textTransform:"uppercase"}}>
+              Join Regular
+            </button>
+            <button onClick={() => {
+              const code = document.getElementById("home-join-input").value.trim().toUpperCase();
+              if (code.length === 6) joinDuel(code, "blitz");
+            }}
+              style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
+                background:"rgba(232,197,71,.12)",color:"#e8c547",
+                border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
+                fontFamily:"inherit",letterSpacing:"1px",textTransform:"uppercase"}}>
+              Join Blitz
+            </button>
+          </div>
+        </div>
+
+        <button onClick={() => setDuelScreen(null)}
+          style={{marginTop:20,width:"100%",padding:"12px",fontSize:12,
+            background:"transparent",color:"rgba(255,255,255,.4)",
+            border:"1px solid rgba(255,255,255,.1)",borderRadius:10,cursor:"pointer",
+            fontFamily:"inherit"}}>
+          ← Back
+        </button>
+      </div>
+      <GameStyles/>
+    </div>
+  );
+
   // ─── DUEL LOBBY ────────────────────────────────────────────
   if (duelScreen === "lobby") return (
     <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
@@ -2006,8 +2122,27 @@ export default function BluffGame() {
             {duelRoomId}
           </div>
           <div style={{fontSize:12,color:"rgba(255,255,255,.3)",marginTop:6,letterSpacing:"2px"}}>
-            ROOM CODE — SHARE WITH OPPONENT
+            ROOM CODE
           </div>
+          <button onClick={() => {
+            const url = `https://playbluff.games/?duel=${duelRoomId}&mode=${duelMode}`;
+            const text = `Duel me on BLUFF 🎭\n${url}`;
+            if (navigator.share) {
+              navigator.share({ title: "BLUFF Duel", text, url }).catch(() => {
+                navigator.clipboard?.writeText(url).then(() => alert("Link copied to clipboard"));
+              });
+            } else {
+              navigator.clipboard?.writeText(url)
+                .then(() => alert("Link copied to clipboard"))
+                .catch(() => prompt("Copy this link:", url));
+            }
+          }}
+            style={{marginTop:14,padding:"12px 20px",fontSize:13,fontWeight:700,
+              background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+              border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+              letterSpacing:"1px",textTransform:"uppercase"}}>
+            📨 Share duel link
+          </button>
         </div>
 
         {Object.values(duelPlayers).map((p,i) => (
@@ -2044,33 +2179,6 @@ export default function BluffGame() {
           <div style={{textAlign:"center",fontSize:72,fontWeight:900,fontFamily:"Georgia,serif",
             color:"#e8c547",animation:"g-pulse .5s infinite"}}>
             {duelCountdown}
-          </div>
-        )}
-
-        {Object.keys(duelPlayers).length < 2 && (
-          <div style={{marginTop:24}}>
-            <div style={{fontSize:11,color:"rgba(255,255,255,.2)",letterSpacing:"2px",
-              textAlign:"center",marginBottom:12}}>OR JOIN EXISTING ROOM</div>
-            <div style={{display:"flex",gap:8}}>
-              <input
-                placeholder="Room code..."
-                style={{flex:1,padding:"12px 14px",fontSize:14,background:"rgba(255,255,255,.04)",
-                  border:"1px solid rgba(255,255,255,.1)",borderRadius:10,color:"#e8e6e1",
-                  fontFamily:"inherit",outline:"none"}}
-                id="join-room-input"
-              />
-              <button
-                onClick={()=>{
-                  const code = document.getElementById("join-room-input").value;
-                  if(code) joinDuel(code, duelMode);
-                }}
-                style={{padding:"12px 18px",fontSize:13,fontWeight:700,
-                  background:"rgba(232,197,71,.12)",color:"#e8c547",
-                  border:"1px solid rgba(232,197,71,.25)",borderRadius:10,
-                  cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                Join
-              </button>
-            </div>
           </div>
         )}
 
@@ -2382,9 +2490,9 @@ export default function BluffGame() {
           <span>Blitz — 4 questions, 18 seconds</span>
         </button>
 
-        {/* Duel buttons */}
+        {/* Duel button → mode-select */}
         <div style={{display:"flex",gap:8,marginBottom:10,animation:"g-fadeUp .5s .42s both"}}>
-          <button onClick={()=>openDuel("regular")} style={{
+          <button onClick={()=>setDuelScreen("mode-select")} style={{
             flex:1,minHeight:48,padding:"13px",
             fontSize:"clamp(11px,3vw,13px)",fontWeight:700,letterSpacing:"1px",
             textTransform:"uppercase",
@@ -2392,17 +2500,7 @@ export default function BluffGame() {
             border:"1px solid rgba(232,197,71,.2)",
             borderRadius:14,fontFamily:"inherit",cursor:"pointer",
           }}>
-            ⚔️ Duel
-          </button>
-          <button onClick={()=>openDuel("blitz")} style={{
-            flex:1,minHeight:48,padding:"13px",
-            fontSize:"clamp(11px,3vw,13px)",fontWeight:700,letterSpacing:"1px",
-            textTransform:"uppercase",
-            background:"rgba(244,63,94,.06)",color:"#f43f5e",
-            border:"1px solid rgba(244,63,94,.2)",
-            borderRadius:14,fontFamily:"inherit",cursor:"pointer",
-          }}>
-            ⚡ Duel Blitz
+            ⚔️ Duel a Friend
           </button>
         </div>
 
