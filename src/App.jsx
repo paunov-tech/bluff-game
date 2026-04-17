@@ -1453,14 +1453,14 @@ export default function BluffGame() {
     const connectionTimeout = setTimeout(() => failAndMaybeRetry("timeout"), 4000);
 
     ws.addEventListener("message", (e) => {
-      console.log("[duel] raw message received:", e.data.slice(0, 200));
+      console.log("[duel-debug] raw message:", e.data.slice(0, 300));
       try {
         const msg = JSON.parse(e.data);
-        console.log("[duel] parsed message type:", msg.type,
-          msg.state ? `players: ${Object.keys(msg.state.players || {}).length}` : "");
+        console.log("[duel-debug] parsed:", msg.type,
+          msg.state ? `players=${Object.keys(msg.state.players || {}).length}` : "");
         handleDuelMessage(msg, ws);
       } catch (err) {
-        console.error("[duel] failed to parse message:", err, e.data);
+        console.error("[duel-debug] parse error:", err);
       }
     });
 
