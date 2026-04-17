@@ -4,9 +4,24 @@ import { LADDER_DIFFICULTY } from "../data/difficultyMap.js";
 const PLAYED_KEY = "bluff_played_v2";
 const BLOCK_SIZE = 10;
 
+function readPlayed() {
+  try {
+    const raw = localStorage.getItem(PLAYED_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return new Set(Array.isArray(arr) ? arr : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writePlayed(arr) {
+  try { localStorage.setItem(PLAYED_KEY, JSON.stringify(arr)); } catch {}
+}
+
 export function getNextRound(ladderPosition, lastThreeCats) {
   const targetDiff = LADDER_DIFFICULTY[ladderPosition] ?? 3;
-  let played = new Set(JSON.parse(localStorage.getItem(PLAYED_KEY) || "[]"));
+  let played = readPlayed();
 
   // Filter: matching difficulty + not played + not same category as recent 3
   let candidates = ROUNDS.filter(r =>
@@ -34,7 +49,7 @@ export function getNextRound(ladderPosition, lastThreeCats) {
     const allPlayed = [...played];
     const recentBlock = allPlayed.slice(-BLOCK_SIZE);
     played = new Set(recentBlock);
-    localStorage.setItem(PLAYED_KEY, JSON.stringify(recentBlock));
+    writePlayed(recentBlock);
     candidates = ROUNDS.filter(r =>
       r.difficulty === targetDiff && !played.has(r.id)
     );
@@ -47,6 +62,6 @@ export function getNextRound(ladderPosition, lastThreeCats) {
 
   const selected = candidates[Math.floor(Math.random() * candidates.length)];
   played.add(selected.id);
-  localStorage.setItem(PLAYED_KEY, JSON.stringify([...played]));
+  writePlayed([...played]);
   return selected;
 }

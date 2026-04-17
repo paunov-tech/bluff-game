@@ -244,14 +244,21 @@ class AudioEngine {
   // ─── INIT ──────────────────────────────────────────────────
   init() {
     if (this.ctx) return;
-    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.gain.value = 0.7;
-    this.masterGain.connect(this.ctx.destination);
-    const emitFn = (event, ...args) => this.emit(event, ...args);
-    this.breath = new AxiosBreath(this.ctx, this.masterGain, emitFn);
-    this.drone  = new TensionDrone(this.ctx, this.masterGain, emitFn);
-    this.piano  = new SparsePiano(this.ctx, this.masterGain);
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      this.ctx = new Ctx();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = 0.7;
+      this.masterGain.connect(this.ctx.destination);
+      const emitFn = (event, ...args) => this.emit(event, ...args);
+      this.breath = new AxiosBreath(this.ctx, this.masterGain, emitFn);
+      this.drone  = new TensionDrone(this.ctx, this.masterGain, emitFn);
+      this.piano  = new SparsePiano(this.ctx, this.masterGain);
+    } catch (e) {
+      console.warn("[audio] init failed:", e);
+      this.ctx = null;
+    }
   }
 
   // ─── TICK ──────────────────────────────────────────────────

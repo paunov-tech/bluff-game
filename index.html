@@ -16,6 +16,13 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #08080f; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
     #root { min-height: 100vh; min-height: 100dvh; }
+    button, input, textarea, select, a { outline: none; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+      outline: 2px solid rgba(232,197,71,0.75);
+      outline-offset: 2px;
+      border-radius: 6px;
+    }
+    button:disabled { cursor: not-allowed; opacity: 0.45; }
   </style>
   <style>
     /* Shop buy button glow */

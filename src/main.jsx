@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import DuelChallenge from "./screens/DuelChallenge";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function Root() {
   const path = window.location.pathname;
@@ -16,4 +17,11 @@ function Root() {
   return <App />;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<Root />);
+const rootEl = document.getElementById("root");
+if (rootEl) {
+  ReactDOM.createRoot(rootEl).render(
+    <ErrorBoundary>
+      <Root />
+    </ErrorBoundary>
+  );
+}

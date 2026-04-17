@@ -1712,14 +1712,17 @@ export default function BluffGame() {
 
   // Fetch AXIOM power + slayer event on mount
   useEffect(() => {
-    fetch("/api/axiom-power")
+    const controller = new AbortController();
+    let alive = true;
+    fetch("/api/axiom-power", { signal: controller.signal })
       .then(r => r.json())
-      .then(d => setAxiomPower(typeof d?.power === 'number' && !Number.isNaN(d.power) ? d.power : null))
+      .then(d => { if (alive) setAxiomPower(typeof d?.power === 'number' && !Number.isNaN(d.power) ? d.power : null); })
       .catch(() => {});
-    fetch("/api/slayer-event")
+    fetch("/api/slayer-event", { signal: controller.signal })
       .then(r => r.json())
-      .then(d => setSlayerEvent(d))
+      .then(d => { if (alive) setSlayerEvent(d); })
       .catch(() => {});
+    return () => { alive = false; controller.abort(); };
   }, []);
 
   // Detect challenge from URL
@@ -2067,7 +2070,8 @@ export default function BluffGame() {
           />
           <div style={{display:"flex",gap:8}}>
             <button onClick={() => {
-              const code = document.getElementById("home-join-input").value.trim().toUpperCase();
+              const el = document.getElementById("home-join-input");
+              const code = (el?.value || "").trim().toUpperCase();
               if (code.length === 6) joinDuel(code, "regular");
             }}
               style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
@@ -2077,7 +2081,8 @@ export default function BluffGame() {
               Join Regular
             </button>
             <button onClick={() => {
-              const code = document.getElementById("home-join-input").value.trim().toUpperCase();
+              const el = document.getElementById("home-join-input");
+              const code = (el?.value || "").trim().toUpperCase();
               if (code.length === 6) joinDuel(code, "blitz");
             }}
               style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
