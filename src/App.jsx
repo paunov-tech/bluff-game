@@ -864,6 +864,9 @@ export default function BluffGame() {
   const [duelWinner, setDuelWinner] = useState(null);
   const [duelIsTie, setDuelIsTie] = useState(false);
   const [duelSelection, setDuelSelection] = useState(null);
+  const [duelRoundStart, setDuelRoundStart] = useState(null);
+  const [duelRoundTimerMs, setDuelRoundTimerMs] = useState(45000);
+  const [duelTimeLeft, setDuelTimeLeft] = useState(45);
   const [duelBonusOpportunity, setDuelBonusOpportunity] = useState(false);
   const [myDuelId, setMyDuelId] = useState(null);
   const duelSocketRef = useRef(null);
@@ -1509,6 +1512,11 @@ export default function BluffGame() {
     if (msg.type === "round_start") {
       duelAnswerSentRef.current = false;
       setDuelSelection(null);
+      if (msg.timerMs && msg.startTime) {
+        setDuelRoundStart(msg.startTime);
+        setDuelRoundTimerMs(msg.timerMs);
+        setDuelTimeLeft(Math.ceil(msg.timerMs / 1000));
+      }
       setDuelCurrentRound(msg.round);
       setDuelRoundData(msg.data);
       setDuelPhase("playing");
@@ -1955,6 +1963,16 @@ export default function BluffGame() {
     };
   }, []);
 
+  useEffect(() => {
+    if (duelPhase !== "playing" || !duelRoundStart || duelMode === "blitz") return;
+    const iv = setInterval(() => {
+      const elapsed = Date.now() - duelRoundStart;
+      const remaining = Math.max(0, duelRoundTimerMs - elapsed);
+      setDuelTimeLeft(Math.ceil(remaining / 1000));
+    }, 500);
+    return () => clearInterval(iv);
+  }, [duelPhase, duelRoundStart, duelRoundTimerMs, duelMode]);
+
   // Unlock audio on first user gesture (iOS/mobile requirement)
   useEffect(() => {
     function unlockAudio() {
@@ -2257,8 +2275,17 @@ export default function BluffGame() {
               )}
             </div>
           ))}
-          <div style={{fontSize:12,color:"rgba(255,255,255,.3)",padding:"0 12px"}}>
-            {duelCurrentRound+1}/{duelMode==="blitz"?4:6}
+          <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"0 12px",gap:4}}>
+            <div style={{fontSize:11,color:"rgba(255,255,255,.3)",letterSpacing:"1px"}}>
+              {duelCurrentRound+1}/{duelMode==="blitz"?4:6}
+            </div>
+            {duelMode !== "blitz" && duelPhase === "playing" && (
+              <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",
+                color:duelTimeLeft<=10?"#f43f5e":duelTimeLeft<=20?"#e8c547":"rgba(255,255,255,.85)",
+                animation:duelTimeLeft<=5?"g-pulse 0.5s infinite":"none"}}>
+                {duelTimeLeft}s
+              </div>
+            )}
           </div>
         </div>
 

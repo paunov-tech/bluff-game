@@ -22,7 +22,7 @@ interface DuelRoom {
 }
 
 const BLITZ_CLOCK = 60_000; // 60 seconds total per player
-const REGULAR_TIMER = 35_000; // 35 seconds per question
+const REGULAR_TIMER = 45_000; // 45 seconds per round
 
 export default class DuelServer implements Party.Server {
   state: DuelRoom;
@@ -241,6 +241,8 @@ export default class DuelServer implements Party.Server {
       round: this.state.currentRound,
       data: this.state.rounds[this.state.currentRound],
       phase: "playing",
+      timerMs: this.state.mode === "blitz" ? null : REGULAR_TIMER,
+      startTime: Date.now(),
     }));
 
     // Regular mode: auto-advance after timer
