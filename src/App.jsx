@@ -767,6 +767,10 @@ export default function BluffGame() {
   const [multiplierLocked, setMultiplierLocked] = useState(null);
   const milestonesFiredRef = useRef(new Set());
   const [lastRoundResult, setLastRoundResult] = useState(null);
+  const [correctCount, setCorrectCount] = useState(0);
+  const correctCountRef = useRef(0);
+  const [maxCashout, setMaxCashout] = useState(1.0);
+  const maxCashoutRef = useRef(1.0);
   const [confetti, setConfetti] = useState(false);
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
   const [loadingRound, setLoadingRound] = useState(false);
@@ -966,6 +970,10 @@ export default function BluffGame() {
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
     setLastRoundResult(null);
+    setCorrectCount(0);
+    correctCountRef.current = 0;
+    setMaxCashout(1.0);
+    maxCashoutRef.current = 1.0;
     wrongCountRef.current = 0;
     setScreen("play");
     setRoundIdx(0);
@@ -1196,6 +1204,8 @@ export default function BluffGame() {
       AudioTension.fanfare();
       earned = Math.round(BASE_POINTS * lockedMult * streakMultAtLock);
       setScore(s=>s+earned);
+      setCorrectCount(c => { correctCountRef.current = c + 1; return c + 1; });
+      setMaxCashout(m => { const next = Math.max(m, lockedMult); maxCashoutRef.current = next; return next; });
       wrongCountRef.current = 0;
       setStreak(prev=>{
         const next=prev+1;
@@ -1249,6 +1259,10 @@ export default function BluffGame() {
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
     setLastRoundResult(null);
+    setCorrectCount(0);
+    correctCountRef.current = 0;
+    setMaxCashout(1.0);
+    maxCashoutRef.current = 1.0;
     setRoundIdx(next);
     setSel(null);
     currentSelRef.current=null;
@@ -1281,6 +1295,10 @@ export default function BluffGame() {
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
     setLastRoundResult(null);
+    setCorrectCount(0);
+    correctCountRef.current = 0;
+    setMaxCashout(1.0);
+    maxCashoutRef.current = 1.0;
     wrongCountRef.current = 0;
     blitzModeRef.current = true;
     setBlitzMode(true);
@@ -1424,6 +1442,10 @@ export default function BluffGame() {
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
     setLastRoundResult(null);
+    setCorrectCount(0);
+    correctCountRef.current = 0;
+    setMaxCashout(1.0);
+    maxCashoutRef.current = 1.0;
     // Reset time + loadingRound before any other state so auto-reveal effect
     // can't fire with stale time=0 from a previous session on first render.
     setTime(TIMER_PER_DIFF[ROUND_DIFFICULTY[0]] || 60);
@@ -1515,7 +1537,8 @@ export default function BluffGame() {
     const finalScore = score;
     const finalTotal = total;
     const finalBest  = best;
-    const won = finalScore >= Math.ceil(finalTotal * .67);
+    const finalCorrect = correctCountRef.current;
+    const won = finalCorrect >= Math.ceil(finalTotal * 0.67);
 
     if (dailyModeRef.current) submitDailyResult(finalScore, finalTotal);
 
@@ -2549,6 +2572,10 @@ export default function BluffGame() {
               setMultiplierLocked(null);
               milestonesFiredRef.current = new Set();
               setLastRoundResult(null);
+              setCorrectCount(0);
+              correctCountRef.current = 0;
+              setMaxCashout(1.0);
+              maxCashoutRef.current = 1.0;
               setTime(blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[d] || 60));
               setLoadingRound(true);
               setFetchError(false);
@@ -2755,7 +2782,7 @@ export default function BluffGame() {
   );
 
   // ─── RESULT ────────────────────────────────────────────────
-  const won = score>=Math.ceil(total*.67);
+  const won = correctCount >= Math.ceil(total * 0.67);
   return (
     <div style={wrap}>
       <Particles/>
