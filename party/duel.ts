@@ -291,6 +291,10 @@ export default class DuelServer implements Party.Server {
     const msg = JSON.parse(message);
 
     if (msg.type === "new_game") {
+      if (this.state.phase !== "finished") {
+        console.log(`[server] new_game ignored from ${sender.id.slice(0,8)}, phase=${this.state.phase}`);
+        return;
+      }
       this.clearPendingTimers();
       this.state.rounds = this.buildFallbackRounds();
       this.state.currentRound = 0;
