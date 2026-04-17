@@ -249,6 +249,13 @@ function AxiomFace({ mood="idle", size=64 }) {
           fill="#030810" stroke={m.eye} strokeWidth={size>80?1.8:1.2} filter={`url(#${fid})`}/>
         <line x1={s2(52)} y1={s2(62)} x2={s2(136)} y2={s2(55)} stroke={m.eye} strokeWidth={size>80?1.8:1.2} strokeLinecap="round" opacity=".9"/>
         <line x1={s2(136)} y1={s2(55)} x2={s2(148)} y2={s2(63)} stroke={m.eye} strokeWidth={size>80?1.8:1.2} strokeLinecap="round" opacity=".9"/>
+        {/* Eyebrows — coords vary per mood, taunting = furrowed/angry */}
+        <line x1={s2(m.bl.x1)} y1={s2(m.bl.y1)} x2={s2(m.bl.x2)} y2={s2(m.bl.y2)}
+          stroke={m.eye} strokeWidth={sc*2} strokeLinecap="round" opacity=".85"
+          style={{animation: mood==="taunting" ? "ax-browTwitch 0.6s ease-in-out infinite" : "none"}}/>
+        <line x1={s2(m.br.x1)} y1={s2(m.br.y1)} x2={s2(m.br.x2)} y2={s2(m.br.y2)}
+          stroke={m.eye} strokeWidth={sc*2} strokeLinecap="round" opacity=".85"
+          style={{animation: mood==="taunting" ? "ax-browTwitch 0.6s ease-in-out infinite" : "none"}}/>
         <ellipse cx={ex} cy={ey} rx={s2(36)} ry={s2(29)} fill="#010407"/>
         <circle cx={ex} cy={ey} r={r1} fill="none" stroke={m.eye} strokeWidth={size>80?1.5:1} opacity=".9"/>
         <circle cx={ex} cy={ey} r={s2(28)} fill="#050f20"/>
@@ -256,7 +263,7 @@ function AxiomFace({ mood="idle", size=64 }) {
         <circle cx={ex} cy={ey} r={r3} fill="none" stroke="rgba(34,211,238,.3)" strokeWidth={sc*.6}/>
         <circle cx={ex} cy={ey} r={r4} fill="#020912"/>
         <circle cx={ex} cy={ey} r={r5} fill={m.eye} filter={`url(#${fid})`}
-          style={{animation:"ic-blink 7s ease-in-out infinite",transformBox:"fill-box",transformOrigin:"center"}}/>
+          style={{animation:"ic-blink 3s ease-in-out infinite",transformBox:"fill-box",transformOrigin:"center"}}/>
         <ellipse cx={ex+s2(8)} cy={ey-s2(8)} rx={s2(5)} ry={s2(3.5)} fill="rgba(224,247,255,.5)"/>
         <rect x={s2(58)} y={ey} width={s2(74)} height={sc*.9} fill={m.eye} opacity=".35" style={{animation:"scanDown 3s linear infinite"}}/>
         {m.mouth.type==="path"
@@ -3395,5 +3402,6 @@ function GameStyles(){
     @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes ic-blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(0.05)}}
+    @keyframes ax-browTwitch{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.6px)}}
   `}</style>;
 }
