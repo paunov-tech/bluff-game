@@ -26,19 +26,24 @@ const REGULAR_TIMER = 45_000; // 45 seconds per round
 
 export default class DuelServer implements Party.Server {
   state: DuelRoom;
-  pendingTimers: Set<ReturnType<typeof setTimeout>> = new Set();
+  pendingTimers: Map<ReturnType<typeof setTimeout>, string> = new Map();
 
-  schedule(fn: () => void, ms: number) {
+  schedule(fn: () => void, ms: number, tag: string = "untagged") {
+    console.log(`[server] +schedule ${tag} in ${ms}ms`);
     const id = setTimeout(() => {
+      console.log(`[server] ⏰ fire ${tag} at ${Date.now()}`);
       this.pendingTimers.delete(id);
       fn();
     }, ms);
-    this.pendingTimers.add(id);
+    this.pendingTimers.set(id, tag);
     return id;
   }
 
-  clearPendingTimers() {
-    for (const id of this.pendingTimers) clearTimeout(id);
+  clearPendingTimers(reason: string = "") {
+    if (this.pendingTimers.size === 0) return;
+    const tags = Array.from(this.pendingTimers.values()).join(",");
+    console.log(`[server] 🧹 clearPendingTimers (${this.pendingTimers.size}: ${tags}) reason=${reason}`);
+    for (const id of this.pendingTimers.keys()) clearTimeout(id);
     this.pendingTimers.clear();
   }
 
@@ -148,6 +153,7 @@ export default class DuelServer implements Party.Server {
       lastTick: Date.now(),
     };
 
+    console.log(`[server] onConnect ${conn.id.slice(0,8)} players=${Object.keys(this.state.players).length} phase=${this.state.phase} rounds=${this.state.rounds.length}`);
     this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
 
     // If 2 players, seed fallback rounds and start immediately (no blocking fetch)
@@ -206,7 +212,7 @@ export default class DuelServer implements Party.Server {
   startCountdown() {
     this.state.phase = "countdown";
     this.room.broadcast(JSON.stringify({ type: "countdown", seconds: 3 }));
-    this.schedule(() => this.startRound(), 3000);
+    this.schedule(() => this.startRound(), 3000, "countdown-3s");
   }
 
   startRound() {
@@ -235,7 +241,7 @@ export default class DuelServer implements Party.Server {
 
     // Regular mode: auto-advance after timer
     if (this.state.mode === "regular") {
-      this.schedule(() => this.resolveRound(), REGULAR_TIMER);
+      this.schedule(() => this.resolveRound(), REGULAR_TIMER, `resolve-timeout-r${this.state.currentRound}`);
     }
   }
 
@@ -283,7 +289,7 @@ export default class DuelServer implements Party.Server {
     }));
 
     if (!anyFlagged && this.state.phase === "playing") {
-      this.schedule(() => this.tickClocks(), 200);
+      this.schedule(() => this.tickClocks(), 200, "blitz-tick");
     }
   }
 
@@ -295,7 +301,7 @@ export default class DuelServer implements Party.Server {
         console.log(`[server] new_game ignored from ${sender.id.slice(0,8)}, phase=${this.state.phase}`);
         return;
       }
-      this.clearPendingTimers();
+      this.clearPendingTimers("new_game");
       this.state.rounds = this.buildFallbackRounds();
       this.state.currentRound = 0;
       this.state.answers = {};
@@ -348,7 +354,7 @@ export default class DuelServer implements Party.Server {
 
       // If both answered, resolve round
       if (Object.keys(this.state.answers).length >= Object.keys(this.state.players).length) {
-        this.schedule(() => this.resolveRound(), 500);
+        this.schedule(() => this.resolveRound(), 500, `resolve-both-answered-r${this.state.currentRound}`);
       }
     }
   }
@@ -356,6 +362,8 @@ export default class DuelServer implements Party.Server {
   resolveRound() {
     console.log(`[server] resolveRound called, phase=${this.state.phase}, answers=${Object.keys(this.state.answers).length}/${Object.keys(this.state.players).length}, t=${Date.now()}`);
     if (this.state.phase !== "playing") return;
+    // Kill any orphan round-resolve timers from earlier rounds so they can't force-resolve a later round.
+    this.clearPendingTimers(`round-${this.state.currentRound}-resolved`);
     this.state.phase = "round_result";
 
     const round = this.state.rounds[this.state.currentRound];
@@ -374,16 +382,16 @@ export default class DuelServer implements Party.Server {
     const nextRound = this.state.currentRound + 1;
 
     if (nextRound >= totalRounds) {
-      this.schedule(() => this.finishGame(), this.state.mode === "blitz" ? 1500 : 2500);
+      this.schedule(() => this.finishGame(), this.state.mode === "blitz" ? 1500 : 2500, "finish-game");
     } else {
       this.state.currentRound = nextRound;
-      this.schedule(() => this.startRound(), this.state.mode === "blitz" ? 1500 : 2500);
+      this.schedule(() => this.startRound(), this.state.mode === "blitz" ? 1500 : 2500, `next-round-r${nextRound}`);
     }
   }
 
   finishGame() {
     console.log(`[server] finishGame called at ${Date.now()}, scores=${JSON.stringify(Object.fromEntries(Object.values(this.state.players).map(p=>[p.id.slice(0,8), p.score])))}`);
-    this.clearPendingTimers();
+    this.clearPendingTimers("finishGame");
     this.state.phase = "finished";
     const players = Object.values(this.state.players);
     const sorted = [...players].sort((a, b) => b.score - a.score);
@@ -407,7 +415,12 @@ export default class DuelServer implements Party.Server {
       console.log(`[server] removed player ${conn.id}, remaining: ${Object.keys(this.state.players).length}`);
     }
     if (Object.keys(this.state.players).length === 0) {
-      this.clearPendingTimers();
+      this.clearPendingTimers("room-empty");
+      // Reset room so a fresh pair of players can start clean
+      this.state.rounds = [];
+      this.state.currentRound = 0;
+      this.state.phase = "waiting";
+      this.state.answers = {};
     }
   }
 
