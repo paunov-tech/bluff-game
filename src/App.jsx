@@ -1488,6 +1488,10 @@ export default function BluffGame() {
   }
 
   function handleDuelMessage(msg, ws) {
+    if (msg.type === "welcome") {
+      console.log("[duel-debug] WELCOME received — connId:", msg.connId, "ts:", msg.timestamp);
+      return;
+    }
     if (msg.type === "state") {
       console.log("[duel] state update — players:",
         Object.keys(msg.state.players || {}),

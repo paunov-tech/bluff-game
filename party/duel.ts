@@ -40,6 +40,15 @@ export default class DuelServer implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
+    // DIAGNOSTIC: send immediate welcome to the connecting client only
+    console.log(`[server] onConnect fired for ${conn.id}`);
+    conn.send(JSON.stringify({
+      type: "welcome",
+      connId: conn.id,
+      timestamp: Date.now()
+    }));
+    console.log(`[server] welcome sent to ${conn.id}`);
+
     const url = new URL(ctx.request.url);
     const name = url.searchParams.get("name") || "Player";
     const mode = url.searchParams.get("mode") as "regular" | "blitz" || "regular";
