@@ -60,9 +60,10 @@ export default class DuelServer implements Party.Server {
 
     this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
 
-    // If 2 players, fetch questions and start
+    // If 2 players, seed fallback rounds and start immediately (no blocking fetch)
     if (Object.keys(this.state.players).length === 2 && this.state.rounds.length === 0) {
-      await this.fetchQuestions();
+      this.state.rounds = this.buildFallbackRounds();
+      console.log(`[server] seeded ${this.state.rounds.length} fallback rounds`);
       this.startCountdown();
     }
   }
@@ -88,6 +89,11 @@ export default class DuelServer implements Party.Server {
     }
 
     this.state.rounds = rounds;
+  }
+
+  buildFallbackRounds() {
+    const difficulties = this.state.mode === "blitz" ? [3, 4, 4, 5] : [2, 3, 3, 4, 3, 4];
+    return difficulties.map(diff => this.getFallbackRound(diff));
   }
 
   startCountdown() {
@@ -255,12 +261,13 @@ export default class DuelServer implements Party.Server {
     }));
   }
 
-  onClose(conn: Party.Connection) {
-    delete this.state.players[conn.id];
-    this.room.broadcast(JSON.stringify({
-      type: "player_left",
-      playerId: conn.id,
-    }));
+  async onClose(conn: Party.Connection) {
+    console.log(`[server] onClose fired for ${conn.id}`);
+    if (this.state.players[conn.id]) {
+      delete this.state.players[conn.id];
+      this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
+      console.log(`[server] removed player ${conn.id}, remaining: ${Object.keys(this.state.players).length}`);
+    }
   }
 
   getFallbackRound(diff: number) {
