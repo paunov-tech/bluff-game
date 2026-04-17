@@ -457,47 +457,80 @@ function TimerRing({time,max=45,size=48}) {
   );
 }
 
-// TODO(cashout-cleanup) URGENT: `score` is now points (100s-1000s range),
-// not correct-answer count. The rendered "score/total" and accuracy math
-// below will look broken until Deploy 1b rewrites this card.
-function generateShareCard(score,total,best,speech,won) {
+function generateShareCard(score, total, best, speech, won, correctCount, maxCashout) {
   try {
-    const c=document.createElement("canvas");
-    c.width=900;c.height=500;
-    const ctx=c.getContext("2d");
-    ctx.fillStyle="#04060f";ctx.fillRect(0,0,900,500);
-    ctx.strokeStyle="rgba(34,211,238,.04)";ctx.lineWidth=1;
-    for(let x=0;x<900;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,500);ctx.stroke();}
-    for(let y=0;y<500;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(900,y);ctx.stroke();}
-    const grd=ctx.createRadialGradient(450,0,0,450,0,380);
-    grd.addColorStop(0,"rgba(232,197,71,.08)");grd.addColorStop(1,"transparent");
-    ctx.fillStyle=grd;ctx.fillRect(0,0,900,500);
-    ctx.textAlign="center";
-    ctx.fillStyle="rgba(255,255,255,.2)";ctx.font="500 11px system-ui";ctx.fillText("SIAL GAMES",450,48);
-    ctx.font="900 88px Georgia,serif";
-    const lg=ctx.createLinearGradient(300,0,600,0);
-    lg.addColorStop(0,"#e8c547");lg.addColorStop(.5,"#fff");lg.addColorStop(1,"#e8c547");
-    ctx.fillStyle=lg;ctx.fillText("BLUFF™",450,148);
-    ctx.strokeStyle="rgba(232,197,71,.22)";ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(300,168);ctx.lineTo(600,168);ctx.stroke();
-    ctx.fillStyle=won?"#2dd4a0":"rgba(244,63,94,.85)";ctx.font="700 26px system-ui";
-    ctx.fillText(won?"I defeated AXIOM":"AXIOM defeated me... for now",450,212);
-    ctx.fillStyle="#e8c547";ctx.font="900 68px Georgia,serif";
-    ctx.fillText(`${score}/${total}`,450,302);
-    ctx.fillStyle="rgba(255,255,255,.35)";ctx.font="500 14px system-ui";
-    ctx.fillText(`Accuracy: ${total?Math.round(score/total*100):0}%   ·   Best streak: ${best}🔥`,450,348);
-    if(speech&&speech!=="..."){ctx.fillStyle="rgba(34,211,238,.5)";ctx.font="italic 500 15px system-ui";ctx.fillText(`"${speech}"`,450,395);}
-    ctx.fillStyle="rgba(255,255,255,.14)";ctx.font="500 12px system-ui";
-    ctx.fillText("playbluff.games  ·  SIAL Consulting d.o.o.",450,458);
-    ctx.strokeStyle="rgba(232,197,71,.1)";ctx.lineWidth=2;ctx.strokeRect(1,1,898,498);
+    correctCount = correctCount ?? total;
+    maxCashout = maxCashout ?? 1.0;
+    const c = document.createElement("canvas");
+    c.width = 900; c.height = 500;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#04060f"; ctx.fillRect(0, 0, 900, 500);
+    ctx.strokeStyle = "rgba(34,211,238,.04)"; ctx.lineWidth = 1;
+    for (let x = 0; x < 900; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 500); ctx.stroke(); }
+    for (let y = 0; y < 500; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(900, y); ctx.stroke(); }
+    const grd = ctx.createRadialGradient(450, 0, 0, 450, 0, 380);
+    grd.addColorStop(0, "rgba(232,197,71,.08)"); grd.addColorStop(1, "transparent");
+    ctx.fillStyle = grd; ctx.fillRect(0, 0, 900, 500);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,.2)"; ctx.font = "500 11px system-ui";
+    ctx.fillText("SIAL GAMES", 450, 48);
+
+    ctx.font = "900 56px Georgia,serif";
+    const lg = ctx.createLinearGradient(340, 0, 560, 0);
+    lg.addColorStop(0, "#e8c547"); lg.addColorStop(.5, "#fff"); lg.addColorStop(1, "#e8c547");
+    ctx.fillStyle = lg; ctx.fillText("BLUFF™", 450, 120);
+
+    ctx.strokeStyle = "rgba(232,197,71,.22)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(360, 152); ctx.lineTo(540, 152); ctx.stroke();
+
+    ctx.fillStyle = won ? "#2dd4a0" : "rgba(244,63,94,.85)"; ctx.font = "700 16px system-ui";
+    ctx.fillText(won ? "I DEFEATED AXIOM" : "AXIOM DEFEATED ME", 450, 180);
+
+    const scoreFmt = score.toLocaleString('en-US');
+    ctx.fillStyle = "#e8c547"; ctx.font = "900 72px Georgia,serif";
+    ctx.fillText(scoreFmt, 450, 270);
+
+    ctx.fillStyle = "rgba(255,255,255,.4)"; ctx.font = "500 14px system-ui";
+    ctx.fillText("POINTS", 450, 298);
+
+    ctx.font = "500 13px system-ui";
+    const stats = [
+      { label: `${correctCount}/${total} correct`, color: "#2dd4a0" },
+      { label: `Best streak ${best}🔥`, color: "#e8c547" },
+      { label: `Max ${maxCashout.toFixed(1)}x 💰`, color: "#f43f5e" },
+    ];
+    const sepWidth = 24;
+    const widths = stats.map(s => ctx.measureText(s.label).width);
+    const totalWidth = widths.reduce((a, b) => a + b, 0) + sepWidth * 2;
+    let x = 450 - totalWidth / 2;
+    ctx.textAlign = "left";
+    stats.forEach((s, i) => {
+      ctx.fillStyle = s.color;
+      ctx.fillText(s.label, x, 348);
+      x += widths[i];
+      if (i < stats.length - 1) {
+        ctx.fillStyle = "rgba(255,255,255,.2)";
+        ctx.fillText("·", x + sepWidth / 2 - 2, 348);
+        x += sepWidth;
+      }
+    });
+    ctx.textAlign = "center";
+
+    if (speech && speech !== "...") {
+      ctx.fillStyle = "rgba(34,211,238,.5)"; ctx.font = "italic 500 15px system-ui";
+      ctx.fillText(`"${speech}"`, 450, 400);
+    }
+    ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.font = "500 12px system-ui";
+    ctx.fillText("playbluff.games  ·  SIAL Consulting d.o.o.", 450, 458);
+    ctx.strokeStyle = "rgba(232,197,71,.1)"; ctx.lineWidth = 2; ctx.strokeRect(1, 1, 898, 498);
     return c.toDataURL("image/png");
-  } catch(e) { console.error("[share-card]",e); return null; }
+  } catch (e) { console.error("[share-card]", e); return null; }
 }
 
-// TODO(cashout-cleanup) URGENT: `score` is now points (100s-1000s range),
-// not correct-answer count. The rendered "score/total" and accuracy math
-// below will look broken until Deploy 1b rewrites this card.
-function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine) {
+function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine, correctCount, maxCashout) {
+  correctCount = correctCount ?? total;
+  maxCashout = maxCashout ?? 1.0;
   try {
     const W = 540, H = 960; // 1:1.77 = 9:16 portrait
     const c = document.createElement("canvas");
@@ -625,22 +658,48 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
     ctx.font = "700 18px system-ui";
     ctx.fillText(won ? "I DEFEATED AXIOM" : "AXIOM DEFEATED ME", W/2, cy + 155);
 
-    ctx.fillStyle = "#e8c547";
-    ctx.font = "900 72px Georgia,serif";
-    ctx.fillText(`${score}/${total}`, W/2, cy + 240);
+    const scoreFmt = score.toLocaleString('en-US');
+    const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
 
-    ctx.fillStyle = "rgba(255,255,255,.3)";
-    ctx.font = "500 13px system-ui";
-    ctx.fillText(
-      `${total ? Math.round(score/total*100) : 0}% accuracy  ·  ${best}🔥 best streak`,
-      W/2, cy + 272
-    );
+    ctx.fillStyle = "#e8c547";
+    ctx.font = "900 64px Georgia,serif";
+    ctx.fillText(scoreFmt, W/2, cy + 220);
+
+    ctx.fillStyle = "rgba(255,255,255,.4)";
+    ctx.font = "500 12px system-ui";
+    ctx.fillText("POINTS", W/2, cy + 248);
+
+    // Stats panel — 3 rows
+    const panelY = cy + 266;
+    const rowH = 30;
+    const rows = [
+      { label: "Correct", value: `${correctCount}/${total} · ${accuracy}%`, color: "#2dd4a0" },
+      { label: "Best streak", value: `${best} 🔥`, color: "#e8c547" },
+      { label: "Max cashout", value: `${maxCashout.toFixed(1)}x 💰`, color: "#f43f5e" },
+    ];
+    rows.forEach((row, i) => {
+      const ry = panelY + i * (rowH + 6);
+      ctx.fillStyle = "rgba(255,255,255,.03)";
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(40, ry, W - 80, rowH, 6);
+      else ctx.rect(40, ry, W - 80, rowH);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,.45)";
+      ctx.font = "500 12px system-ui";
+      ctx.textAlign = "left";
+      ctx.fillText(row.label, 54, ry + 19);
+      ctx.fillStyle = row.color;
+      ctx.font = "600 12px system-ui";
+      ctx.textAlign = "right";
+      ctx.fillText(row.value, W - 54, ry + 19);
+    });
+    ctx.textAlign = "center";
 
     // Divider
     ctx.strokeStyle = "rgba(255,255,255,.08)";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(60, cy + 295); ctx.lineTo(W - 60, cy + 295); ctx.stroke();
+    ctx.moveTo(60, panelY + 3 * (rowH + 6) + 8); ctx.lineTo(W - 60, panelY + 3 * (rowH + 6) + 8); ctx.stroke();
 
     // AXIOM quote
     const displayQuote = roastLine || axiomSpeech;
@@ -649,7 +708,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
       ctx.font = "italic 500 13px system-ui";
       const maxW = W - 80;
       const words = `"${displayQuote}"`.split(" ");
-      let line = "", lines = [], y = cy + 322;
+      let line = "", lines = [], y = panelY + 3 * (rowH + 6) + 30;
       words.forEach(word => {
         const test = line + word + " ";
         if (ctx.measureText(test).width > maxW && line) {
@@ -1548,7 +1607,7 @@ export default function BluffGame() {
     // Share card — wait for AXIOM speech to land (~1s)
     setTimeout(() => {
       setAxiomSpeech(speech => {
-        const img = generateShareCard(finalScore, finalTotal, finalBest, speech, won);
+        const img = generateShareCard(finalScore, finalTotal, finalBest, speech, won, correctCountRef.current, maxCashoutRef.current);
         setShareImg(img);
         return speech;
       });
@@ -1559,7 +1618,7 @@ export default function BluffGame() {
       const lieStmt = currentStmtsRef.current.find(s => !s.real);
       const lieText = lieStmt?.text || "";
       setAxiomSpeech(speech => {
-        const img = generateStoriesCard(finalScore, finalTotal, finalBest, speech, won, lieText, lastAxiomLine);
+        const img = generateStoriesCard(finalScore, finalTotal, finalBest, speech, won, lieText, lastAxiomLine, correctCountRef.current, maxCashoutRef.current);
         setStoriesImg(img);
         setChallengeURL(buildChallengeURL(finalScore, finalTotal));
         return speech;
