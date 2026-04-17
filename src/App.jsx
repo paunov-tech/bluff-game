@@ -1409,6 +1409,19 @@ export default function BluffGame() {
   function connectDuel(roomId, mode, attempt = 1) {
     const MAX_ATTEMPTS = 3;
     const name = duelName.trim() || "Player";
+
+    if (duelSocketRef.current) {
+      const existing = duelSocketRef.current;
+      const existingUrl = existing.url || "";
+      if (existingUrl.includes(`/parties/main/${roomId}`) &&
+          (existing.readyState === 0 || existing.readyState === 1)) {
+        console.log(`[duel] already connecting/connected to ${roomId}, skipping duplicate`);
+        return;
+      }
+      try { existing.close(); } catch {}
+      duelSocketRef.current = null;
+    }
+
     setDuelConnectionState("connecting");
     setDuelRetryAttempt(attempt);
     console.log(`[duel] connect attempt ${attempt}/${MAX_ATTEMPTS} to room ${roomId}`);
@@ -1792,7 +1805,11 @@ export default function BluffGame() {
   }, []);
 
   // Deep-link: ?duel=CODE&mode=regular|blitz → auto-join that room
+  const deepLinkHandledRef = useRef(false);
   useEffect(() => {
+    if (deepLinkHandledRef.current) return;
+    deepLinkHandledRef.current = true;
+
     const params = new URLSearchParams(window.location.search);
     const duelCode = params.get("duel");
     const mode = params.get("mode") || "regular";
