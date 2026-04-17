@@ -209,11 +209,19 @@ export default class DuelServer implements Party.Server {
       const j = Math.floor(Math.random() * (i + 1));
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
-    return difficulties.map((diff, idx) => ({
-      category: pool[idx % pool.length].category,
-      difficulty: diff,
-      statements: pool[idx % pool.length].statements,
-    }));
+    return difficulties.map((diff, idx) => {
+      const source = pool[idx % pool.length];
+      const shuffledStmts = [...source.statements];
+      for (let i = shuffledStmts.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledStmts[i], shuffledStmts[j]] = [shuffledStmts[j], shuffledStmts[i]];
+      }
+      return {
+        category: source.category,
+        difficulty: diff,
+        statements: shuffledStmts,
+      };
+    });
   }
 
   startCountdown() {

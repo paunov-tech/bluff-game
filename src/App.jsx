@@ -1458,14 +1458,11 @@ export default function BluffGame() {
     const connectionTimeout = setTimeout(() => failAndMaybeRetry("timeout"), 4000);
 
     ws.addEventListener("message", (e) => {
-      console.log("[duel-debug] raw message:", e.data.slice(0, 300));
       try {
         const msg = JSON.parse(e.data);
-        console.log("[duel-debug] parsed:", msg.type,
-          msg.state ? `players=${Object.keys(msg.state.players || {}).length}` : "");
         handleDuelMessage(msg, ws);
       } catch (err) {
-        console.error("[duel-debug] parse error:", err);
+        console.error("[duel] parse error:", err);
       }
     });
 
@@ -1475,7 +1472,7 @@ export default function BluffGame() {
       setDuelConnectionState("connected");
       setDuelRetryAttempt(0);
       setMyDuelId(ws.id);
-      console.log(`[duel] connected on attempt ${attempt}, ws.id=${ws.id}, room=${roomId}`);
+      console.log(`[duel] connected on attempt ${attempt}`);
     });
 
     ws.addEventListener("error", (e) => {
@@ -1494,10 +1491,6 @@ export default function BluffGame() {
 
   function handleDuelMessage(msg, ws) {
     if (msg.type === "state") {
-      console.log(`[duel-debug] state msg: phase=${msg.state.phase} players=${Object.keys(msg.state.players || {}).length} t=${Date.now()}`);
-      console.log("[duel] state update — players:",
-        Object.keys(msg.state.players || {}),
-        "phase:", msg.state.phase);
       setDuelPlayers(msg.state.players);
       setDuelPhase(msg.state.phase);
     }
@@ -1511,7 +1504,6 @@ export default function BluffGame() {
       }, 1000);
     }
     if (msg.type === "round_start") {
-      console.log(`[duel-debug] round_start msg received: round=${msg.round} t=${Date.now()}`);
       duelAnswerSentRef.current = false;
       setDuelSelection(null);
       if (msg.timerMs && msg.startTime) {
@@ -1540,7 +1532,6 @@ export default function BluffGame() {
       setDuelScores(prev => ({ ...prev, [msg.playerId]: msg.score }));
     }
     if (msg.type === "round_result") {
-      console.log(`[duel-debug] round_result msg: bluffIdx=${msg.bluffIdx} answers=${Object.keys(msg.answers || {}).length} t=${Date.now()}`);
       setDuelBluffIdx(msg.bluffIdx);
       setDuelScores(msg.scores);
       setDuelPhase("round_result");
@@ -1563,8 +1554,7 @@ export default function BluffGame() {
     }
   }
 
-  function sendDuelAnswer(sel, source = "unknown") {
-    console.log(`[duel-debug] sendDuelAnswer sel=${sel} source=${source} phase=${duelPhase} sent=${duelAnswerSentRef.current} t=${Date.now()}`);
+  function sendDuelAnswer(sel) {
     if (!duelSocketRef.current || duelAnswerSentRef.current) return;
     duelAnswerSentRef.current = true;
     setDuelSelection(sel);
@@ -2321,12 +2311,7 @@ export default function BluffGame() {
 
             return (
               <button key={i}
-                onClick={(e)=>{
-                  console.log(`[duel-debug] card ${i} clicked: isTrusted=${e.isTrusted} detail=${e.detail} phase=${duelPhase} hasAnswer=${!!duelAnswers[myDuelId]}`);
-                  if (duelPhase==="playing" && !duelAnswers[myDuelId]) {
-                    sendDuelAnswer(i, `click-trusted-${e.isTrusted}-detail-${e.detail}`);
-                  }
-                }}
+                onClick={()=>duelPhase==="playing"&&!duelAnswers[myDuelId]&&sendDuelAnswer(i)}
                 style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,
                   background:bg,border:`1.5px solid ${border}`,borderRadius:14,
                   padding:"clamp(11px,3vw,14px)",cursor:duelPhase==="playing"&&!duelAnswers[myDuelId]?"pointer":"default",
