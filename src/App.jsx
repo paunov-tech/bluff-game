@@ -867,6 +867,7 @@ export default function BluffGame() {
   const duelSocketRef = useRef(null);
   const duelAnswerSentRef = useRef(false);
   const [duelConnectionState, setDuelConnectionState] = useState("idle");
+  const [duelRetryAttempt, setDuelRetryAttempt] = useState(0);
   const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.paunov-tech.partykit.dev";
   const [activeSkin, setActiveSkin] = useState(
     () => localStorage.getItem("bluff_skin") || "default"
@@ -1405,22 +1406,38 @@ export default function BluffGame() {
     connectDuel(roomId.toUpperCase(), mode);
   }
 
-  function connectDuel(roomId, mode) {
+  function connectDuel(roomId, mode, attempt = 1) {
+    const MAX_ATTEMPTS = 3;
     const name = duelName.trim() || "Player";
     setDuelConnectionState("connecting");
+    setDuelRetryAttempt(attempt);
+    console.log(`[duel] connect attempt ${attempt}/${MAX_ATTEMPTS} to room ${roomId}`);
+
     const ws = new PartySocket({
       host: PARTYKIT_HOST,
       room: roomId,
       query: { name, mode },
     });
+    duelSocketRef.current = ws;
 
     let opened = false;
-    const connectionTimeout = setTimeout(() => {
-      if (!opened) {
+    let failed = false;
+
+    const failAndMaybeRetry = (reason) => {
+      if (opened || failed) return;
+      failed = true;
+      try { ws.close(); } catch {}
+
+      if (attempt < MAX_ATTEMPTS) {
+        console.warn(`[duel] attempt ${attempt} failed (${reason}), retrying in 1.5s...`);
+        setTimeout(() => connectDuel(roomId, mode, attempt + 1), 1500);
+      } else {
+        console.error(`[duel] all ${MAX_ATTEMPTS} attempts failed`);
         setDuelConnectionState("failed");
-        try { ws.close(); } catch {}
       }
-    }, 10000);
+    };
+
+    const connectionTimeout = setTimeout(() => failAndMaybeRetry("timeout"), 4000);
 
     ws.addEventListener("message", (e) => {
       const msg = JSON.parse(e.data);
@@ -1431,23 +1448,23 @@ export default function BluffGame() {
       opened = true;
       clearTimeout(connectionTimeout);
       setDuelConnectionState("connected");
+      setDuelRetryAttempt(0);
       setMyDuelId(ws.id);
+      console.log(`[duel] connected on attempt ${attempt}`);
     });
 
     ws.addEventListener("error", (e) => {
       clearTimeout(connectionTimeout);
-      setDuelConnectionState("failed");
       console.error("[duel] WebSocket error:", e);
+      failAndMaybeRetry("error");
     });
 
     ws.addEventListener("close", () => {
       if (!opened) {
         clearTimeout(connectionTimeout);
-        setDuelConnectionState("failed");
+        failAndMaybeRetry("close-before-open");
       }
     });
-
-    duelSocketRef.current = ws;
   }
 
   function handleDuelMessage(msg, ws) {
@@ -1503,7 +1520,7 @@ export default function BluffGame() {
         duelSocketRef.current?.close();
         setDuelScreen(null);
         setDuelPlayers({});
-        setDuelConnectionState("idle");
+        setDuelConnectionState("idle"); setDuelRetryAttempt(0);
       }, 4000);
     }
   }
@@ -1947,7 +1964,13 @@ export default function BluffGame() {
           <div style={{textAlign:"center",padding:"48px 20px",color:"rgba(255,255,255,.5)"}}>
             <div style={{fontSize:32,marginBottom:12,animation:"g-pulse 1s infinite"}}>🛰️</div>
             <div style={{fontSize:15,fontWeight:600}}>Connecting to duel server...</div>
-            <div style={{fontSize:11,marginTop:8,opacity:.6}}>This may take up to 10 seconds</div>
+            {duelRetryAttempt > 1 ? (
+              <div style={{fontSize:11,marginTop:6,color:"#fb923c"}}>
+                Attempt {duelRetryAttempt} of 3
+              </div>
+            ) : (
+              <div style={{fontSize:11,marginTop:8,opacity:.6}}>This may take a few seconds</div>
+            )}
           </div>
         )}
 
@@ -1956,12 +1979,13 @@ export default function BluffGame() {
             <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
             <div style={{color:"#f43f5e",fontWeight:600,marginBottom:12}}>Connection failed</div>
             <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:20,lineHeight:1.5}}>
-              Could not reach duel server. Check your connection or try again.
+              Couldn't reach duel server after 3 attempts.
+              The server may be starting up — wait 10 seconds and try again.
             </div>
             <button
               onClick={()=>{
                 try { duelSocketRef.current?.close(); } catch {}
-                setDuelConnectionState("idle");
+                setDuelConnectionState("idle"); setDuelRetryAttempt(0);
                 setDuelScreen(null);
                 setDuelPlayers({});
               }}
@@ -2054,7 +2078,7 @@ export default function BluffGame() {
           onClick={()=>{
             duelSocketRef.current?.close();
             setDuelScreen(null);
-            setDuelConnectionState("idle");
+            setDuelConnectionState("idle"); setDuelRetryAttempt(0);
           }}
           style={{width:"100%",marginTop:20,padding:"12px",fontSize:13,
             background:"transparent",color:"rgba(255,255,255,.2)",
@@ -2218,7 +2242,7 @@ export default function BluffGame() {
           setDuelPlayers({});
           setDuelScores({});
           setDuelWinner(null);
-          setDuelConnectionState("idle");
+          setDuelConnectionState("idle"); setDuelRetryAttempt(0);
         }} style={{width:"100%",marginTop:20,padding:"16px",fontSize:14,fontWeight:700,
           background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
           border:"none",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
