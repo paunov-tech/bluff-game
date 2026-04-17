@@ -444,12 +444,34 @@ ${langNote}${dedupNote}
 STRICT RULES:
 - Create exactly ${stmtCount} statements
 - Exactly ${truthCount} TRUE — genuinely real, verifiable facts
-- Exactly 1 CONVINCING LIE — same style/length as truths
+- Exactly 1 CONVINCING LIE — same style as truths
 - Lie must have specific details (names, numbers, dates)
-- Each statement: 1-2 sentences, clear and specific
-- Randomize the lie position
-- Make truths SURPRISING and interesting — reward curiosity
-- NEVER use profanity, vulgar words, crude language, or explicit content in any statement
+
+LENGTH — CRITICAL:
+- TARGET: 40-70 characters per statement
+- HARD MAX: 90 characters. Never exceed.
+- VARY length deliberately across statements in the round.
+  Mix some ~30-char punchy ones with some ~80-char complex ones.
+  Uniform length is dull and predictable. Variance creates rhythm.
+- Cut filler. No "during a hunting party organized after signing..."
+- No explanatory context. Trust the player's knowledge.
+
+STYLE — HOOK PATTERN:
+- Lead with the surprise. Never bury the lead.
+- "Napoleon once lost a battle to rabbits." ✓ (40 chars)
+- "Napoleon was attacked by a horde of rabbits during a hunting
+   party organized after the Treaty of Tilsit." ✗ (buried, 110 chars)
+- "Octopuses have three hearts and blue blood." ✓ (43)
+- "Wombats produce cube-shaped droppings." ✓ (38)
+- "A teaspoon of neutron star weighs 6 billion tons." ✓ (49)
+- "Honey from Egyptian tombs is still edible." ✓ (42)
+
+CONTENT:
+- Counterintuitive > exhaustive
+- Specific numbers where possible ("11 time zones", not "many")
+- Make truths SURPRISING — reward curiosity
+- Randomize lie position
+- NEVER use profanity or explicit content
 - For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES
 - ALL STARS RULE: At least ${surpriseMin} of the ${truthCount} truths must surprise even hardcore fans
 

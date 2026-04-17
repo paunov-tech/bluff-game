@@ -28,114 +28,78 @@ export default class DuelServer implements Party.Server {
   state: DuelRoom;
 
   static FALLBACK_POOL = [
-    {
-      category: "history",
-      statements: [
-        { text: "Napoleon was once attacked by a horde of rabbits during a hunt.", real: true },
-        { text: "Cleopatra lived closer in time to the Moon landing than the pyramids.", real: true },
-        { text: "Roman priests built steam-powered mechanisms for temple doors.", real: true },
-        { text: "The Eiffel Tower was originally built in Brussels in 1889.", real: false },
-      ],
-    },
-    {
-      category: "science",
-      statements: [
-        { text: "Honey never spoils — 3,000-year-old honey from tombs is still edible.", real: true },
-        { text: "A teaspoon of neutron star weighs about 6 billion tons.", real: true },
-        { text: "Bananas are slightly radioactive due to potassium-40.", real: true },
-        { text: "Jupiter's core is a single diamond the size of Earth.", real: false },
-      ],
-    },
-    {
-      category: "animals",
-      statements: [
-        { text: "A group of flamingos is called a flamboyance.", real: true },
-        { text: "Octopuses have three hearts and blue blood.", real: true },
-        { text: "Crows can recognize human faces and hold grudges for years.", real: true },
-        { text: "Dolphins sleep with both eyes closed using stereo dreaming.", real: false },
-      ],
-    },
-    {
-      category: "geography",
-      statements: [
-        { text: "Russia has 11 time zones across its territory.", real: true },
-        { text: "Australia is wider than the Moon is in diameter.", real: true },
-        { text: "Vatican City is the smallest country in the world.", real: true },
-        { text: "The Nile flows north-to-south across Africa.", real: false },
-      ],
-    },
-    {
-      category: "food",
-      statements: [
-        { text: "Carrots were originally purple, not orange.", real: true },
-        { text: "Peanuts are legumes, not nuts.", real: true },
-        { text: "Honey is the only food that never goes bad.", real: true },
-        { text: "Tomatoes were banned in France until 1850 as a poison.", real: false },
-      ],
-    },
-    {
-      category: "human_body",
-      statements: [
-        { text: "Your stomach gets a new lining every 3-4 days.", real: true },
-        { text: "The human eye can distinguish about 10 million colors.", real: true },
-        { text: "Your heart beats roughly 100,000 times per day.", real: true },
-        { text: "Humans share 80% of their DNA with bananas.", real: false },
-      ],
-    },
-    {
-      category: "space",
-      statements: [
-        { text: "Venus rotates backward compared to most planets.", real: true },
-        { text: "A day on Venus is longer than its year.", real: true },
-        { text: "Saturn's density is low enough that it would float in water.", real: true },
-        { text: "Neil Armstrong left a family photo on the Moon.", real: false },
-      ],
-    },
-    {
-      category: "technology",
-      statements: [
-        { text: "The first computer bug was an actual moth found in 1947.", real: true },
-        { text: "Email existed before the World Wide Web.", real: true },
-        { text: "The Firefox logo is actually a red panda, not a fox.", real: true },
-        { text: "The @ symbol was invented for email in 1971.", real: false },
-      ],
-    },
-    {
-      category: "music",
-      statements: [
-        { text: "Beethoven continued composing after going deaf.", real: true },
-        { text: "The Beatles were rejected by Decca Records in 1962.", real: true },
-        { text: "Mozart wrote his first symphony at age 8.", real: true },
-        { text: "Pianos have exactly 100 keys on a standard model.", real: false },
-      ],
-    },
-    {
-      category: "language",
-      statements: [
-        { text: "Mandarin has more native speakers than any other language.", real: true },
-        { text: "The shortest English sentence uses just 'Go.'", real: true },
-        { text: "The word 'set' has over 400 definitions in English.", real: true },
-        { text: "The word 'queue' uses 80% silent letters.", real: false },
-      ],
-    },
-    {
-      category: "sports",
-      statements: [
-        { text: "The Olympic flame is lit using sunlight in Olympia, Greece.", real: true },
-        { text: "Basketball was invented using a peach basket in 1891.", real: true },
-        { text: "Golf balls have an average of 336 dimples.", real: true },
-        { text: "Tennis scoring uses base-10 numbers like most sports.", real: false },
-      ],
-    },
-    {
-      category: "inventions",
-      statements: [
-        { text: "Bubble wrap was invented as textured wallpaper.", real: true },
-        { text: "Post-it notes were discovered from a failed glue experiment.", real: true },
-        { text: "The microwave was invented by accident in 1945.", real: true },
-        { text: "Velcro was inspired by fish scales in the 1950s.", real: false },
-      ],
-    },
+    { category: "history", statements: [
+      { text: "Napoleon once lost a battle to rabbits.", real: true },
+      { text: "Cleopatra lived closer to the Moon landing than the pyramids.", real: true },
+      { text: "Romans built steam-powered temple doors.", real: true },
+      { text: "The Eiffel Tower was first built in Brussels.", real: false },
+    ]},
+    { category: "science", statements: [
+      { text: "Honey from Egyptian tombs is still edible.", real: true },
+      { text: "A teaspoon of neutron star weighs 6 billion tons.", real: true },
+      { text: "Bananas are slightly radioactive.", real: true },
+      { text: "Jupiter's core is a single Earth-sized diamond.", real: false },
+    ]},
+    { category: "animals", statements: [
+      { text: "A group of flamingos is a flamboyance.", real: true },
+      { text: "Octopuses have three hearts and blue blood.", real: true },
+      { text: "Crows remember human faces for years.", real: true },
+      { text: "Dolphins dream in stereo with both eyes closed.", real: false },
+    ]},
+    { category: "geography", statements: [
+      { text: "Russia spans 11 time zones.", real: true },
+      { text: "Australia is wider than the Moon.", real: true },
+      { text: "Vatican City fits inside Central Park.", real: true },
+      { text: "The Nile flows south across Africa.", real: false },
+    ]},
+    { category: "food", statements: [
+      { text: "Carrots were originally purple.", real: true },
+      { text: "Peanuts are legumes, not nuts.", real: true },
+      { text: "Ketchup was sold as medicine in the 1830s.", real: true },
+      { text: "France banned tomatoes until 1850.", real: false },
+    ]},
+    { category: "human_body", statements: [
+      { text: "Your stomach lining renews every 4 days.", real: true },
+      { text: "The eye distinguishes 10 million colors.", real: true },
+      { text: "Your heart beats 100,000 times a day.", real: true },
+      { text: "Humans share 80% of their DNA with bananas.", real: false },
+    ]},
+    { category: "space", statements: [
+      { text: "Venus spins backward.", real: true },
+      { text: "A day on Venus is longer than its year.", real: true },
+      { text: "Saturn would float in a bathtub.", real: true },
+      { text: "Armstrong left a family photo on the Moon.", real: false },
+    ]},
+    { category: "technology", statements: [
+      { text: "The first computer bug was an actual moth.", real: true },
+      { text: "Email predates the World Wide Web.", real: true },
+      { text: "The Firefox logo is a red panda.", real: true },
+      { text: "The @ symbol was invented for email in 1971.", real: false },
+    ]},
+    { category: "music", statements: [
+      { text: "Beethoven composed deaf.", real: true },
+      { text: "Decca rejected The Beatles in 1962.", real: true },
+      { text: "Mozart wrote his first symphony at 8.", real: true },
+      { text: "Standard pianos have exactly 100 keys.", real: false },
+    ]},
+    { category: "language", statements: [
+      { text: "Mandarin has the most native speakers.", real: true },
+      { text: "'Set' has over 400 meanings in English.", real: true },
+      { text: "Shakespeare coined over 1,700 words.", real: true },
+      { text: "'Queue' is 80% silent letters.", real: false },
+    ]},
+    { category: "sports", statements: [
+      { text: "The Olympic flame is lit by sunlight in Olympia.", real: true },
+      { text: "Basketball started with a peach basket in 1891.", real: true },
+      { text: "Golf balls have about 336 dimples.", real: true },
+      { text: "Tennis uses base-10 scoring.", real: false },
+    ]},
+    { category: "inventions", statements: [
+      { text: "Bubble wrap was invented as wallpaper.", real: true },
+      { text: "Post-its came from a failed glue experiment.", real: true },
+      { text: "The microwave was discovered by accident in 1945.", real: true },
+      { text: "Velcro was inspired by fish scales.", real: false },
+    ]},
   ];
 
   constructor(readonly room: Party.Room) {
