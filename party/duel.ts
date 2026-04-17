@@ -40,15 +40,6 @@ export default class DuelServer implements Party.Server {
   }
 
   async onConnect(conn: Party.Connection, ctx: Party.ConnectionContext) {
-    // DIAGNOSTIC: send immediate welcome to the connecting client only
-    console.log(`[server] onConnect fired for ${conn.id}`);
-    conn.send(JSON.stringify({
-      type: "welcome",
-      connId: conn.id,
-      timestamp: Date.now()
-    }));
-    console.log(`[server] welcome sent to ${conn.id}`);
-
     const url = new URL(ctx.request.url);
     const name = url.searchParams.get("name") || "Player";
     const mode = url.searchParams.get("mode") as "regular" | "blitz" || "regular";
@@ -67,7 +58,7 @@ export default class DuelServer implements Party.Server {
       lastTick: Date.now(),
     };
 
-    this.broadcast(JSON.stringify({ type: "state", state: this.state }));
+    this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
 
     // If 2 players, fetch questions and start
     if (Object.keys(this.state.players).length === 2 && this.state.rounds.length === 0) {
@@ -101,7 +92,7 @@ export default class DuelServer implements Party.Server {
 
   startCountdown() {
     this.state.phase = "countdown";
-    this.broadcast(JSON.stringify({ type: "countdown", seconds: 3 }));
+    this.room.broadcast(JSON.stringify({ type: "countdown", seconds: 3 }));
     setTimeout(() => this.startRound(), 3000);
   }
 
@@ -119,7 +110,7 @@ export default class DuelServer implements Party.Server {
       this.tickClocks();
     }
 
-    this.broadcast(JSON.stringify({
+    this.room.broadcast(JSON.stringify({
       type: "round_start",
       round: this.state.currentRound,
       data: this.state.rounds[this.state.currentRound],
@@ -148,7 +139,7 @@ export default class DuelServer implements Party.Server {
           // FLAG FALLS
           p.clockRunning = false;
           anyFlagged = true;
-          this.broadcast(JSON.stringify({
+          this.room.broadcast(JSON.stringify({
             type: "flag_fell",
             playerId: p.id,
             playerName: p.name,
@@ -157,7 +148,7 @@ export default class DuelServer implements Party.Server {
           // Give opponent a bonus question opportunity
           const opponentId = Object.keys(this.state.players).find(id => id !== p.id);
           if (opponentId) {
-            this.broadcast(JSON.stringify({
+            this.room.broadcast(JSON.stringify({
               type: "bonus_opportunity",
               forPlayerId: opponentId,
               round: this.state.currentRound,
@@ -168,7 +159,7 @@ export default class DuelServer implements Party.Server {
       }
     }
 
-    this.broadcast(JSON.stringify({
+    this.room.broadcast(JSON.stringify({
       type: "clock_update",
       clocks: Object.fromEntries(
         Object.values(this.state.players).map(p => [p.id, p.timeLeft])
@@ -209,7 +200,7 @@ export default class DuelServer implements Party.Server {
         player.clockRunning = false;
       }
 
-      this.broadcast(JSON.stringify({
+      this.room.broadcast(JSON.stringify({
         type: "player_answered",
         playerId: sender.id,
         correct,
@@ -231,7 +222,7 @@ export default class DuelServer implements Party.Server {
     const round = this.state.rounds[this.state.currentRound];
     const bluffIdx = round.statements.findIndex((s: any) => !s.real);
 
-    this.broadcast(JSON.stringify({
+    this.room.broadcast(JSON.stringify({
       type: "round_result",
       bluffIdx,
       answers: this.state.answers,
@@ -256,7 +247,7 @@ export default class DuelServer implements Party.Server {
     const players = Object.values(this.state.players);
     const winner = players.reduce((a, b) => a.score > b.score ? a : b);
 
-    this.broadcast(JSON.stringify({
+    this.room.broadcast(JSON.stringify({
       type: "game_over",
       winner: winner.id,
       winnerName: winner.name,
@@ -266,7 +257,7 @@ export default class DuelServer implements Party.Server {
 
   onClose(conn: Party.Connection) {
     delete this.state.players[conn.id];
-    this.broadcast(JSON.stringify({
+    this.room.broadcast(JSON.stringify({
       type: "player_left",
       playerId: conn.id,
     }));
