@@ -866,7 +866,8 @@ export default function BluffGame() {
   const [myDuelId, setMyDuelId] = useState(null);
   const duelSocketRef = useRef(null);
   const duelAnswerSentRef = useRef(false);
-  const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.YOUR_USERNAME.partykit.dev";
+  const [duelConnectionState, setDuelConnectionState] = useState("idle");
+  const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.paunov-tech.partykit.dev";
   const [activeSkin, setActiveSkin] = useState(
     () => localStorage.getItem("bluff_skin") || "default"
   );
@@ -1406,11 +1407,20 @@ export default function BluffGame() {
 
   function connectDuel(roomId, mode) {
     const name = duelName.trim() || "Player";
+    setDuelConnectionState("connecting");
     const ws = new PartySocket({
       host: PARTYKIT_HOST,
       room: roomId,
       query: { name, mode },
     });
+
+    let opened = false;
+    const connectionTimeout = setTimeout(() => {
+      if (!opened) {
+        setDuelConnectionState("failed");
+        try { ws.close(); } catch {}
+      }
+    }, 10000);
 
     ws.addEventListener("message", (e) => {
       const msg = JSON.parse(e.data);
@@ -1418,7 +1428,23 @@ export default function BluffGame() {
     });
 
     ws.addEventListener("open", () => {
+      opened = true;
+      clearTimeout(connectionTimeout);
+      setDuelConnectionState("connected");
       setMyDuelId(ws.id);
+    });
+
+    ws.addEventListener("error", (e) => {
+      clearTimeout(connectionTimeout);
+      setDuelConnectionState("failed");
+      console.error("[duel] WebSocket error:", e);
+    });
+
+    ws.addEventListener("close", () => {
+      if (!opened) {
+        clearTimeout(connectionTimeout);
+        setDuelConnectionState("failed");
+      }
     });
 
     duelSocketRef.current = ws;
@@ -1477,6 +1503,7 @@ export default function BluffGame() {
         duelSocketRef.current?.close();
         setDuelScreen(null);
         setDuelPlayers({});
+        setDuelConnectionState("idle");
       }, 4000);
     }
   }
@@ -1916,6 +1943,37 @@ export default function BluffGame() {
       alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
       fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
       <div style={{width:"100%",maxWidth:420}}>
+        {duelConnectionState === "connecting" && (
+          <div style={{textAlign:"center",padding:"48px 20px",color:"rgba(255,255,255,.5)"}}>
+            <div style={{fontSize:32,marginBottom:12,animation:"g-pulse 1s infinite"}}>🛰️</div>
+            <div style={{fontSize:15,fontWeight:600}}>Connecting to duel server...</div>
+            <div style={{fontSize:11,marginTop:8,opacity:.6}}>This may take up to 10 seconds</div>
+          </div>
+        )}
+
+        {duelConnectionState === "failed" && (
+          <div style={{textAlign:"center",padding:"24px"}}>
+            <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+            <div style={{color:"#f43f5e",fontWeight:600,marginBottom:12}}>Connection failed</div>
+            <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:20,lineHeight:1.5}}>
+              Could not reach duel server. Check your connection or try again.
+            </div>
+            <button
+              onClick={()=>{
+                try { duelSocketRef.current?.close(); } catch {}
+                setDuelConnectionState("idle");
+                setDuelScreen(null);
+                setDuelPlayers({});
+              }}
+              style={{padding:"12px 24px",background:"rgba(232,197,71,.1)",color:"#e8c547",
+                border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
+                fontFamily:"inherit",fontSize:14,fontWeight:600}}>
+              Back to home
+            </button>
+          </div>
+        )}
+
+        {duelConnectionState === "connected" && (<>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
             {duelMode==="blitz"?"⚡ DUEL BLITZ":"⚔️ DUEL REGULAR"}
@@ -1996,6 +2054,7 @@ export default function BluffGame() {
           onClick={()=>{
             duelSocketRef.current?.close();
             setDuelScreen(null);
+            setDuelConnectionState("idle");
           }}
           style={{width:"100%",marginTop:20,padding:"12px",fontSize:13,
             background:"transparent",color:"rgba(255,255,255,.2)",
@@ -2003,6 +2062,7 @@ export default function BluffGame() {
             cursor:"pointer",fontFamily:"inherit"}}>
           Cancel
         </button>
+        </>)}
       </div>
       <GameStyles/>
     </div>
@@ -2158,6 +2218,7 @@ export default function BluffGame() {
           setDuelPlayers({});
           setDuelScores({});
           setDuelWinner(null);
+          setDuelConnectionState("idle");
         }} style={{width:"100%",marginTop:20,padding:"16px",fontSize:14,fontWeight:700,
           background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
           border:"none",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
