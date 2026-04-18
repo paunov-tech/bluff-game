@@ -298,7 +298,7 @@ function AxiomPanel({ mood, speech, loading, compact=false }) {
   if (compact) return (
     <div style={{display:"flex",alignItems:"center",gap:10,
       background:"rgba(4,10,22,.85)",border:"1px solid rgba(34,211,238,.15)",
-      borderRadius:14,padding:"10px 12px",marginBottom:12,backdropFilter:"blur(8px)"}}>
+      borderRadius:14,padding:"10px 12px",marginBottom:12,backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)"}}>
       <AxiomFace mood={mood} size={44}/>
       <div style={{flex:1,minWidth:0}}>
         <div style={{fontSize:10,letterSpacing:"2.5px",color:ec,fontWeight:600,opacity:.65,marginBottom:3}}>AXIOM</div>
@@ -832,6 +832,11 @@ function _ensureTickCtx() {
   catch { return null; }
   return _tickCtx;
 }
+function _closeTickCtx() {
+  if (!_tickCtx) return;
+  try { _tickCtx.close(); } catch {}
+  _tickCtx = null;
+}
 function playTick(intensity = "light") {
   const ctx = _ensureTickCtx(); if (!ctx) return;
   try {
@@ -997,6 +1002,12 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
   const [showOutcome, setShowOutcome] = useState(false);
   const chipTier = phaseNum === 1 ? "bronze" : phaseNum === 2 ? "silver" : "gold";
 
+  const reducedMotion = typeof window !== "undefined"
+    && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const particleCount = reducedMotion ? 0 : (isMobile ? 36 : 80);
+  const showAmbient = !reducedMotion;
+
   const handleSpin = () => {
     const r = Math.random();
     let zone;
@@ -1045,11 +1056,12 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       position:"fixed",inset:0,zIndex:2000,
       background:"radial-gradient(ellipse at 50% 30%, rgba(90,20,20,0.35) 0%, rgba(45,10,10,0.85) 40%, rgba(12,5,8,0.98) 80%, rgba(4,2,6,1) 100%)",
       backdropFilter:"blur(12px)",
+      WebkitBackdropFilter:"blur(12px)",
       display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"20px",animation:"wheel-overlay-in .4s ease",
     }}>
       {/* Layer 1: Damask wallpaper pattern — blurred, subtle */}
-      <svg width="100%" height="100%" style={{
+      {showAmbient && <svg width="100%" height="100%" style={{
         position:"absolute",inset:0,
         opacity:0.08,
         filter:"blur(1.5px)",
@@ -1068,7 +1080,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#damask)"/>
-      </svg>
+      </svg>}
 
       {/* Layer 2: Warm vignette glows — distant wall sconces */}
       <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
@@ -1099,7 +1111,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       </div>
 
       {/* Layer 3: Blurred chandelier silhouettes at top */}
-      <div style={{
+      {showAmbient && <div style={{
         position:"absolute",top:-20,left:0,right:0,height:140,
         pointerEvents:"none",opacity:0.6,filter:"blur(1px)",
       }}>
@@ -1166,11 +1178,11 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
             return <circle key={i} cx={x} cy={y} r="2" fill="#fff9c8" opacity="0.75"/>;
           })}
         </svg>
-      </div>
+      </div>}
 
       {/* Layer 4: Cinematic bokeh — gold sparkles, white stars, amber embers */}
       <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-        {[...Array(80)].map((_, i) => {
+        {[...Array(particleCount)].map((_, i) => {
           const type = Math.random();
           let color, size, glow;
           if (type < 0.6) {
@@ -1486,6 +1498,7 @@ const AudioTension = (() => {
     buzzer(){ play((ctx,dst)=>{ const s=ctx.currentTime+0.32; [[466,0],[370,0.04],[311,0.08]].forEach(([f,d])=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+d; o.frequency.value=f;o.type="sawtooth"; g.gain.setValueAtTime(0.26,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.5); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.55); }); }); },
     startDrone(level=0){ play((ctx,dst)=>{ const dg=ctx.createGain(); dg.gain.value=0; dg.connect(dst); const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=50+level*10; o.connect(dg); o.start(); const lfo=ctx.createOscillator(),lg=ctx.createGain(); lfo.frequency.value=0.8+level*0.3; lg.gain.value=0.025+level*0.015; lfo.connect(lg);lg.connect(dg.gain);lfo.start(); dg.gain.linearRampToValueAtTime(0.05+level*0.03,ctx.currentTime+1.5); droneOsc=o;droneLfo=lfo;droneGain=dg; }); },
     stopDrone(){ if(!ctx) return; if(droneGain){droneGain.gain.setTargetAtTime(0,ctx.currentTime,0.3); setTimeout(()=>{try{droneOsc?.stop();droneLfo?.stop();}catch(e){}},700);} droneOsc=droneGain=droneLfo=null; },
+    destroy(){ try{ droneOsc?.stop(); droneLfo?.stop(); }catch{} try{ ctx?.close(); }catch{} ctx=masterGain=droneOsc=droneLfo=droneGain=null; },
   };
 })();
 
@@ -2811,6 +2824,7 @@ export default function BluffGame() {
   }, [screen]);
 
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
+  useEffect(()=>()=>{ try{ AudioTension.destroy(); }catch{} try{ _closeTickCtx(); }catch{} },[]);
   useEffect(()=>{
     if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
     let count=3;
@@ -2915,7 +2929,7 @@ export default function BluffGame() {
 
   // ─── DUEL MODE SELECT (Create vs Join) ─────────────────────
   if (duelScreen === "mode-select") return (
-    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+    <div className="dvh-screen" style={{background:"#04060f",display:"flex",flexDirection:"column",
       alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
       fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
       <div style={{width:"100%",maxWidth:420}}>
@@ -3022,7 +3036,7 @@ export default function BluffGame() {
 
   // ─── DUEL LOBBY ────────────────────────────────────────────
   if (duelScreen === "lobby") return (
-    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+    <div className="dvh-screen" style={{background:"#04060f",display:"flex",flexDirection:"column",
       alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
       fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
       <div style={{width:"100%",maxWidth:420}}>
@@ -3251,7 +3265,7 @@ export default function BluffGame() {
 
   // ─── DUEL PLAYING ──────────────────────────────────────────
   if (duelScreen === "playing" && duelRoundData) return (
-    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
+    <div className="dvh-screen" style={{background:"#04060f",display:"flex",flexDirection:"column",
       alignItems:"center",padding:"20px 16px",color:"#e8e6e1",
       fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
       <div style={{width:"100%",maxWidth:460}}>
@@ -3782,7 +3796,7 @@ export default function BluffGame() {
       {showHowToPlay && (
         <div onClick={()=>setShowHowToPlay(false)}
           style={{position:"fixed",inset:0,zIndex:600,background:"rgba(4,6,15,.9)",
-            backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+            backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
           <div onClick={e=>e.stopPropagation()}
             style={{maxWidth:360,width:"100%",background:"#0c0c14",
               border:"1px solid rgba(232,197,71,.25)",borderRadius:18,
@@ -3810,7 +3824,7 @@ export default function BluffGame() {
       {showLangModal && (
         <div onClick={()=>setShowLangModal(false)}
           style={{position:"fixed",inset:0,zIndex:600,background:"rgba(4,6,15,.9)",
-            backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+            backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
           <div onClick={e=>e.stopPropagation()}
             style={{maxWidth:360,width:"100%",background:"#0c0c14",
               border:"1px solid rgba(232,197,71,.25)",borderRadius:18,
@@ -3832,7 +3846,7 @@ export default function BluffGame() {
 
       {showShop && (
         <div style={{position:"fixed",inset:0,zIndex:500,
-          background:"rgba(4,6,15,.95)",backdropFilter:"blur(8px)",
+          background:"rgba(4,6,15,.95)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",
           overflowY:"auto",padding:"24px 16px 48px"}}>
           <div style={{maxWidth:460,margin:"0 auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",

@@ -2,6 +2,8 @@
 // POST { playerName, score, totalSeconds, categories }
 // Returns { speech }
 
+import { rateLimit, applyRateLimitHeaders } from "./_lib/rate-limit.js";
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);
@@ -14,6 +16,10 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST")   return res.status(405).json({ error: "POST only" });
   if (!ANTHROPIC_KEY)          return res.status(503).json({ error: "AI not configured" });
+
+  const rl = await rateLimit(req, { bucket: "generate-speech", limit: 5, windowSec: 60 });
+  applyRateLimitHeaders(res, rl);
+  if (!rl.ok) return res.status(429).json({ error: "Too many requests" });
 
   const {
     playerName    = "Champion",

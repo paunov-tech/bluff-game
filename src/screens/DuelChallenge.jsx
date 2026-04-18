@@ -18,7 +18,7 @@ const T = {
 };
 
 const wrap = {
-  minHeight: "100vh",
+  minHeight: "100dvh",
   background: `radial-gradient(ellipse at 50% 0%, rgba(232,197,71,.05) 0%, ${T.bg} 55%)`,
   fontFamily: "'Segoe UI', system-ui, sans-serif",
   display: "flex", flexDirection: "column", alignItems: "center",

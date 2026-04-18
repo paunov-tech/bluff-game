@@ -1,5 +1,6 @@
 // api/axiom-voice.js
 import { kv } from "@vercel/kv";
+import { rateLimit, applyRateLimitHeaders } from "./_lib/rate-limit.js";
 
 const SKIN_VOICES = {
   default:   "pNInz6obpgDQGcFmaJgB", // Adam — cold, deep
@@ -31,6 +32,12 @@ export const config = { api: { responseLimit: "4mb" } };
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
+
+  const rl = await rateLimit(req, { bucket: "axiom-voice", limit: 15, windowSec: 60 });
+  applyRateLimitHeaders(res, rl);
+  if (!rl.ok) {
+    return res.status(429).json({ error: "Too many requests", retryAfter: Math.ceil((rl.resetAt - Date.now()) / 1000) });
+  }
 
   const { text, skin = "default" } = req.body;
 

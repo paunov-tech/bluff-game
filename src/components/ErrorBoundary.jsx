@@ -1,4 +1,5 @@
 import React from "react";
+import { captureError } from "../lib/telemetry";
 
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -12,6 +13,7 @@ export default class ErrorBoundary extends React.Component {
 
   componentDidCatch(err, info) {
     console.error("[ErrorBoundary]", err, info?.componentStack);
+    try { captureError(err, { componentStack: info?.componentStack }); } catch {}
   }
 
   reset = () => {
@@ -26,8 +28,7 @@ export default class ErrorBoundary extends React.Component {
     if (!this.state.err) return this.props.children;
     const msg = this.state.err?.message || String(this.state.err);
     return (
-      <div style={{
-        minHeight: "100vh",
+      <div className="dvh-screen" style={{
         background: "#0b0b0c",
         color: "#e8e6e1",
         display: "flex",

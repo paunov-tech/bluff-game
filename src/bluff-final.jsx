@@ -760,7 +760,7 @@ export default function BluffGame() {
           filter:"drop-shadow(0 0 30px rgba(232,197,71,0.2))",
         }}>BLUFF<sup style={{fontSize:14,WebkitTextFillColor:"rgba(232,197,71,0.5)",position:"relative",top:-35,fontFamily:"system-ui",fontWeight:400}}>™</sup></h1>
         <p style={{fontSize:13,color:T.dim,letterSpacing:4,textTransform:"uppercase",margin:"0 0 40px",fontWeight:500}}>The AI Deception Game</p>
-        <div style={{background:T.glass,backdropFilter:"blur(16px)",borderRadius:18,border:`1px solid ${T.glassBorder}`,padding:"24px 20px",marginBottom:20,textAlign:"left",animation:"g-fadeUp .6s .1s both"}}>
+        <div style={{background:T.glass,backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderRadius:18,border:`1px solid ${T.glassBorder}`,padding:"24px 20px",marginBottom:20,textAlign:"left",animation:"g-fadeUp .6s .1s both"}}>
           <div style={{fontSize:11,color:T.gold,letterSpacing:3,textTransform:"uppercase",fontWeight:600,marginBottom:14}}>How to play</div>
           {[
             ["🧠","5 statements — 4 true, 1 crafted LIE"],
