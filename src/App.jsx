@@ -1043,35 +1043,168 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
   return (
     <div style={{
       position:"fixed",inset:0,zIndex:2000,
-      background:"radial-gradient(ellipse at center,rgba(20,8,0,.94) 0%,rgba(4,6,15,.98) 70%)",
+      background:"radial-gradient(ellipse at 50% 30%, rgba(90,20,20,0.35) 0%, rgba(45,10,10,0.85) 40%, rgba(12,5,8,0.98) 80%, rgba(4,2,6,1) 100%)",
       backdropFilter:"blur(12px)",
       display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
       padding:"20px",animation:"wheel-overlay-in .4s ease",
     }}>
+      {/* Layer 1: Damask wallpaper pattern — blurred, subtle */}
+      <svg width="100%" height="100%" style={{
+        position:"absolute",inset:0,
+        opacity:0.08,
+        filter:"blur(1.5px)",
+        pointerEvents:"none",
+      }}>
+        <defs>
+          <pattern id="damask" x="0" y="0" width="80" height="120" patternUnits="userSpaceOnUse">
+            <g fill="#8b6a1f" opacity="0.8">
+              <path d="M 40 10 Q 30 20, 25 35 Q 20 50, 40 55 Q 60 50, 55 35 Q 50 20, 40 10 Z"/>
+              <path d="M 40 55 Q 30 65, 25 80 Q 20 95, 40 105 Q 60 95, 55 80 Q 50 65, 40 55 Z"/>
+              <circle cx="40" cy="30" r="3"/>
+              <circle cx="40" cy="85" r="3"/>
+              <path d="M 15 60 Q 20 55, 25 60 M 55 60 Q 60 55, 65 60"
+                    stroke="#8b6a1f" strokeWidth="1" fill="none"/>
+            </g>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#damask)"/>
+      </svg>
+
+      {/* Layer 2: Warm vignette glows — distant wall sconces */}
       <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-        {[...Array(60)].map((_, i) => {
-          const size = 1 + Math.random() * 3;
-          const isLarge = Math.random() > 0.85;
+        <div style={{
+          position:"absolute",top:"15%",left:"10%",
+          width:200,height:200,borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(232,197,71,0.18) 0%, transparent 60%)",
+          filter:"blur(30px)",
+        }}/>
+        <div style={{
+          position:"absolute",top:"10%",right:"12%",
+          width:180,height:180,borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(232,197,71,0.15) 0%, transparent 60%)",
+          filter:"blur(30px)",
+        }}/>
+        <div style={{
+          position:"absolute",bottom:"20%",left:"5%",
+          width:150,height:150,borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(180,80,40,0.12) 0%, transparent 60%)",
+          filter:"blur(25px)",
+        }}/>
+        <div style={{
+          position:"absolute",bottom:"15%",right:"8%",
+          width:170,height:170,borderRadius:"50%",
+          background:"radial-gradient(circle, rgba(232,197,71,0.14) 0%, transparent 60%)",
+          filter:"blur(28px)",
+        }}/>
+      </div>
+
+      {/* Layer 3: Blurred chandelier silhouettes at top */}
+      <div style={{
+        position:"absolute",top:-20,left:0,right:0,height:140,
+        pointerEvents:"none",opacity:0.6,filter:"blur(1px)",
+      }}>
+        <svg width="120" height="140" style={{position:"absolute",left:"15%",top:0}}>
+          <defs>
+            <radialGradient id="chandelier-bulb-L" cx="0.5" cy="0.5">
+              <stop offset="0%" stopColor="#fff9c8" stopOpacity="0.9"/>
+              <stop offset="60%" stopColor="#e8c547" stopOpacity="0.5"/>
+              <stop offset="100%" stopColor="#8b6a1f" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <line x1="60" y1="0" x2="60" y2="30" stroke="#3a2a14" strokeWidth="1"/>
+          <ellipse cx="60" cy="32" rx="8" ry="3" fill="#6b4f0f"/>
+          <path d="M 35 35 Q 60 32 85 35 L 80 60 Q 60 68 40 60 Z"
+                fill="#4a3a14" stroke="#8b6a1f" strokeWidth="0.5"/>
+          {[...Array(7)].map((_, i) => {
+            const x = 40 + i * 7;
+            const length = 15 + ((i * 37) % 20);
+            return (
+              <g key={i}>
+                <line x1={x} y1="58" x2={x} y2={58 + length} stroke="#8b6a1f" strokeWidth="0.3"/>
+                <circle cx={x} cy={58 + length} r="1.5" fill="#fff9c8" opacity="0.6"/>
+              </g>
+            );
+          })}
+          <circle cx="60" cy="48" r="30" fill="url(#chandelier-bulb-L)"/>
+          {[...Array(6)].map((_, i) => {
+            const angle = (i / 6) * Math.PI * 2 + Math.PI / 12;
+            const r = 22;
+            const x = 60 + r * Math.cos(angle);
+            const y = 48 + r * Math.sin(angle);
+            return <circle key={i} cx={x} cy={y} r="2.5" fill="#fff9c8" opacity="0.8"/>;
+          })}
+        </svg>
+
+        <svg width="100" height="120" style={{position:"absolute",right:"18%",top:10}}>
+          <defs>
+            <radialGradient id="chandelier-bulb-R" cx="0.5" cy="0.5">
+              <stop offset="0%" stopColor="#fff9c8" stopOpacity="0.85"/>
+              <stop offset="60%" stopColor="#e8c547" stopOpacity="0.4"/>
+              <stop offset="100%" stopColor="#8b6a1f" stopOpacity="0"/>
+            </radialGradient>
+          </defs>
+          <line x1="50" y1="0" x2="50" y2="25" stroke="#3a2a14" strokeWidth="1"/>
+          <ellipse cx="50" cy="27" rx="6" ry="2.5" fill="#6b4f0f"/>
+          <path d="M 30 30 Q 50 27 70 30 L 66 50 Q 50 57 34 50 Z"
+                fill="#4a3a14" stroke="#8b6a1f" strokeWidth="0.5"/>
+          {[...Array(5)].map((_, i) => {
+            const x = 35 + i * 7.5;
+            const length = 12 + ((i * 29) % 15);
+            return (
+              <g key={i}>
+                <line x1={x} y1="48" x2={x} y2={48 + length} stroke="#8b6a1f" strokeWidth="0.3"/>
+                <circle cx={x} cy={48 + length} r="1.2" fill="#fff9c8" opacity="0.5"/>
+              </g>
+            );
+          })}
+          <circle cx="50" cy="40" r="25" fill="url(#chandelier-bulb-R)"/>
+          {[...Array(5)].map((_, i) => {
+            const angle = (i / 5) * Math.PI * 2 + Math.PI / 10;
+            const r = 18;
+            const x = 50 + r * Math.cos(angle);
+            const y = 40 + r * Math.sin(angle);
+            return <circle key={i} cx={x} cy={y} r="2" fill="#fff9c8" opacity="0.75"/>;
+          })}
+        </svg>
+      </div>
+
+      {/* Layer 4: Cinematic bokeh — gold sparkles, white stars, amber embers */}
+      <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+        {[...Array(80)].map((_, i) => {
+          const type = Math.random();
+          let color, size, glow;
+          if (type < 0.6) {
+            color = "#e8c547";
+            size = 1 + Math.random() * 3;
+            glow = "0 0 6px rgba(232,197,71,0.7)";
+          } else if (type < 0.85) {
+            color = "#ffffff";
+            size = 1 + Math.random() * 2;
+            glow = "0 0 8px rgba(255,255,255,0.8)";
+          } else {
+            color = "#ff9a3d";
+            size = 2 + Math.random() * 4;
+            glow = "0 0 12px rgba(255,154,61,0.6)";
+          }
+          const isLarge = Math.random() > 0.9;
           return (
             <div key={i} style={{
               position:"absolute",
               width: isLarge ? size*2 : size,
               height: isLarge ? size*2 : size,
               borderRadius:"50%",
-              background: isLarge ? "#fff" : "#e8c547",
+              background: color,
               left:`${Math.random()*100}%`,top:`${Math.random()*100}%`,
-              opacity:0.15 + Math.random()*0.4,
-              boxShadow: isLarge
-                ? "0 0 8px rgba(255,255,255,0.8)"
-                : "0 0 4px rgba(232,197,71,0.6)",
-              animation:`wheel-particle-drift ${5+Math.random()*6}s ease-in-out infinite`,
-              animationDelay:`${Math.random()*4}s`,
+              opacity: 0.15 + Math.random()*0.5,
+              boxShadow: glow,
+              animation:`wheel-particle-drift ${5+Math.random()*7}s ease-in-out infinite`,
+              animationDelay:`${Math.random()*5}s`,
             }}/>
           );
         })}
       </div>
 
-      {/* Radial spotlight glow behind wheel */}
+      {/* Layer 5: Radial spotlight glow behind wheel */}
       <div style={{
         position:"absolute",
         left:"50%",top:"50%",
