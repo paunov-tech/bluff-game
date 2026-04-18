@@ -3141,7 +3141,7 @@ export default function BluffGame() {
       if(count<=0){ setAutoAdvanceCount(null); advanceAfterRound(); }
       else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
     };
-    autoAdvanceRef.current=setTimeout(tick, blitzMode ? 100 : 800);
+    autoAdvanceRef.current=setTimeout(tick, blitzMode ? 100 : 4300);
     return ()=>clearTimeout(autoAdvanceRef.current);
   },[revealed]);
   useEffect(() => {
