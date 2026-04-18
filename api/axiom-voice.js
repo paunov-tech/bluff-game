@@ -85,7 +85,12 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const err = await response.text().catch(() => "unknown");
       console.error("[axiom-voice] ElevenLabs error:", response.status, err.slice(0, 200));
-      return res.status(502).json({ error: "TTS failed", status: response.status });
+      // Preserve upstream status for quota/auth/rate-limit so Vercel logs reflect
+      // the real failure mode. Only generic upstream failures (5xx and other 4xx)
+      // are collapsed to 502.
+      const passthrough = response.status === 401 || response.status === 402 || response.status === 429;
+      const outStatus = passthrough ? response.status : 502;
+      return res.status(outStatus).json({ error: "TTS failed", status: response.status });
     }
 
     const arrayBuffer = await response.arrayBuffer();
