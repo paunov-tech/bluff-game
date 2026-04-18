@@ -1404,10 +1404,10 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
 
       {!spinning && !showOutcome && (
         <div style={{marginTop:20,display:"flex",gap:14,fontSize:10,letterSpacing:1,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>
-          <span><span style={{color:"#4ade80"}}>●</span> ×2 · 38%</span>
-          <span><span style={{color:"#f43f5e"}}>●</span> ×0 · 38%</span>
-          <span><span style={{color:"#e8c547"}}>●</span> ×3 · 19%</span>
-          <span><span style={{color:"#888"}}>●</span> bust · 6%</span>
+          <span><span style={{color:"#4ade80"}}>●</span> ×2</span>
+          <span><span style={{color:"#f43f5e"}}>●</span> ×0</span>
+          <span><span style={{color:"#e8c547"}}>●</span> ×3</span>
+          <span><span style={{color:"#888"}}>●</span> bust</span>
         </div>
       )}
 
