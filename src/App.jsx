@@ -2173,32 +2173,40 @@ export default function BluffGame() {
         {duelConnectionState === "connected" && (<>
         {Object.keys(duelPlayers).length < 2 ? (<>
           <div style={{textAlign:"center",marginBottom:24}}>
-            <div style={{fontSize:11,letterSpacing:"4px",color:"#5a5a68",
-                         textTransform:"uppercase",marginBottom:8}}>
-              {duelMode==="blitz"?"Blitz Duel":"Regular Duel"}
+            <div style={{fontSize:12,letterSpacing:"5px",color:"#e8c547",
+                         textTransform:"uppercase",marginBottom:12,fontWeight:700,
+                         textShadow:"0 0 20px rgba(232,197,71,0.3)"}}>
+              {duelMode==="blitz"?"⚡ Blitz Duel":"⚔️ Regular Duel"}
             </div>
-            <div style={{fontSize:14,color:"#e8e6e1",opacity:0.85}}>
-              Waiting for opponent…
+            <div style={{fontSize:16,color:"#e8e6e1",opacity:1,fontWeight:500,letterSpacing:0.3}}>
+              Waiting for opponent
+              <span style={{
+                display:"inline-block",animation:"lobby-dotwave 1.4s ease-in-out infinite"
+              }}>…</span>
             </div>
           </div>
 
           {/* Animated heartbeat */}
-          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:28}}>
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:32}}>
             {[0,1,2].map(i => (
               <div key={i} style={{
-                width:10,height:10,borderRadius:"50%",background:"#e8c547",
+                width:12,height:12,borderRadius:"50%",background:"#e8c547",
                 animation:`lobby-pulse 1.4s ease-in-out ${i*0.2}s infinite`,
-                opacity:0.3
+                opacity:0.3,boxShadow:"0 0 12px rgba(232,197,71,0.6)"
               }}/>
             ))}
           </div>
 
           {/* Big room code card */}
           <div style={{
-            background:"#111119",border:"1.5px solid rgba(232,197,71,0.3)",
-            borderRadius:20,padding:"24px 20px",marginBottom:16,textAlign:"center",
-            boxShadow:"0 0 40px rgba(232,197,71,0.08)"
+            background:"linear-gradient(135deg,#14141c 0%,#0c0c14 100%)",
+            border:"2px solid rgba(232,197,71,0.55)",
+            borderRadius:20,padding:"28px 20px",marginBottom:18,textAlign:"center",
+            boxShadow:"0 0 60px rgba(232,197,71,0.18),inset 0 0 30px rgba(232,197,71,0.04)",
+            position:"relative",overflow:"hidden"
           }}>
+            <div style={{position:"absolute",top:0,left:0,right:0,height:2,
+              background:"linear-gradient(90deg,transparent,rgba(232,197,71,0.8),transparent)"}}/>
             <div style={{fontSize:11,color:"#e8c547",letterSpacing:3,
                          textTransform:"uppercase",fontWeight:600,marginBottom:10}}>
               Room Code
@@ -2234,8 +2242,8 @@ export default function BluffGame() {
             }}
               style={{flex:1,padding:"14px",fontSize:13,fontWeight:700,
                 letterSpacing:1,textTransform:"uppercase",
-                background:"rgba(255,255,255,0.03)",color:"#e8e6e1",
-                border:"1.5px solid rgba(255,255,255,0.07)",borderRadius:12,
+                background:"rgba(232,197,71,0.08)",color:"#e8c547",
+                border:"1.5px solid rgba(232,197,71,0.35)",borderRadius:12,
                 cursor:"pointer",fontFamily:"inherit"}}
             >
               📋 Copy Code
@@ -2244,7 +2252,18 @@ export default function BluffGame() {
 
           {/* Elapsed time + conditional escape hatch */}
           <div style={{textAlign:"center",marginTop:20}}>
-            <div style={{fontSize:12,color:"#5a5a68"}}>
+            <div style={{
+              fontSize:13,letterSpacing:2,textTransform:"uppercase",
+              fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",gap:6,
+              opacity:lobbyElapsed < 30 ? 0.6 : 1,
+              color:lobbyElapsed >= 60 ? "#fb923c" : lobbyElapsed >= 30 ? "#e8c547" : "#7a7a88",
+              transition:"color 1s"
+            }}>
+              <span style={{
+                display:"inline-block",width:6,height:6,borderRadius:"50%",
+                background:"currentColor",
+                animation:"lobby-tick 1s ease-in-out infinite"
+              }}/>
               Waiting {Math.floor(lobbyElapsed / 60)}:{String(lobbyElapsed % 60).padStart(2,"0")}
             </div>
 
@@ -3499,5 +3518,7 @@ function GameStyles(){
     @keyframes ax-browTwitch{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.6px)}}
     @keyframes lobby-pulse{0%,100%{opacity:0.3;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
     @keyframes lobby-timeout-fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes lobby-dotwave{0%,100%{opacity:0.4;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
+    @keyframes lobby-tick{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
   `}</style>;
 }
