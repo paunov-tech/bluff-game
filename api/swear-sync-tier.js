@@ -11,6 +11,7 @@
 import { kv } from "@vercel/kv";
 import { fsGetFields, fsPatchMerge, fsCreateIfMissing, fsIncrement, toFS } from "./_lib/firestore-rest.js";
 import { rateFor } from "./_lib/swear-rates.js";
+import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
 
 const PLAYERS = "bluff_players";
 const LOGS    = "bluff_earn_log";
@@ -18,13 +19,17 @@ const LOGS    = "bluff_earn_log";
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+
+  const auth = await verifyRequestAuth(req);
+  if (!auth?.uid) return res.status(401).json({ error: "unauthenticated" });
 
   const { userId, isPro, proPlan, isEarlyAdopter, earlyAdopterRank } = req.body || {};
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId required" });
   const uid = userId.trim().slice(0, 80);
+  if (uid !== auth.uid) return res.status(403).json({ error: "uid_mismatch" });
 
   try {
     const prof = await fsGetFields(PLAYERS, uid);

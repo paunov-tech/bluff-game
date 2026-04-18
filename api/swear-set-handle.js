@@ -7,6 +7,7 @@
 // reservation, if any.
 
 import { fsGetFields, fsCreateIfMissing, fsPatchMerge, fsDelete, toFS } from "./_lib/firestore-rest.js";
+import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
 
 const PLAYERS = "bluff_players";
 const HANDLES = "bluff_handles";
@@ -16,15 +17,19 @@ const HANDLE_RE = /^[a-zA-Z0-9_]{3,16}$/;
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({ error: "POST only" });
+
+  const auth = await verifyRequestAuth(req);
+  if (!auth?.uid) return res.status(401).json({ error: "unauthenticated" });
 
   const { userId, handle } = req.body || {};
   if (!userId || typeof userId !== "string") return res.status(400).json({ error: "userId required" });
   if (!handle || typeof handle !== "string") return res.status(400).json({ error: "handle required" });
 
   const uid = userId.trim().slice(0, 80);
+  if (uid !== auth.uid) return res.status(403).json({ error: "uid_mismatch" });
   const raw = handle.trim();
   if (!HANDLE_RE.test(raw)) {
     return res.status(400).json({ error: "invalid", detail: "3-16 chars, letters/digits/underscore only" });

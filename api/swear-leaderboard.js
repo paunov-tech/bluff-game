@@ -21,6 +21,7 @@ export default async function handler(req, res) {
       limit: 40,
     });
     const leaderboard = rows
+      .filter(r => !r.fields.migratedTo)
       .map(r => ({
         handle:         r.fields.handle || null,
         swearBalance:   r.fields.swearBalance || 0,

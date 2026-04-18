@@ -11,6 +11,7 @@
 
 import { fsGet, fsGetFields, fsPatch, fsCreateIfMissing, fsIncrement, toFS } from "./_lib/firestore-rest.js";
 import { rateFor } from "./_lib/swear-rates.js";
+import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
 
 const COL = "bluff_players";
 
@@ -60,7 +61,7 @@ function profileFields(p) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   // ── GET — return current profile or null ───────────────────────
@@ -84,6 +85,12 @@ export default async function handler(req, res) {
     const uid = userId.trim();
     if (uid.length < 3 || uid.length > 80) {
       return res.status(400).json({ error: "userId out of range" });
+    }
+
+    // If a bearer token is present, the POSTed userId MUST match.
+    const auth = await verifyRequestAuth(req);
+    if (auth?.uid && uid !== auth.uid) {
+      return res.status(403).json({ error: "uid_mismatch" });
     }
 
     try {

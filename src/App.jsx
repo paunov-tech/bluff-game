@@ -3,6 +3,13 @@ import { PartySocket } from "partysocket";
 import { SCHEMA, QUESTIONS_PER_WAVE } from "./config/schema";
 import { getFallback } from "./config/fallbacks";
 import { t as translate } from "./i18n/index.js";
+import {
+  isAuthReady,
+  onAuthChange,
+  signInGoogle,
+  signOutUser,
+  getCurrentIdToken,
+} from "./auth.js";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
@@ -1038,13 +1045,18 @@ const FIELD_COLORS = [
 // ═══════════════════════════════════════════════════════════════
 // WHEEL OF FORTUNE — Double-or-Nothing phase resolver
 // ═══════════════════════════════════════════════════════════════
-function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut, onSpinResult, lang = "en" }) {
+function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut, onSpinResult, lang = "en", gambitMode = false, gambitRisk = null, gambitPot = 0 }) {
   const t = (key, params) => translate(key, lang, params);
   const [spinning, setSpinning] = useState(false);
   const [resultZone, setResultZone] = useState(null);
   const [finalAngle, setFinalAngle] = useState(0);
   const [showOutcome, setShowOutcome] = useState(false);
   const chipTier = phaseNum === 1 ? "bronze" : phaseNum === 2 ? "silver" : "gold";
+  const spinMs = gambitMode ? 4500 : 3500;
+  const riskLabel = gambitMode && gambitRisk
+    ? (gambitRisk === "allin" ? t("gambit.allin") : gambitRisk === "balanced" ? t("gambit.balanced") : t("gambit.conservative"))
+    : "";
+  const stakeForDisplay = gambitMode ? gambitPot : phaseScore;
 
   const reducedMotion = typeof window !== "undefined"
     && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
@@ -1080,7 +1092,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
         setFinalAngle(finalAng);
       });
     });
-    try { playRouletteClicks(3500); } catch {}
+    try { playRouletteClicks(spinMs); } catch {}
 
     setTimeout(() => {
       setResultZone(zone);
@@ -1092,7 +1104,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
         else playWheelChime("catastrophe");
       } catch {}
       setTimeout(() => onSpinResult(zone), 2600);
-    }, 3500);
+    }, spinMs);
   };
 
   return (
@@ -1277,10 +1289,10 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       {!spinning && !showOutcome && (
         <>
           <div style={{fontSize:10,letterSpacing:6,color:"rgba(232,197,71,.6)",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>
-            {t("wheel.phase_complete", { n: phaseNum })}
+            {gambitMode ? t("gambit.header", { risk: riskLabel.toUpperCase() }) : t("wheel.phase_complete", { n: phaseNum })}
           </div>
           <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:"#e8c547",marginBottom:32,textAlign:"center",textShadow:"0 0 30px rgba(232,197,71,.4)"}}>
-            {mandatory ? t("wheel.grand_bluff") : t("wheel.cash_or_spin")}
+            {gambitMode ? t("gambit.title") : mandatory ? t("wheel.grand_bluff") : t("wheel.cash_or_spin")}
           </div>
         </>
       )}
@@ -1290,13 +1302,13 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
         transform:spinning?"scale(0.6) translateY(-80px)":"scale(1)",
         transition:"transform 0.5s cubic-bezier(0.4,0,0.2,1)",
       }}>
-        <CasinoChip tier={chipTier} value={phaseScore} size={100}/>
+        <CasinoChip tier={chipTier} value={stakeForDisplay} size={100}/>
       </div>
 
       {!showOutcome && (
         <div style={{fontSize:11,letterSpacing:3,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:20}}>
-          {t("wheel.phase_stake")} <span style={{color:"#e8c547",fontWeight:700,fontSize:18,fontFamily:"Georgia,serif"}}>
-            {phaseScore.toLocaleString('en-US')}
+          {gambitMode ? t("gambit.pot") : t("wheel.phase_stake")} <span style={{color:"#e8c547",fontWeight:700,fontSize:18,fontFamily:"Georgia,serif"}}>
+            {stakeForDisplay.toLocaleString('en-US')}
           </span>
         </div>
       )}
@@ -1308,7 +1320,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
         <svg width="280" height="280" viewBox="0 0 280 280"
           style={{
             transform:`rotate(${finalAngle}deg)`,
-            transition:spinning?"transform 3.5s cubic-bezier(0.17,0.67,0.12,0.99)":"none",
+            transition:spinning?`transform ${spinMs}ms cubic-bezier(0.17,0.67,0.12,0.99)`:"none",
             filter:"drop-shadow(0 0 40px rgba(232,197,71,.35))",
           }}>
           <defs>
@@ -1424,7 +1436,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
 
       {!spinning && !showOutcome && (
         <div style={{display:"flex",gap:14,width:"100%",maxWidth:380,marginTop:10}}>
-          {!mandatory && (
+          {!mandatory && !gambitMode && (
             <button onClick={onCashOut} style={{
               flex:1,minHeight:56,padding:16,
               fontSize:13,fontWeight:700,letterSpacing:2,textTransform:"uppercase",fontFamily:"inherit",
@@ -1512,13 +1524,258 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
             fontSize:14,color:"rgba(255,255,255,0.8)",
             letterSpacing:1,fontWeight:600,
           }}>
-            {resultZone==="gold" ? `+${(phaseScore*3).toLocaleString('en-US')} points`
-              : resultZone==="green" ? `+${(phaseScore*2).toLocaleString('en-US')} points`
-              : resultZone==="red" ? `AXIOM takes ${phaseScore.toLocaleString('en-US')}`
-              : "−50% of total score"}
+            {gambitMode
+              ? (resultZone==="gold" ? t("gambit.outcome_gold", { n: (gambitPot*2).toLocaleString('en-US') })
+                : resultZone==="green" ? t("gambit.outcome_green", { n: gambitPot.toLocaleString('en-US') })
+                : resultZone==="red" ? t("gambit.outcome_red", { n: gambitPot.toLocaleString('en-US') })
+                : t("gambit.outcome_black", { n: (gambitPot*2).toLocaleString('en-US') }))
+              : (resultZone==="gold" ? `+${(phaseScore*3).toLocaleString('en-US')} points`
+                : resultZone==="green" ? `+${(phaseScore*2).toLocaleString('en-US')} points`
+                : resultZone==="red" ? `AXIOM takes ${phaseScore.toLocaleString('en-US')}`
+                : "−50% of total score")}
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RISK SELECTOR — choose stake before the Gambit
+// ═══════════════════════════════════════════════════════════════
+function RiskSelector({ playerScore, onPick, lang = "en" }) {
+  const t = (key, params) => translate(key, lang, params);
+  const safe = Math.max(0, Math.floor(playerScore));
+  const options = [
+    { key: "conservative", pct: 0.30, title: t("gambit.conservative"), sub: t("gambit.conservative_sub"), color: "#4ade80" },
+    { key: "balanced",     pct: 0.60, title: t("gambit.balanced"),     sub: t("gambit.balanced_sub"),     color: "#e8c547" },
+    { key: "allin",        pct: 1.00, title: t("gambit.allin"),        sub: t("gambit.allin_sub"),        color: "#f43f5e" },
+  ];
+
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:2000,
+      background:"radial-gradient(ellipse at 50% 30%, rgba(90,20,20,0.35) 0%, rgba(45,10,10,0.85) 40%, rgba(12,5,8,0.98) 80%, rgba(4,2,6,1) 100%)",
+      backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"20px",animation:"wheel-overlay-in .4s ease",
+    }}>
+      <div style={{fontSize:10,letterSpacing:6,color:"rgba(232,197,71,.6)",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>
+        {t("gambit.choose_risk")}
+      </div>
+      <div style={{fontFamily:"Georgia,serif",fontSize:32,fontWeight:900,color:"#e8c547",marginBottom:10,textAlign:"center",textShadow:"0 0 30px rgba(232,197,71,.4)"}}>
+        {t("gambit.title")}
+      </div>
+      <div style={{fontSize:13,color:"rgba(232,230,225,.7)",marginBottom:28,textAlign:"center",maxWidth:320,lineHeight:1.5}}>
+        {t("gambit.subtitle")}
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:12,width:"100%",maxWidth:380}}>
+        {options.map(opt => {
+          const pot = Math.floor(safe * opt.pct);
+          return (
+            <button key={opt.key} onClick={() => onPick(opt.key, pot)} style={{
+              padding:"16px 18px",minHeight:72,
+              background:`linear-gradient(135deg, rgba(${opt.color==="#4ade80"?"74,222,128":opt.color==="#e8c547"?"232,197,71":"244,63,94"},0.12), rgba(${opt.color==="#4ade80"?"74,222,128":opt.color==="#e8c547"?"232,197,71":"244,63,94"},0.03))`,
+              color:"#e8e6e1",
+              border:`1.5px solid ${opt.color}55`,
+              borderRadius:14,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,
+            }}>
+              <div>
+                <div style={{fontWeight:900,fontSize:15,letterSpacing:"1.5px",textTransform:"uppercase",color:opt.color,marginBottom:3}}>
+                  {opt.title}
+                </div>
+                <div style={{fontSize:12,opacity:.65}}>{opt.sub}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:10,letterSpacing:2,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>{t("gambit.pot")}</div>
+                <div style={{fontWeight:900,fontSize:22,fontFamily:"Georgia,serif",color:"#e8c547"}}>{pot.toLocaleString('en-US')}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUDDEN DEATH — one-round steal-or-lose-all comeback
+// ═══════════════════════════════════════════════════════════════
+function SuddenDeath({ playerScore, axiomScore, onResolve, lang = "en" }) {
+  const t = (key, params) => translate(key, lang, params);
+  const [round, setRound] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [locked, setLocked] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [outcome, setOutcome] = useState(null); // "win" | "lose"
+  const resolvedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const CATS = ["history","science","animals","geography","culture","food","sports"];
+    const cat = CATS[Math.floor(Math.random()*CATS.length)];
+    (async () => {
+      try {
+        const res = await fetch("/api/generate-round", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ category: cat, difficulty: 5, lang, mode: "regular" }),
+        });
+        const data = await res.json();
+        if (!cancelled && data && Array.isArray(data.statements)) {
+          setRound({ statements: data.statements.slice(0, 4) });
+        } else if (!cancelled) {
+          setRound(null);
+        }
+      } catch {
+        if (!cancelled) setRound(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lang]);
+
+  // Graceful skip if fetch failed: resolve with null once so caller moves on
+  useEffect(() => {
+    if (!loading && !round && !resolvedRef.current) {
+      resolvedRef.current = true;
+      onResolve(null);
+    }
+  }, [loading, round, onResolve]);
+
+  function pick(idx) {
+    if (locked || !round) return;
+    setSelected(idx);
+    setLocked(true);
+    const s = round.statements[idx];
+    const won = s && s.real === false;
+    setOutcome(won ? "win" : "lose");
+    setTimeout(() => {
+      if (resolvedRef.current) return;
+      resolvedRef.current = true;
+      onResolve(won);
+    }, 2200);
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        position:"fixed",inset:0,zIndex:2000,
+        background:"radial-gradient(ellipse at 50% 30%, rgba(90,20,20,0.35) 0%, rgba(12,5,8,0.98) 80%)",
+        display:"flex",alignItems:"center",justifyContent:"center",color:"#e8c547",fontFamily:"Georgia,serif",fontSize:18,
+      }}>
+        {t("gambit.loading")}
+      </div>
+    );
+  }
+
+  // Graceful fallback: if round fetch failed, onResolve(null) is fired by the effect above
+  if (!round) return null;
+
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:2000,
+      background:"radial-gradient(ellipse at 50% 30%, rgba(120,10,10,0.45) 0%, rgba(45,10,10,0.9) 40%, rgba(12,5,8,0.99) 80%)",
+      backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-start",
+      padding:"32px 20px",overflow:"auto",animation:"wheel-overlay-in .4s ease",
+    }}>
+      <div style={{fontSize:10,letterSpacing:6,color:"rgba(244,63,94,.8)",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>
+        {t("gambit.sudden_death_round")}
+      </div>
+      <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:900,color:"#f43f5e",marginBottom:8,textAlign:"center",textShadow:"0 0 30px rgba(244,63,94,.4)"}}>
+        {t("gambit.sudden_death_offer")}
+      </div>
+      <div style={{fontSize:13,color:"rgba(232,230,225,.75)",marginBottom:22,textAlign:"center",maxWidth:340,lineHeight:1.5}}>
+        {t("gambit.sudden_death_prompt")}
+      </div>
+
+      <div style={{display:"flex",flexDirection:"column",gap:10,width:"100%",maxWidth:420}}>
+        {round.statements.map((s, i) => {
+          const isSelected = selected === i;
+          const showResult = locked;
+          const isLie = s.real === false;
+          const bg = showResult
+            ? (isLie ? "rgba(74,222,128,0.15)" : isSelected ? "rgba(244,63,94,0.18)" : "rgba(255,255,255,0.03)")
+            : "rgba(255,255,255,0.04)";
+          const border = showResult
+            ? (isLie ? "#4ade80" : isSelected ? "#f43f5e" : "rgba(255,255,255,0.12)")
+            : "rgba(255,255,255,0.15)";
+          return (
+            <button key={i} disabled={locked} onClick={()=>pick(i)} style={{
+              padding:"14px 16px",minHeight:56,
+              background:bg,color:"#e8e6e1",textAlign:"left",
+              border:`1.5px solid ${border}`,borderRadius:12,
+              cursor:locked?"default":"pointer",fontFamily:"inherit",fontSize:14,lineHeight:1.4,
+              transition:"all .25s ease",
+            }}>
+              {s.text}
+            </button>
+          );
+        })}
+      </div>
+
+      {outcome && (
+        <div style={{
+          marginTop:24,textAlign:"center",
+          animation:"wheel-outcome-in .5s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
+          <div style={{
+            fontFamily:"Georgia,serif",fontSize:36,fontWeight:900,
+            color: outcome==="win" ? "#4ade80" : "#f43f5e",
+            textShadow: outcome==="win" ? "0 0 60px rgba(74,222,128,0.6)" : "0 0 60px rgba(244,63,94,0.6)",
+            letterSpacing:2,marginBottom:6,
+          }}>
+            {outcome==="win" ? "STOLEN" : "LOST"}
+          </div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,0.8)",letterSpacing:1}}>
+            {outcome==="win" ? t("gambit.sudden_death_won") : t("gambit.sudden_death_lost")}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUDDEN DEATH OFFER — prompt before accepting the round
+// ═══════════════════════════════════════════════════════════════
+function SuddenDeathOffer({ onAccept, onDecline, lang = "en" }) {
+  const t = (key, params) => translate(key, lang, params);
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:2000,
+      background:"radial-gradient(ellipse at 50% 30%, rgba(120,10,10,0.45) 0%, rgba(12,5,8,0.98) 80%)",
+      backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"24px",animation:"wheel-overlay-in .4s ease",
+    }}>
+      <div style={{fontSize:40,marginBottom:8}}>💀</div>
+      <div style={{fontFamily:"Georgia,serif",fontSize:30,fontWeight:900,color:"#f43f5e",marginBottom:12,textAlign:"center",textShadow:"0 0 30px rgba(244,63,94,.4)",letterSpacing:1}}>
+        {t("gambit.sudden_death_offer")}
+      </div>
+      <div style={{fontSize:14,color:"rgba(232,230,225,.8)",marginBottom:28,textAlign:"center",maxWidth:340,lineHeight:1.5}}>
+        {t("gambit.sudden_death_sub")}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10,width:"100%",maxWidth:340}}>
+        <button onClick={onAccept} style={{
+          minHeight:56,padding:16,fontSize:14,fontWeight:700,letterSpacing:2,textTransform:"uppercase",fontFamily:"inherit",
+          background:"linear-gradient(135deg,#f43f5e,#b91c3a)",color:"#fff",
+          border:"none",borderRadius:14,cursor:"pointer",boxShadow:"0 0 40px rgba(244,63,94,.4)",
+        }}>
+          {t("gambit.sudden_death_accept")}
+        </button>
+        <button onClick={onDecline} style={{
+          minHeight:48,padding:12,fontSize:12,fontWeight:600,letterSpacing:1.5,textTransform:"uppercase",fontFamily:"inherit",
+          background:"rgba(255,255,255,.03)",color:"rgba(232,230,225,.7)",
+          border:"1px solid rgba(255,255,255,.12)",borderRadius:12,cursor:"pointer",
+        }}>
+          {t("gambit.sudden_death_decline")}
+        </button>
+      </div>
     </div>
   );
 }
@@ -1750,6 +2007,12 @@ export default function BluffGame() {
   // Wheel-of-fortune state
   const [wheelOpen, setWheelOpen] = useState(false);
   const [wheelPhaseNum, setWheelPhaseNum] = useState(1);
+  // Gambit (final-phase all-or-nothing) state
+  const [gambitRiskOpen, setGambitRiskOpen] = useState(false);
+  const [gambitRisk, setGambitRisk] = useState(null);
+  const [gambitPot, setGambitPot] = useState(0);
+  const [suddenDeathOfferOpen, setSuddenDeathOfferOpen] = useState(false);
+  const [suddenDeathOpen, setSuddenDeathOpen] = useState(false);
   // Chip flight on Lock In
   const [chipFlying, setChipFlying] = useState(false);
   const milestonesFiredRef = useRef(new Set());
@@ -1802,6 +2065,16 @@ export default function BluffGame() {
   const swearAwardTimerRef = useRef(null);
   // Fired streak milestones in current game — prevents re-paying on re-renders.
   const firedStreakSwearRef = useRef(new Set());
+
+  // ── Auth (Firebase) ────────────────────────────────────────────
+  const [authUser, setAuthUser] = useState(null);   // { uid, email, displayName, ... } or null
+  const authUserRef = useRef(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState("");
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const [anonCapBannerOpen, setAnonCapBannerOpen] = useState(false);
+  const migrationInFlightRef = useRef(false);
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -2033,9 +2306,12 @@ export default function BluffGame() {
     const uid = userIdRef.current;
     if (!uid || !event || !gameId) return null;
     try {
+      const headers = { "Content-Type": "application/json" };
+      const token = await getCurrentIdToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const r = await fetch("/api/swear-earn", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body:    JSON.stringify({ userId: uid, event, gameId, meta: meta || null }),
       });
       const data = await r.json();
@@ -2048,6 +2324,9 @@ export default function BluffGame() {
           setSwearProfile(next);
         }
         flashSwearAward(data.awarded, label || event);
+      }
+      if (data.anonymousCapHit && !authUserRef.current) {
+        setAnonCapBannerOpen(true);
       }
       return data;
     } catch (e) {
@@ -2095,12 +2374,18 @@ export default function BluffGame() {
   async function saveHandle(raw) {
     const uid = userIdRef.current;
     if (!uid) return { ok: false, error: "no_user" };
+    if (!authUserRef.current) return { ok: false, error: "sign_in_required" };
     const handle = String(raw || "").trim();
     if (!/^[a-zA-Z0-9_]{3,16}$/.test(handle)) return { ok: false, error: "invalid" };
     try {
+      const token = await getCurrentIdToken();
+      if (!token) return { ok: false, error: "sign_in_required" };
       const r = await fetch("/api/swear-set-handle", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
         body:    JSON.stringify({ userId: uid, handle }),
       });
       const data = await r.json();
@@ -2110,6 +2395,34 @@ export default function BluffGame() {
       return { ok: true };
     } catch {
       return { ok: false, error: "save_failed" };
+    }
+  }
+
+  // Run anonymous → uid migration once after sign-in.
+  async function migrateAnonToUid(anonymousId) {
+    if (migrationInFlightRef.current) return null;
+    migrationInFlightRef.current = true;
+    try {
+      const token = await getCurrentIdToken();
+      if (!token) return null;
+      const r = await fetch("/api/swear-migrate", {
+        method: "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${token}`,
+        },
+        body: JSON.stringify({ anonymousId }),
+      });
+      const data = await r.json();
+      if (r.ok && data.profile) {
+        applyProfile(data.profile);
+      }
+      return data;
+    } catch (e) {
+      console.warn("[auth] migrate failed:", e.message);
+      return null;
+    } finally {
+      migrationInFlightRef.current = false;
     }
   }
 
@@ -2886,7 +3199,7 @@ export default function BluffGame() {
     axiomSpeak("intro","idle");
   }
 
-  // Wheel-aware advance: rounds 4/8/12 (solo) trigger Wheel of Fortune
+  // Wheel-aware advance: rounds 4/8 (solo) trigger Wheel of Fortune; round 12 triggers Gambit
   function advanceAfterRound() {
     const justCompleted = roundIdx + 1; // 1-indexed
     const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
@@ -2897,13 +3210,31 @@ export default function BluffGame() {
       clearTimeout(autoAdvanceRef.current);
       setAutoAdvanceCount(null);
       if (!isPro) {
-        // Free users: show teaser instead of wheel, auto-continue
+        // Free users: show teaser instead of wheel/gambit, auto-continue
         setShowWheelTeaser(true);
         setTimeout(() => {
           setShowWheelTeaser(false);
           if (justCompleted >= totalRounds) showResultScreen();
           else nextRound();
         }, 2200);
+        return;
+      }
+      if (justCompleted === 12) {
+        // Gambit flow: commit accumulated phase-3 bank to total first, then pick risk
+        const curPhaseScore = phaseScoreRef.current;
+        const curPlayer = score + curPhaseScore;
+        const curAxiom = axiomScoreRef.current;
+        setScore(curPlayer);
+        setPhaseScore(0);
+        phaseScoreRef.current = 0;
+        // Offer Sudden Death if player is trailing 2×+
+        if (curAxiom >= curPlayer * 2 && curAxiom > 0) {
+          axiomSpeak("sudden_death_intro", "taunting");
+          setSuddenDeathOfferOpen(true);
+        } else {
+          axiomSpeak("gambit_intro", "taunting");
+          setGambitRiskOpen(true);
+        }
         return;
       }
       setWheelOpen(true);
@@ -3242,9 +3573,12 @@ export default function BluffGame() {
     let cancelled = false;
     (async () => {
       try {
+        const headers = { "Content-Type": "application/json" };
+        const token = await getCurrentIdToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
         const r = await fetch("/api/swear-profile", {
           method:  "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body:    JSON.stringify({ userId: uid }),
         });
         const data = await r.json();
@@ -3253,11 +3587,15 @@ export default function BluffGame() {
         if (data.created && data.awarded > 0) {
           flashSwearAward(data.awarded, t("swear.first_bonus", lang));
         }
-        // Tier sync (early adopter bonus + pro flag).
+        // Tier sync only for signed-in users (endpoint now requires auth).
+        if (!token) return;
         try {
           const tierR = await fetch("/api/swear-sync-tier", {
             method:  "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+              "Content-Type":  "application/json",
+              "Authorization": `Bearer ${token}`,
+            },
             body:    JSON.stringify({
               userId: uid,
               isPro:  localStorage.getItem("bluff_pro") === "1",
@@ -3278,6 +3616,47 @@ export default function BluffGame() {
       }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authUser?.uid]);
+
+  // Firebase auth subscription: flip userIdRef to the uid on sign-in and
+  // kick off anon → uid migration. On sign-out, restore prior anonymous id.
+  useEffect(() => {
+    if (!isAuthReady()) return;
+    const unsub = onAuthChange(async (user) => {
+      if (!user) {
+        // Sign-out: restore anon id (fresh random if none stored).
+        let anon = null;
+        try { anon = localStorage.getItem("bluff_anonymous_id"); } catch {}
+        if (!anon) {
+          anon = Math.random().toString(36).slice(2) + Date.now().toString(36);
+          try { localStorage.setItem("bluff_anonymous_id", anon); } catch {}
+        }
+        userIdRef.current = anon;
+        try { localStorage.setItem("bluff_user_id", anon); } catch {}
+        authUserRef.current = null;
+        setAuthUser(null);
+        return;
+      }
+      // Sign-in: remember the anon id we were using, then switch to uid and
+      // run migration BEFORE publishing authUser (so the profile effect sees
+      // a uid profile that already reflects the merged anon state).
+      const prevUserId = userIdRef.current;
+      let anonToMigrate = null;
+      if (prevUserId && prevUserId !== user.uid && !prevUserId.startsWith("tg_")) {
+        anonToMigrate = prevUserId;
+        try { localStorage.setItem("bluff_anonymous_id", prevUserId); } catch {}
+      }
+      userIdRef.current = user.uid;
+      try { localStorage.setItem("bluff_user_id", user.uid); } catch {}
+      authUserRef.current = user;
+
+      if (anonToMigrate) {
+        await migrateAnonToUid(anonToMigrate);
+      }
+      setAuthUser(user);
+    });
+    return () => { try { unsub(); } catch {} };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4161,6 +4540,16 @@ export default function BluffGame() {
           color:"#04060f",fontSize:10,fontWeight:900,
         }}>Ⓢ</span>
         <span>{swearBalance.toLocaleString("en-US")}</span>
+        {!authUser && (
+          <span style={{
+            marginLeft:4,padding:"1px 6px",borderRadius:6,
+            background:"rgba(244,63,94,.14)",color:"#f43f5e",
+            fontSize:8,letterSpacing:"1px",fontWeight:700,textTransform:"uppercase",
+            border:"1px solid rgba(244,63,94,.3)",
+          }}>
+            {t("auth.anon_badge", lang)}
+          </span>
+        )}
       </button>
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
         {/* 1. LOGO */}
@@ -4497,6 +4886,11 @@ export default function BluffGame() {
                   {swearProfile?.handle ? `@${swearProfile.handle}` : "—"}
                 </div>
                 <button onClick={()=>{
+                    if (!authUser) {
+                      setShowRabCard(false);
+                      setAuthModalOpen(true);
+                      return;
+                    }
                     setHandleInput(swearProfile?.handle || "");
                     setHandleError("");
                     setShowHandleModal(true);
@@ -4534,6 +4928,40 @@ export default function BluffGame() {
               </div>
             )}
 
+            {/* Auth section: sign-in CTA when anonymous, email+sign-out when authed */}
+            <div style={{
+              background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",
+              borderRadius:12,padding:"12px 14px",marginBottom:14,
+            }}>
+              {authUser ? (
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:12,color:"#e8e6e1",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {t("auth.signed_in_as", lang, { email: authUser.email || authUser.displayName || authUser.uid.slice(0,8) })}
+                    </div>
+                  </div>
+                  <button onClick={()=>setSignOutConfirmOpen(true)}
+                    style={{background:"transparent",border:"1px solid rgba(244,63,94,.4)",
+                      color:"#f43f5e",fontSize:10,letterSpacing:"1.5px",fontWeight:700,
+                      padding:"6px 12px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>
+                    {t("auth.sign_out", lang)}
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{fontSize:11,color:T.dim,lineHeight:1.45,marginBottom:10}}>
+                    {t("auth.sign_in_subtitle", lang)}
+                  </div>
+                  <button onClick={()=>{ setShowRabCard(false); setAuthModalOpen(true); }}
+                    style={{width:"100%",padding:"10px 14px",fontSize:12,fontWeight:700,letterSpacing:"1.5px",
+                      textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",
+                      color:"#04060f",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
+                    {t("auth.sign_in_title", lang)}
+                  </button>
+                </div>
+              )}
+            </div>
+
             <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
               {t("rab_card.stats_title", lang)}
             </div>
@@ -4556,6 +4984,142 @@ export default function BluffGame() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {authModalOpen && (
+        <div onClick={()=>{ if (!authBusy) setAuthModalOpen(false); }}
+          style={{position:"fixed",inset:0,zIndex:720,background:"rgba(4,6,15,.94)",
+            backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:360,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.3)",borderRadius:18,
+              padding:"22px 20px 20px",position:"relative",
+              boxShadow:"0 0 40px rgba(232,197,71,.12)",
+              animation:"g-fadeUp .3s ease both"}}>
+            <button onClick={()=>{ if (!authBusy) setAuthModalOpen(false); }}
+              style={{position:"absolute",top:10,right:10,width:32,height:32,
+                borderRadius:"50%",background:"rgba(255,255,255,.06)",
+                border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
+                fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <div style={{fontSize:11,color:"#e8c547",letterSpacing:"3px",textTransform:"uppercase",fontWeight:700,marginBottom:8,textAlign:"center"}}>
+              {t("auth.sign_in_title", lang)}
+            </div>
+            <div style={{fontSize:12,color:T.dim,textAlign:"center",marginBottom:18,lineHeight:1.45}}>
+              {t("auth.sign_in_subtitle", lang)}
+            </div>
+            {authError && (
+              <div style={{color:"#f43f5e",fontSize:11,marginBottom:10,textAlign:"center"}}>
+                {t("auth.sign_in_failed", lang)}
+              </div>
+            )}
+            <button
+              onClick={async ()=>{
+                setAuthError("");
+                setAuthBusy(true);
+                try {
+                  await signInGoogle();
+                  setAuthModalOpen(false);
+                  setAnonCapBannerOpen(false);
+                } catch (e) {
+                  setAuthError(e?.message || "sign_in_failed");
+                } finally {
+                  setAuthBusy(false);
+                }
+              }}
+              disabled={authBusy}
+              style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
+                textTransform:"uppercase",background:"#ffffff",color:"#04060f",
+                border:"none",borderRadius:10,cursor: authBusy ? "wait" : "pointer",fontFamily:"inherit",
+                marginBottom:10,opacity: authBusy ? .6 : 1,
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+              <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
+              {t("auth.continue_google", lang)}
+            </button>
+            <button
+              disabled
+              style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
+                textTransform:"uppercase",background:"rgba(255,255,255,.04)",color:"rgba(232,230,225,.4)",
+                border:"1px solid rgba(255,255,255,.08)",borderRadius:10,cursor:"not-allowed",fontFamily:"inherit",
+                marginBottom:12,
+                display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+              <span style={{fontSize:14,fontWeight:900}}>‹</span>
+              {t("auth.continue_apple", lang)}
+              <span style={{fontSize:9,opacity:.8,marginLeft:6,letterSpacing:"1px"}}>
+                ({t("auth.apple_soon", lang)})
+              </span>
+            </button>
+            <button
+              onClick={()=>{ if (!authBusy) setAuthModalOpen(false); }}
+              disabled={authBusy}
+              style={{width:"100%",padding:"10px",fontSize:11,fontWeight:600,letterSpacing:"1px",
+                background:"transparent",color:T.dim,border:"none",cursor:"pointer",fontFamily:"inherit",
+                textTransform:"uppercase"}}>
+              {t("auth.continue_anon", lang)}
+            </button>
+            <div style={{fontSize:10,color:T.dim,textAlign:"center",marginTop:8,lineHeight:1.3}}>
+              {t("auth.anon_cap_note", lang)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {signOutConfirmOpen && (
+        <div onClick={()=>setSignOutConfirmOpen(false)}
+          style={{position:"fixed",inset:0,zIndex:730,background:"rgba(4,6,15,.94)",
+            backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:320,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.3)",borderRadius:16,
+              padding:"20px 18px 18px",animation:"g-fadeUp .3s ease both"}}>
+            <div style={{fontSize:13,color:"#e8e6e1",textAlign:"center",marginBottom:16,lineHeight:1.5}}>
+              {t("auth.sign_out_confirm", lang)}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <button onClick={()=>setSignOutConfirmOpen(false)}
+                style={{padding:"10px",fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+                  background:"transparent",color:"#5a5a68",
+                  border:"1px solid rgba(255,255,255,.08)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
+                {t("auth.sign_out_cancel", lang)}
+              </button>
+              <button onClick={async ()=>{
+                  try { await signOutUser(); } catch {}
+                  setSignOutConfirmOpen(false);
+                  setShowRabCard(false);
+                }}
+                style={{padding:"10px",fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+                  background:"#f43f5e",color:"#04060f",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
+                {t("auth.sign_out", lang)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {anonCapBannerOpen && !authUser && (
+        <div style={{
+          position:"fixed",left:"50%",transform:"translateX(-50%)",
+          bottom:"max(20px,env(safe-area-inset-bottom))",zIndex:620,
+          maxWidth:360,width:"calc(100% - 24px)",
+          background:"rgba(4,6,15,.96)",
+          border:"1px solid rgba(244,63,94,.4)",borderRadius:14,
+          padding:"12px 14px",display:"flex",alignItems:"center",gap:10,
+          boxShadow:"0 0 40px rgba(244,63,94,.18)",
+          animation:"g-fadeUp .3s ease both",
+        }}>
+          <div style={{fontSize:12,color:"#e8e6e1",lineHeight:1.4,flex:1}}>
+            {t("auth.cap_hit_banner", lang)}
+          </div>
+          <button onClick={()=>{ setAnonCapBannerOpen(false); setAuthModalOpen(true); }}
+            style={{padding:"7px 12px",fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+              background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+              border:"none",borderRadius:8,cursor:"pointer",fontFamily:"inherit"}}>
+            {t("auth.sign_in_title", lang)}
+          </button>
+          <button onClick={()=>setAnonCapBannerOpen(false)}
+            style={{width:26,height:26,borderRadius:"50%",background:"rgba(255,255,255,.06)",
+              border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
+              fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
         </div>
       )}
 
@@ -4844,6 +5408,9 @@ export default function BluffGame() {
           totalScore={score}
           lang={lang}
           mandatory={wheelPhaseNum === 3}
+          gambitMode={wheelPhaseNum === 3 && gambitRisk !== null}
+          gambitRisk={gambitRisk}
+          gambitPot={gambitPot}
           onCashOut={() => {
             setScore(s => s + phaseScore);
             setPhaseScore(0);
@@ -4853,6 +5420,37 @@ export default function BluffGame() {
             else nextRound();
           }}
           onSpinResult={(zone) => {
+            const isGambit = wheelPhaseNum === 3 && gambitRisk !== null;
+            if (isGambit) {
+              const pot = gambitPot;
+              if (zone === "green") {
+                setScore(s => s + pot);
+                setAxiomScore(a => { const next = Math.max(0, a - pot); axiomScoreRef.current = next; return next; });
+                axiomSpeak("gambit_win_green", "shocked");
+              } else if (zone === "gold") {
+                setScore(s => s + pot * 2);
+                setAxiomScore(a => { const next = Math.max(0, a - pot * 2); axiomScoreRef.current = next; return next; });
+                axiomSpeak("gambit_win_gold", "defeated");
+                const gid = `grand_${gameStartTimeRef.current || Date.now()}`;
+                awardSwear("grand_bluff_victory", gid, {
+                  label: t("swear.grand_bluff_victory", lang),
+                  meta: { pot, risk: gambitRisk },
+                });
+              } else if (zone === "red") {
+                setScore(s => Math.max(0, s - pot));
+                setAxiomScore(a => { const next = a + pot; axiomScoreRef.current = next; return next; });
+                axiomSpeak("gambit_loss_red", "amused");
+              } else if (zone === "black") {
+                setScore(s => Math.max(0, s - pot * 2));
+                setAxiomScore(a => { const next = a + pot * 2; axiomScoreRef.current = next; return next; });
+                axiomSpeak("gambit_loss_black", "taunting");
+              }
+              setGambitRisk(null);
+              setGambitPot(0);
+              setWheelOpen(false);
+              showResultScreen();
+              return;
+            }
             const stake = phaseScoreRef.current;
             if (zone === "green") setScore(s => s + stake * 2);
             else if (zone === "gold") setScore(s => s + stake * 3);
@@ -4862,8 +5460,6 @@ export default function BluffGame() {
               setScore(s => Math.floor(s * 0.5));
               setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
             }
-            // SWEAR: "Grand Bluff victory" = landing on GOLD (3x) on the
-            // mandatory final phase. High-effort outcome, high reward.
             if (wheelPhaseNum === 3 && zone === "gold") {
               const gid = `grand_${gameStartTimeRef.current || Date.now()}`;
               awardSwear("grand_bluff_victory", gid, {
@@ -4876,6 +5472,61 @@ export default function BluffGame() {
             setWheelOpen(false);
             if (wheelPhaseNum === 3) showResultScreen();
             else nextRound();
+          }}
+        />
+      )}
+      {suddenDeathOfferOpen && (
+        <SuddenDeathOffer
+          lang={lang}
+          onAccept={() => {
+            setSuddenDeathOfferOpen(false);
+            setSuddenDeathOpen(true);
+          }}
+          onDecline={() => {
+            setSuddenDeathOfferOpen(false);
+            axiomSpeak("gambit_intro", "taunting");
+            setGambitRiskOpen(true);
+          }}
+        />
+      )}
+      {suddenDeathOpen && (
+        <SuddenDeath
+          lang={lang}
+          playerScore={score}
+          axiomScore={axiomScore}
+          onResolve={(won) => {
+            setSuddenDeathOpen(false);
+            if (won === true) {
+              const stolen = axiomScoreRef.current;
+              setScore(s => s + stolen);
+              setAxiomScore(() => { axiomScoreRef.current = 0; return 0; });
+              axiomSpeak("sudden_death_win", "defeated");
+            } else if (won === false) {
+              const lost = score;
+              setAxiomScore(a => { const next = a + lost; axiomScoreRef.current = next; return next; });
+              setScore(() => 0);
+              axiomSpeak("sudden_death_lose", "amused");
+            }
+            // Proceed to Gambit risk selection after a brief pause for outcome readability
+            setTimeout(() => {
+              axiomSpeak("gambit_intro", "taunting");
+              setGambitRiskOpen(true);
+            }, won === null ? 0 : 1200);
+          }}
+        />
+      )}
+      {gambitRiskOpen && (
+        <RiskSelector
+          lang={lang}
+          playerScore={score}
+          onPick={(risk, pot) => {
+            setGambitRisk(risk);
+            setGambitPot(pot);
+            setGambitRiskOpen(false);
+            if (risk === "conservative") axiomSpeak("gambit_conservative", "amused");
+            else if (risk === "balanced") axiomSpeak("gambit_balanced", "idle");
+            else axiomSpeak("gambit_allin", "shocked");
+            setWheelOpen(true);
           }}
         />
       )}

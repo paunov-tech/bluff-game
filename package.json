@@ -12,6 +12,8 @@
     "@anthropic-ai/sdk": "^0.88.0",
     "@sentry/react": "^10.49.0",
     "@vercel/kv": "^3.0.0",
+    "firebase": "^12.12.0",
+    "jose": "^6.2.2",
     "partysocket": "^1.1.16",
     "posthog-js": "^1.369.3",
     "react": "^19.0.0",
