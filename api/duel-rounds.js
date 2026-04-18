@@ -53,20 +53,42 @@ export default async function handler(req, res) {
       byDiff[diff].push(d);
     }
 
+    // Cap sports at 1 round per 6-match (prevent Bundesliga/NBA dominance)
+    const MAX_SPORTS_PER_MATCH = 1;
+
     const rounds = [];
     const usedIds = new Set();
+    const categoryCount = {};
 
     for (const targetDiff of targetDiffs) {
-      let pool = byDiff[targetDiff] || [];
-      pool = pool.filter(r => !usedIds.has(r.id));
+      let pool = (byDiff[targetDiff] || []).filter(r => !usedIds.has(r.id));
+
+      // If this level has no unused rounds, fall back to any unused
       if (pool.length === 0) {
         pool = docs.filter(r => !usedIds.has(r.id));
       }
-      if (pool.length === 0) break;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
+
+      // Prefer rounds that don't exceed category cap
+      const preferredPool = pool.filter(r => {
+        const cat = r.category || "mixed";
+        if (cat === "sports" && (categoryCount.sports || 0) >= MAX_SPORTS_PER_MATCH) {
+          return false;
+        }
+        // Avoid repeating the same non-sport category more than twice
+        if ((categoryCount[cat] || 0) >= 2) return false;
+        return true;
+      });
+
+      const finalPool = preferredPool.length > 0 ? preferredPool : pool;
+      if (finalPool.length === 0) break;
+
+      const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
       usedIds.add(pick.id);
+      const cat = pick.category || "mixed";
+      categoryCount[cat] = (categoryCount[cat] || 0) + 1;
+
       rounds.push({
-        category: pick.category || "mixed",
+        category: cat,
         difficulty: targetDiff,
         statements: pick.statements || [],
       });
