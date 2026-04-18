@@ -965,7 +965,6 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
   const chipTier = phaseNum === 1 ? "bronze" : phaseNum === 2 ? "silver" : "gold";
 
   const handleSpin = () => {
-    setSpinning(true);
     const r = Math.random();
     let zone;
     if (r < 0.38) zone = "green";
@@ -983,7 +982,14 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
     const targetAngle = -(targetField * 11.25 + 5.625 + offsetInField);
     const extraSpins = 5 + Math.random() * 2;
     const finalAng = targetAngle - (extraSpins * 360);
-    setFinalAngle(finalAng);
+
+    setSpinning(true);
+    setFinalAngle(0);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setFinalAngle(finalAng);
+      });
+    });
     try { playRouletteClicks(3500); } catch {}
 
     setTimeout(() => {
@@ -1049,7 +1055,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
 
       <div style={{
         position:"relative",width:280,height:280,marginBottom:28,
-        display:spinning||showOutcome?"block":"none",
+        display:"block",
       }}>
         <svg width="280" height="280" viewBox="0 0 280 280"
           style={{
@@ -1196,6 +1202,8 @@ export default function BluffGame() {
   const [revealed, setRevealed] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const [score, setScore] = useState(0);
+  const [axiomScore, setAxiomScore] = useState(0);
+  const axiomScoreRef = useRef(0);
   const [total, setTotal] = useState(0);
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
@@ -1327,6 +1335,7 @@ export default function BluffGame() {
   }, [stakeLevel, multiplierLocked]);
 
   useEffect(() => { phaseScoreRef.current = phaseScore; }, [phaseScore]);
+  useEffect(() => { axiomScoreRef.current = axiomScore; }, [axiomScore]);
 
   function clearStakeTimers() {
     stakeTimersRef.current.forEach(clearTimeout);
@@ -1524,6 +1533,8 @@ export default function BluffGame() {
     currentSelRef.current = null;
     setRevealed(false);
     setScore(0);
+    setAxiomScore(0);
+    axiomScoreRef.current = 0;
     setTotal(0);
     setStreak(0);
     setConfetti(false);
@@ -1753,8 +1764,12 @@ export default function BluffGame() {
       if (autoReveal) {
         penalty += blitzMode ? NEGLIGENCE_PENALTY_BLITZ : NEGLIGENCE_PENALTY_REGULAR;
       }
-      if (blitzMode) setScore(s=>Math.max(0, s - penalty));
-      else setPhaseScore(s=>Math.max(0, s - penalty));
+      // AXIOM gains points instead of player losing them
+      let axiomGained = Math.round(BASE_POINTS * lockedMult * 0.75);
+      if (autoReveal) {
+        axiomGained += blitzMode ? NEGLIGENCE_PENALTY_BLITZ : NEGLIGENCE_PENALTY_REGULAR;
+      }
+      setAxiomScore(a => { const next = a + axiomGained; axiomScoreRef.current = next; return next; });
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -1845,6 +1860,8 @@ export default function BluffGame() {
     currentSelRef.current = null;
     setRevealed(false);
     setScore(0);
+    setAxiomScore(0);
+    axiomScoreRef.current = 0;
     setTotal(0);
     setStreak(0);
     setConfetti(false);
@@ -2063,6 +2080,8 @@ export default function BluffGame() {
     currentSelRef.current=null;
     setRevealed(false);
     setScore(0);
+    setAxiomScore(0);
+    axiomScoreRef.current = 0;
     setTotal(0);
     setStreak(0);
     setConfetti(false);
@@ -3321,8 +3340,8 @@ export default function BluffGame() {
 
         {/* 6. STATS — only if played */}
         {total>0&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,animation:"g-fadeUp .5s .35s both"}}>
-            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,"Correct",T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:14,animation:"g-fadeUp .5s .35s both"}}>
+            {[[score.toLocaleString('en-US'),"Points",T.gold],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
               <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
                 <div style={{fontSize:"clamp(20px,6vw,28px)",fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
                 <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
@@ -3631,8 +3650,12 @@ export default function BluffGame() {
             const stake = phaseScoreRef.current;
             if (zone === "green") setScore(s => s + stake * 2);
             else if (zone === "gold") setScore(s => s + stake * 3);
-            else if (zone === "black") setScore(s => Math.floor(s * 0.5));
-            // red: phase lost, player gets nothing
+            else if (zone === "red") {
+              setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
+            } else if (zone === "black") {
+              setScore(s => Math.floor(s * 0.5));
+              setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
+            }
             setPhaseScore(0);
             phaseScoreRef.current = 0;
             setWheelOpen(false);
@@ -3988,17 +4011,48 @@ export default function BluffGame() {
               </div>
             );
           })()}
+          {!blitzMode && (
+            <div style={{
+              display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:10,
+              marginTop:14,alignItems:"center",
+              padding:"8px 12px",
+              background:"rgba(4,6,15,.45)",
+              border:"1px solid rgba(232,197,71,.1)",
+              borderRadius:10,
+            }}>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:8,letterSpacing:2,color:"rgba(255,255,255,.4)",textTransform:"uppercase",fontWeight:700,marginBottom:1}}>YOU</div>
+                <div style={{fontSize:20,fontWeight:800,fontFamily:"Georgia,serif",
+                  color: score >= axiomScore ? T.gold : "rgba(255,255,255,.5)",
+                  textShadow: score >= axiomScore ? "0 0 12px rgba(232,197,71,.4)" : "none",
+                  transition:"color .3s ease",
+                }}>
+                  {score.toLocaleString('en-US')}
+                </div>
+              </div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,.3)",letterSpacing:2,fontWeight:700}}>VS</div>
+              <div style={{textAlign:"left"}}>
+                <div style={{fontSize:8,letterSpacing:2,color:"rgba(34,211,238,.6)",textTransform:"uppercase",fontWeight:700,marginBottom:1}}>AXIOM</div>
+                <div style={{fontSize:20,fontWeight:800,fontFamily:"Georgia,serif",
+                  color: axiomScore > score ? "#22d3ee" : "rgba(255,255,255,.5)",
+                  textShadow: axiomScore > score ? "0 0 12px rgba(34,211,238,.4)" : "none",
+                  transition:"color .3s ease",
+                }}>
+                  {axiomScore.toLocaleString('en-US')}
+                </div>
+              </div>
+            </div>
+          )}
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
-            <span>Banked <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
+            {blitzMode && (
+              <span>Banked <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
+            )}
             {!blitzMode && phaseScore > 0 && (
               <>
-                <span style={{opacity:.2}}>|</span>
                 <span>Stake <b style={{color:"#f0d878",fontSize:13}}>{phaseScore.toLocaleString('en-US')}</b></span>
+                <span style={{opacity:.2}}>|</span>
               </>
             )}
-            <span style={{opacity:.2}}>|</span>
-            <span>Hits <b style={{color:T.gold,fontSize:13}}>{correctCount}/{total}</b></span>
-            <span style={{opacity:.2}}>|</span>
             <span>Streak <b style={{color:streak>0?T.gold:T.dim,fontSize:13}}>{streak}🔥</b></span>
           </div>
         </>)}
@@ -4008,8 +4062,8 @@ export default function BluffGame() {
   );
 
   // ─── RESULT ────────────────────────────────────────────────
-  const won = correctCount >= Math.ceil(total * 0.67);
-  const respectable = correctCount >= Math.floor(total / 2);
+  const won = blitzMode ? (correctCount >= Math.ceil(total * 0.67)) : (score > axiomScore);
+  const respectable = blitzMode ? (correctCount >= Math.floor(total / 2)) : (score >= axiomScore * 0.7);
   return (
     <div style={{
       minHeight:"100dvh",
@@ -4061,9 +4115,9 @@ export default function BluffGame() {
 
         {/* STATS ROW */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20,animation:"g-fadeUp 0.6s 0.3s both"}}>
-          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#2dd4a0"}}>{correctCount}/{total}</div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Correct</div>
+          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(34,211,238,0.15)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#22d3ee"}}>{axiomScore.toLocaleString('en-US')}</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>AXIOM</div>
           </div>
           <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#e8c547"}}>{total?Math.round(correctCount/total*100):0}%</div>
