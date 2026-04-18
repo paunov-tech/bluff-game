@@ -2509,8 +2509,10 @@ export default function BluffGame() {
       } : null);
 
       // SWEAR: award daily completion. Perfect = all rounds correct.
+      // dailyResultsRef.current stores raw booleans (see line where it's pushed),
+      // so the predicate must be a boolean equality, not a `.correct` lookup.
       const perfect = dailyResultsRef.current.length > 0 &&
-        dailyResultsRef.current.every(x => x?.correct);
+        dailyResultsRef.current.every(x => x === true);
       const dayKey = new Date().toISOString().slice(0, 10);
       const gid = `daily_${dayKey}`;
       awardSwear(
