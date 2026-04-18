@@ -888,6 +888,8 @@ export default function BluffGame() {
   const duelAnswerSentRef = useRef(false);
   const [duelConnectionState, setDuelConnectionState] = useState("idle");
   const [duelRetryAttempt, setDuelRetryAttempt] = useState(0);
+  const [lobbyElapsed, setLobbyElapsed] = useState(0);
+  const lobbyStartRef = useRef(null);
   const PARTYKIT_HOST = import.meta.env.VITE_PARTYKIT_HOST || "bluff-duel.paunov-tech.partykit.dev";
   const [activeSkin, setActiveSkin] = useState(() => safeLSGet("bluff_skin", "default"));
   const [ownedSkins, setOwnedSkins] = useState(() => {
@@ -1964,6 +1966,18 @@ export default function BluffGame() {
     return () => clearInterval(iv);
   }, [duelPhase, duelRoundStart, duelRoundTimerMs, duelMode]);
 
+  // Lobby elapsed-time tracker
+  useEffect(() => {
+    if (duelScreen === "lobby") {
+      lobbyStartRef.current = Date.now();
+      setLobbyElapsed(0);
+      const tick = setInterval(() => {
+        setLobbyElapsed(Math.floor((Date.now() - lobbyStartRef.current) / 1000));
+      }, 1000);
+      return () => clearInterval(tick);
+    }
+  }, [duelScreen]);
+
   // Unlock audio on first user gesture (iOS/mobile requirement)
   useEffect(() => {
     function unlockAudio() {
@@ -2157,6 +2171,111 @@ export default function BluffGame() {
         )}
 
         {duelConnectionState === "connected" && (<>
+        {Object.keys(duelPlayers).length < 2 ? (<>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:11,letterSpacing:"4px",color:"#5a5a68",
+                         textTransform:"uppercase",marginBottom:8}}>
+              {duelMode==="blitz"?"Blitz Duel":"Regular Duel"}
+            </div>
+            <div style={{fontSize:14,color:"#e8e6e1",opacity:0.85}}>
+              Waiting for opponent…
+            </div>
+          </div>
+
+          {/* Animated heartbeat */}
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:28}}>
+            {[0,1,2].map(i => (
+              <div key={i} style={{
+                width:10,height:10,borderRadius:"50%",background:"#e8c547",
+                animation:`lobby-pulse 1.4s ease-in-out ${i*0.2}s infinite`,
+                opacity:0.3
+              }}/>
+            ))}
+          </div>
+
+          {/* Big room code card */}
+          <div style={{
+            background:"#111119",border:"1.5px solid rgba(232,197,71,0.3)",
+            borderRadius:20,padding:"24px 20px",marginBottom:16,textAlign:"center",
+            boxShadow:"0 0 40px rgba(232,197,71,0.08)"
+          }}>
+            <div style={{fontSize:11,color:"#e8c547",letterSpacing:3,
+                         textTransform:"uppercase",fontWeight:600,marginBottom:10}}>
+              Room Code
+            </div>
+            <div style={{fontSize:42,fontWeight:900,letterSpacing:8,
+                         fontFamily:"Georgia,serif",color:"#e8c547",
+                         textShadow:"0 0 20px rgba(232,197,71,0.3)"}}>
+              {duelRoomId || "- - - - - -"}
+            </div>
+          </div>
+
+          {/* Share buttons */}
+          <div style={{display:"flex",gap:10,marginBottom:14}}>
+            <button onClick={() => {
+              const url = `${window.location.origin}/?duel=${duelRoomId}&mode=${duelMode}`;
+              if (navigator.share) {
+                navigator.share({ title:"BLUFF duel", text:"Can you beat me?", url })
+                  .catch(() => {});
+              } else {
+                navigator.clipboard?.writeText(url).catch(() => {});
+              }
+            }}
+              style={{flex:1,padding:"14px",fontSize:13,fontWeight:700,
+                letterSpacing:1,textTransform:"uppercase",
+                background:"linear-gradient(135deg,#e8c547,#d4a830)",
+                color:"#08080f",border:"none",borderRadius:12,cursor:"pointer",
+                fontFamily:"inherit"}}
+            >
+              📤 Share Link
+            </button>
+            <button onClick={() => {
+              navigator.clipboard?.writeText(duelRoomId || "").catch(() => {});
+            }}
+              style={{flex:1,padding:"14px",fontSize:13,fontWeight:700,
+                letterSpacing:1,textTransform:"uppercase",
+                background:"rgba(255,255,255,0.03)",color:"#e8e6e1",
+                border:"1.5px solid rgba(255,255,255,0.07)",borderRadius:12,
+                cursor:"pointer",fontFamily:"inherit"}}
+            >
+              📋 Copy Code
+            </button>
+          </div>
+
+          {/* Elapsed time + conditional escape hatch */}
+          <div style={{textAlign:"center",marginTop:20}}>
+            <div style={{fontSize:12,color:"#5a5a68"}}>
+              Waiting {Math.floor(lobbyElapsed / 60)}:{String(lobbyElapsed % 60).padStart(2,"0")}
+            </div>
+
+            {lobbyElapsed >= 120 && (
+              <div style={{marginTop:16,padding:"14px 16px",
+                background:"rgba(244,63,94,0.06)",borderRadius:12,
+                border:"1px solid rgba(244,63,94,0.2)",
+                animation:"lobby-timeout-fadeIn 0.5s ease"
+              }}>
+                <div style={{fontSize:13,color:"#e8e6e1",marginBottom:10,opacity:0.8}}>
+                  Your friend isn't coming. Cancel and try later?
+                </div>
+                <button onClick={() => {
+                  if (duelSocketRef.current) duelSocketRef.current.close();
+                  setDuelScreen(null);
+                  setDuelConnectionState("idle");
+                  setDuelRetryAttempt(0);
+                  setScreen("home");
+                }}
+                  style={{padding:"10px 20px",fontSize:12,fontWeight:600,
+                    background:"rgba(244,63,94,0.15)",color:"#f43f5e",
+                    border:"1px solid rgba(244,63,94,0.3)",borderRadius:10,
+                    cursor:"pointer",letterSpacing:1,textTransform:"uppercase",
+                    fontFamily:"inherit"}}
+                >
+                  Cancel Duel
+                </button>
+              </div>
+            )}
+          </div>
+        </>) : (<>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
             {duelMode==="blitz"?"⚡ DUEL BLITZ":"⚔️ DUEL REGULAR"}
@@ -2167,25 +2286,6 @@ export default function BluffGame() {
           <div style={{fontSize:12,color:"rgba(255,255,255,.3)",marginTop:6,letterSpacing:"2px"}}>
             ROOM CODE
           </div>
-          <button onClick={() => {
-            const url = `https://playbluff.games/?duel=${duelRoomId}&mode=${duelMode}`;
-            const text = `Duel me on BLUFF 🎭\n${url}`;
-            if (navigator.share) {
-              navigator.share({ title: "BLUFF Duel", text, url }).catch(() => {
-                navigator.clipboard?.writeText(url).then(() => alert("Link copied to clipboard"));
-              });
-            } else {
-              navigator.clipboard?.writeText(url)
-                .then(() => alert("Link copied to clipboard"))
-                .catch(() => prompt("Copy this link:", url));
-            }
-          }}
-            style={{marginTop:14,padding:"12px 20px",fontSize:13,fontWeight:700,
-              background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
-              border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
-              letterSpacing:"1px",textTransform:"uppercase"}}>
-            📨 Share duel link
-          </button>
         </div>
 
         {Object.values(duelPlayers).map((p,i) => (
@@ -2210,13 +2310,7 @@ export default function BluffGame() {
             <div style={{marginLeft:"auto",fontSize:11,color:"#2dd4a0"}}>✓ READY</div>
           </div>
         ))}
-
-        {Object.keys(duelPlayers).length < 2 && (
-          <div style={{textAlign:"center",padding:"24px",animation:"g-pulse 1s infinite",
-            color:"rgba(255,255,255,.3)",fontSize:13}}>
-            Waiting for opponent...
-          </div>
-        )}
+        </>)}
 
         {duelCountdown !== null && (
           <div style={{textAlign:"center",fontSize:72,fontWeight:900,fontFamily:"Georgia,serif",
@@ -3403,5 +3497,7 @@ function GameStyles(){
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes ic-blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(0.05)}}
     @keyframes ax-browTwitch{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.6px)}}
+    @keyframes lobby-pulse{0%,100%{opacity:0.3;transform:scale(1)}50%{opacity:1;transform:scale(1.3)}}
+    @keyframes lobby-timeout-fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
   `}</style>;
 }
