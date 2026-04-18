@@ -316,10 +316,16 @@ export default {
     "migrated_ok": "Dobrodošao! Napredak je spremljen.",
     "close": "Zatvori"
   },
-  "rab_card": {
-    "title": "Rab Card",
-    "subtitle": "Tvoj BLUFF identitet",
-    "balance_label": "SWEAR stanje",
+  "swear_card": {
+    "title": "SWEAR Card",
+    "subtitle": "Tvoja rezerva",
+    "balance_label": "REZERVA",
+    "reserve_member": "⋆ REZERVNI ČLAN ⋆",
+    "certified_footer": "CERTIFICIRANO ⋅ NEPRENOSIVO ⋅ SIAL GAMES",
+    "member_since": "ČLAN ⋅ {date}",
+    "founding_member": "OSNIVAČ",
+    "early_adopter_badge": "EARLY ADOPTER ⋆ #{n}",
+    "pro_badge": "PRO",
     "handle_label": "Ime",
     "set_handle": "Postavi ime",
     "change_handle": "Promijeni",

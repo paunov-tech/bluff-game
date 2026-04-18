@@ -11,6 +11,41 @@ import {
   getCurrentIdToken,
 } from "./auth.js";
 
+// ── SWEAR Card helpers ───────────────────
+// Format an ISO createdAt timestamp as MM/YY. Falls back to "—" on invalid input.
+function formatMonthYear(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${mm}/${yy}`;
+}
+
+// Launch date: 2026-04-29. "Founding" = profile created within first 14 days.
+const FOUNDING_CUTOFF_MS = Date.parse("2026-05-13T00:00:00Z");
+function isFoundingMember(createdAt) {
+  if (!createdAt) return false;
+  const t = Date.parse(createdAt);
+  if (isNaN(t)) return false;
+  return t >= Date.parse("2026-04-29T00:00:00Z") && t < FOUNDING_CUTOFF_MS;
+}
+
+// Tier badge priority: EarlyAdopter → Pro → Founding → none.
+function resolveSwearTierBadge(profile, tFn, lang) {
+  if (!profile) return null;
+  if (profile.isEarlyAdopter) {
+    return tFn("swear_card.early_adopter_badge", lang, { n: profile.earlyAdopterRank || "—" });
+  }
+  if (profile.isPro) {
+    return tFn("swear_card.pro_badge", lang);
+  }
+  if (isFoundingMember(profile.createdAt)) {
+    return tFn("swear_card.founding_member", lang);
+  }
+  return null;
+}
+
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
   const supported = typeof navigator !== "undefined" && "vibrate" in navigator;
@@ -2056,7 +2091,7 @@ export default function BluffGame() {
   const [swearProfile, setSwearProfile] = useState(null);
   const swearProfileRef = useRef(null);
   const [swearBalance, setSwearBalance] = useState(0);
-  const [showRabCard, setShowRabCard] = useState(false);
+  const [showSwearCard, setShowSwearCard] = useState(false);
   const [showHandleModal, setShowHandleModal] = useState(false);
   const [handleInput, setHandleInput] = useState("");
   const [handleError, setHandleError] = useState("");
@@ -4520,7 +4555,7 @@ export default function BluffGame() {
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
       {/* SWEAR balance chip — opens Rab Card */}
       <button
-        onClick={() => setShowRabCard(true)}
+        onClick={() => setShowSwearCard(true)}
         style={{
           position:"fixed",top:"max(10px,env(safe-area-inset-top))",left:12,zIndex:11,
           display:"flex",alignItems:"center",gap:6,
@@ -4531,7 +4566,7 @@ export default function BluffGame() {
           textTransform:"uppercase",fontFamily:"inherit",cursor:"pointer",
           boxShadow:"0 2px 12px rgba(232,197,71,.1)",
         }}
-        aria-label="Open Rab Card"
+        aria-label="Open SWEAR Card"
       >
         <span style={{
           display:"inline-flex",alignItems:"center",justifyContent:"center",
@@ -4830,129 +4865,337 @@ export default function BluffGame() {
         </div>
       )}
 
-      {showRabCard && (
-        <div onClick={()=>setShowRabCard(false)}
-          style={{position:"fixed",inset:0,zIndex:650,background:"rgba(4,6,15,.92)",
-            backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
-          <div onClick={e=>e.stopPropagation()}
-            style={{maxWidth:360,width:"100%",background:"#0c0c14",
-              border:"1px solid rgba(232,197,71,.3)",borderRadius:20,
-              padding:"22px 20px 20px",position:"relative",
-              boxShadow:"0 0 60px rgba(232,197,71,.12)",
-              animation:"g-fadeUp .3s ease both"}}>
-            <button onClick={()=>setShowRabCard(false)}
-              style={{position:"absolute",top:10,right:10,width:32,height:32,
-                borderRadius:"50%",background:"rgba(255,255,255,.06)",
-                border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
-                fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
-            <div style={{fontSize:10,color:T.dim,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:4,textAlign:"center"}}>
-              {t("rab_card.subtitle", lang)}
-            </div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:900,color:"#e8c547",textAlign:"center",marginBottom:14,letterSpacing:1}}>
-              {t("rab_card.title", lang)}
-            </div>
+      {showSwearCard && (
+        <div onClick={()=>setShowSwearCard(false)}
+          style={{
+            position:"fixed",inset:0,zIndex:650,
+            background:"radial-gradient(ellipse at 50% 30%, #1a1208 0%, #040404 70%)",
+            overflowY:"auto",WebkitOverflowScrolling:"touch",
+            padding:"40px 20px",
+            animation:"g-fadeUp .35s ease both",
+          }}>
+          <style>{`
+            @keyframes sc-particle-float {
+              0%   { opacity: 0; transform: translateY(0) translateX(0); }
+              15%  { opacity: .6; }
+              50%  { opacity: .9; transform: translateY(-80px) translateX(20px); }
+              85%  { opacity: .4; }
+              100% { opacity: 0; transform: translateY(-160px) translateX(-15px); }
+            }
+            @keyframes sc-card-breathing {
+              0%,100% { box-shadow: 0 30px 80px rgba(0,0,0,.8), 0 10px 30px rgba(232,197,71,.3),
+                       inset 0 1px 2px rgba(255,255,255,.25), inset 0 -1px 2px rgba(0,0,0,.35); }
+              50%     { box-shadow: 0 30px 100px rgba(0,0,0,.9), 0 15px 40px rgba(232,197,71,.45),
+                       inset 0 1px 2px rgba(255,255,255,.3), inset 0 -1px 2px rgba(0,0,0,.4); }
+            }
+            @keyframes sc-foil-sweep {
+              0%,100% { transform: translateX(-30%) translateY(-10%); opacity: 0; }
+              40%     { opacity: 1; }
+              60%     { opacity: 1; }
+              100%    { transform: translateX(30%) translateY(5%); opacity: 0; }
+            }
+            @keyframes sc-seal-rotate {
+              from { transform: rotate(0deg); }
+              to   { transform: rotate(360deg); }
+            }
+            @keyframes sc-seal-pulse {
+              0%,100% { opacity: .4; transform: scale(.95); }
+              50%     { opacity: 1;  transform: scale(1.08); }
+            }
+            .sc-particle {
+              position: absolute; width: 3px; height: 3px;
+              background: #e8c547; border-radius: 50%; opacity: 0;
+              animation: sc-particle-float 8s ease-in-out infinite;
+              filter: blur(.5px);
+            }
+            .sc-card {
+              position: relative; width: 320px; height: 512px; border-radius: 18px;
+              background: linear-gradient(135deg,
+                #4a3612 0%, #8a6b28 18%, #d4a943 35%, #f0d878 48%,
+                #e8c547 52%, #d4a943 65%, #8a6b28 82%, #4a3612 100%);
+              box-shadow: 0 30px 80px rgba(0,0,0,.8), 0 10px 30px rgba(232,197,71,.3),
+                          inset 0 1px 2px rgba(255,255,255,.25), inset 0 -1px 2px rgba(0,0,0,.35);
+              overflow: hidden;
+              animation: sc-card-breathing 4s ease-in-out infinite;
+            }
+            .sc-brushed {
+              position: absolute; inset: 0;
+              background: repeating-linear-gradient(92deg,
+                rgba(255,255,255,.04) 0, rgba(255,255,255,.04) .5px,
+                transparent .5px, transparent 1.3px,
+                rgba(0,0,0,.06) 1.3px, rgba(0,0,0,.06) 1.8px,
+                transparent 1.8px, transparent 3px);
+              mix-blend-mode: overlay; pointer-events: none;
+            }
+            .sc-foil {
+              position: absolute; top: -40%; left: -60%; width: 220%; height: 180%;
+              background: linear-gradient(115deg,
+                transparent 35%,
+                rgba(255,250,220,.22) 47%, rgba(255,255,255,.4) 50%, rgba(255,250,220,.22) 53%,
+                transparent 65%);
+              animation: sc-foil-sweep 6s ease-in-out infinite;
+              pointer-events: none; mix-blend-mode: screen;
+            }
+            .sc-engraving { position: absolute; inset: 0; pointer-events: none; opacity: .35; mix-blend-mode: multiply; }
+            .sc-vignette  { position: absolute; inset: 0; pointer-events: none;
+              background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.35) 100%); }
+            .sc-seal-ring { animation: sc-seal-rotate 40s linear infinite; transform-origin: center; position: absolute; inset: 0; }
+            .sc-seal-glow {
+              position: absolute; inset: -8px; border-radius: 50%;
+              background: radial-gradient(circle, rgba(255,220,100,.35) 0%, transparent 60%);
+              animation: sc-seal-pulse 3s ease-in-out infinite;
+              filter: blur(4px);
+            }
+            .sc-card-wrap { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+            @media (max-width: 500px) {
+              .sc-card { transform: scale(.85); transform-origin: top center; }
+              .sc-card-wrap { gap: 0; }
+              .sc-aux { margin-top: -64px; }
+            }
+          `}</style>
 
-            <div style={{
-              background:"linear-gradient(135deg,rgba(232,197,71,.14),rgba(232,197,71,.04))",
-              border:"1px solid rgba(232,197,71,.32)",borderRadius:14,padding:"14px 16px",marginBottom:14,
-              display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
-            }}>
-              <div>
-                <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:2}}>
-                  {t("rab_card.balance_label", lang)}
-                </div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:"#e8c547",lineHeight:1}}>
-                  {swearBalance.toLocaleString("en-US")}
-                </div>
-              </div>
-              <div style={{
-                width:44,height:44,borderRadius:"50%",
-                background:"linear-gradient(135deg,#f0d878,#d4a830)",
-                display:"flex",alignItems:"center",justifyContent:"center",
-                color:"#04060f",fontSize:22,fontWeight:900,
-                boxShadow:"0 2px 18px rgba(232,197,71,.3)",
-              }}>Ⓢ</div>
-            </div>
+          <button onClick={()=>setShowSwearCard(false)}
+            style={{position:"fixed",top:"max(20px,env(safe-area-inset-top))",right:20,zIndex:652,
+              width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.06)",
+              border:"1px solid rgba(255,255,255,.14)",color:"#e8e6e1",
+              fontSize:16,cursor:"pointer",fontFamily:"inherit",
+              backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)"}}
+            aria-label={t("swear_card.close", lang)}>✕</button>
 
-            <div style={{
-              background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",
-              borderRadius:12,padding:"12px 14px",marginBottom:14,
-            }}>
-              <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:6}}>
-                {t("rab_card.handle_label", lang)}
+          <div onClick={e=>e.stopPropagation()} className="sc-card-wrap" style={{maxWidth:360,margin:"0 auto"}}>
+            <div style={{position:"relative",width:320,height:512}}>
+              {/* 12 floating particles */}
+              <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+                {[
+                  {left:"10%",top:"80%",delay:"0s"},{left:"22%",top:"85%",delay:"1.2s"},
+                  {left:"35%",top:"90%",delay:"2.5s"},{left:"48%",top:"82%",delay:".7s"},
+                  {left:"61%",top:"88%",delay:"3.1s"},{left:"74%",top:"84%",delay:"1.9s"},
+                  {left:"87%",top:"90%",delay:"4.2s"},{left:"15%",top:"75%",delay:"2.1s"},
+                  {left:"40%",top:"78%",delay:"5s"}, {left:"65%",top:"76%",delay:"3.8s"},
+                  {left:"90%",top:"80%",delay:"1.4s"},{left:"5%", top:"70%",delay:"6s"},
+                ].map((p,i)=>(
+                  <div key={i} className="sc-particle" style={{left:p.left,top:p.top,animationDelay:p.delay}}/>
+                ))}
               </div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-                <div style={{fontFamily:"Georgia,serif",fontSize:18,color: swearProfile?.handle ? "#e8e6e1" : "rgba(232,230,225,.35)",fontWeight:700}}>
-                  {swearProfile?.handle ? `@${swearProfile.handle}` : "—"}
-                </div>
-                <button onClick={()=>{
-                    if (!authUser) {
-                      setShowRabCard(false);
-                      setAuthModalOpen(true);
-                      return;
-                    }
-                    setHandleInput(swearProfile?.handle || "");
-                    setHandleError("");
-                    setShowHandleModal(true);
-                  }}
-                  style={{background:"transparent",border:"1px solid rgba(232,197,71,.4)",
-                    color:"#e8c547",fontSize:10,letterSpacing:"1.5px",fontWeight:700,
-                    padding:"6px 12px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>
-                  {swearProfile?.handle ? t("rab_card.change_handle", lang) : t("rab_card.set_handle", lang)}
-                </button>
-              </div>
-            </div>
 
-            {(isEarlyAdopter || isPro) && (
-              <div style={{
-                display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",
-              }}>
-                {isEarlyAdopter && (
-                  <div style={{
-                    padding:"5px 10px",borderRadius:999,
-                    background:"rgba(232,197,71,.1)",border:"1px solid rgba(232,197,71,.35)",
-                    color:"#e8c547",fontSize:10,letterSpacing:"1.5px",fontWeight:700,textTransform:"uppercase",
-                  }}>
-                    {t("rab_card.early_adopter", lang, { n: swearProfile?.earlyAdopterRank || "—" })}
-                  </div>
-                )}
-                {isPro && !isEarlyAdopter && (
-                  <div style={{
-                    padding:"5px 10px",borderRadius:999,
-                    background:"rgba(45,212,160,.1)",border:"1px solid rgba(45,212,160,.3)",
-                    color:"#2dd4a0",fontSize:10,letterSpacing:"1.5px",fontWeight:700,textTransform:"uppercase",
-                  }}>
-                    {t("rab_card.pro", lang)}
-                  </div>
-                )}
-              </div>
-            )}
+              <div className="sc-card">
+                {/* Engraving — fine mesh + diamond weave + flourishes + footer */}
+                <svg className="sc-engraving" viewBox="0 0 320 512" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+                  <defs>
+                    <pattern id="sc-fine-mesh" x="0" y="0" width="14" height="14" patternUnits="userSpaceOnUse">
+                      <path d="M 0 7 L 14 7 M 7 0 L 7 14" stroke="#4a3015" strokeWidth="0.25" opacity="0.5"/>
+                      <circle cx="7" cy="7" r="0.4" fill="#4a3015" opacity="0.6"/>
+                    </pattern>
+                    <pattern id="sc-diamond-weave" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <path d="M 10 0 L 20 10 L 10 20 L 0 10 Z" fill="none" stroke="#4a3015" strokeWidth="0.3" opacity="0.55"/>
+                    </pattern>
+                  </defs>
+                  <rect x="0" y="0" width="320" height="512" fill="url(#sc-fine-mesh)"/>
+                  <rect x="8" y="8" width="304" height="496" rx="14" fill="none" stroke="#4a3015" strokeWidth="0.5" opacity="0.5"/>
+                  <rect x="12" y="12" width="296" height="488" rx="12" fill="none" stroke="#4a3015" strokeWidth="0.3" opacity="0.4"/>
+                  <rect x="22" y="140" width="276" height="232" fill="url(#sc-diamond-weave)"/>
+                  <g transform="translate(160, 256)">
+                    <circle cx="0" cy="0" r="62" fill="none" stroke="#4a3015" strokeWidth="0.3" opacity="0.4"/>
+                    <circle cx="0" cy="0" r="54" fill="none" stroke="#4a3015" strokeWidth="0.3" opacity="0.4"/>
+                  </g>
+                  <g opacity="0.6">
+                    <path d="M 26 90 Q 40 80, 54 90 Q 40 100, 26 90" fill="none" stroke="#4a3015" strokeWidth="0.4"/>
+                    <path d="M 266 90 Q 280 80, 294 90 Q 280 100, 266 90" fill="none" stroke="#4a3015" strokeWidth="0.4"/>
+                    <path d="M 26 422 Q 40 412, 54 422 Q 40 432, 26 422" fill="none" stroke="#4a3015" strokeWidth="0.4"/>
+                    <path d="M 266 422 Q 280 412, 294 422 Q 280 432, 266 422" fill="none" stroke="#4a3015" strokeWidth="0.4"/>
+                  </g>
+                  <text x="160" y="496" textAnchor="middle" fontFamily="Georgia, serif" fontSize="5.5" letterSpacing="2.5" fill="#3d2a0a" opacity="0.7">
+                    {t("swear_card.certified_footer", lang)}
+                  </text>
+                </svg>
 
-            {/* Auth section: sign-in CTA when anonymous, email+sign-out when authed */}
-            <div style={{
-              background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",
-              borderRadius:12,padding:"12px 14px",marginBottom:14,
-            }}>
-              {authUser ? (
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-                  <div style={{minWidth:0,flex:1}}>
-                    <div style={{fontSize:12,color:"#e8e6e1",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                      {t("auth.signed_in_as", lang, { email: authUser.email || authUser.displayName || authUser.uid.slice(0,8) })}
+                <div className="sc-brushed"/>
+                <div className="sc-foil"/>
+                <div className="sc-vignette"/>
+
+                {/* Content */}
+                <div style={{position:"relative",height:"100%",padding:"28px 24px",
+                  display:"flex",flexDirection:"column",zIndex:2,boxSizing:"border-box"}}>
+
+                  {/* Top: brand + QR */}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{fontFamily:"Georgia,serif",fontSize:10,letterSpacing:4,color:"#3d2a0a",fontWeight:500,textShadow:"0 1px 0 rgba(255,255,255,.25)"}}>SIAL GAMES</div>
+                      <div style={{fontFamily:"Georgia,serif",fontSize:8,letterSpacing:2,color:"#3d2a0a",marginTop:2,opacity:.6}}>EST. MMXXVI</div>
+                    </div>
+                    <div style={{width:46,height:46,borderRadius:4,background:"#f8e8b8",padding:3,
+                      boxShadow:"inset 0 1px 1px rgba(255,255,255,.5), 0 1px 3px rgba(0,0,0,.4), 0 0 0 .5px rgba(42,27,3,.4)",
+                      boxSizing:"border-box"}}>
+                      <svg viewBox="0 0 29 29" xmlns="http://www.w3.org/2000/svg" shapeRendering="crispEdges" style={{width:"100%",height:"100%",display:"block"}}>
+                        <rect width="29" height="29" fill="#f8e8b8"/>
+                        <g fill="#1a0f00">
+                          <rect x="0" y="0" width="7" height="1"/><rect x="0" y="0" width="1" height="7"/>
+                          <rect x="6" y="0" width="1" height="7"/><rect x="0" y="6" width="7" height="1"/>
+                          <rect x="2" y="2" width="3" height="3"/>
+                          <rect x="22" y="0" width="7" height="1"/><rect x="22" y="0" width="1" height="7"/>
+                          <rect x="28" y="0" width="1" height="7"/><rect x="22" y="6" width="7" height="1"/>
+                          <rect x="24" y="2" width="3" height="3"/>
+                          <rect x="0" y="22" width="7" height="1"/><rect x="0" y="22" width="1" height="7"/>
+                          <rect x="6" y="22" width="1" height="7"/><rect x="0" y="28" width="7" height="1"/>
+                          <rect x="2" y="24" width="3" height="3"/>
+                          <rect x="8" y="0" width="1" height="1"/><rect x="10" y="0" width="2" height="1"/><rect x="13" y="0" width="1" height="1"/><rect x="15" y="0" width="1" height="1"/><rect x="17" y="0" width="1" height="1"/><rect x="19" y="0" width="2" height="1"/>
+                          <rect x="9" y="1" width="1" height="1"/><rect x="11" y="1" width="1" height="1"/><rect x="14" y="1" width="2" height="1"/><rect x="18" y="1" width="1" height="1"/><rect x="20" y="1" width="1" height="1"/>
+                          <rect x="8" y="2" width="2" height="1"/><rect x="12" y="2" width="1" height="1"/><rect x="14" y="2" width="1" height="1"/><rect x="16" y="2" width="1" height="1"/><rect x="18" y="2" width="2" height="1"/>
+                          <rect x="9" y="3" width="1" height="1"/><rect x="11" y="3" width="2" height="1"/><rect x="15" y="3" width="1" height="1"/><rect x="17" y="3" width="1" height="1"/><rect x="19" y="3" width="2" height="1"/>
+                          <rect x="8" y="4" width="1" height="1"/><rect x="10" y="4" width="1" height="1"/><rect x="13" y="4" width="2" height="1"/><rect x="17" y="4" width="2" height="1"/><rect x="20" y="4" width="1" height="1"/>
+                          <rect x="9" y="5" width="2" height="1"/><rect x="12" y="5" width="1" height="1"/><rect x="15" y="5" width="1" height="1"/><rect x="18" y="5" width="1" height="1"/><rect x="20" y="5" width="1" height="1"/>
+                          <rect x="8" y="6" width="1" height="1"/><rect x="10" y="6" width="2" height="1"/><rect x="14" y="6" width="1" height="1"/><rect x="16" y="6" width="2" height="1"/><rect x="19" y="6" width="1" height="1"/>
+                          <rect x="0" y="8" width="1" height="1"/><rect x="2" y="8" width="2" height="1"/><rect x="5" y="8" width="1" height="1"/><rect x="7" y="8" width="2" height="1"/><rect x="10" y="8" width="1" height="1"/><rect x="12" y="8" width="1" height="1"/><rect x="15" y="8" width="2" height="1"/><rect x="18" y="8" width="1" height="1"/><rect x="20" y="8" width="1" height="1"/><rect x="22" y="8" width="2" height="1"/><rect x="25" y="8" width="1" height="1"/><rect x="27" y="8" width="2" height="1"/>
+                          <rect x="1" y="9" width="1" height="1"/><rect x="4" y="9" width="1" height="1"/><rect x="6" y="9" width="2" height="1"/><rect x="9" y="9" width="1" height="1"/><rect x="11" y="9" width="2" height="1"/><rect x="14" y="9" width="1" height="1"/><rect x="16" y="9" width="1" height="1"/><rect x="19" y="9" width="1" height="1"/><rect x="21" y="9" width="1" height="1"/><rect x="24" y="9" width="2" height="1"/><rect x="27" y="9" width="1" height="1"/>
+                          <rect x="0" y="10" width="2" height="1"/><rect x="3" y="10" width="1" height="1"/><rect x="5" y="10" width="2" height="1"/><rect x="8" y="10" width="1" height="1"/><rect x="10" y="10" width="2" height="1"/><rect x="13" y="10" width="1" height="1"/><rect x="15" y="10" width="1" height="1"/><rect x="17" y="10" width="2" height="1"/><rect x="20" y="10" width="1" height="1"/><rect x="22" y="10" width="2" height="1"/><rect x="25" y="10" width="1" height="1"/><rect x="28" y="10" width="1" height="1"/>
+                          <rect x="2" y="11" width="1" height="1"/><rect x="4" y="11" width="2" height="1"/><rect x="7" y="11" width="1" height="1"/><rect x="9" y="11" width="1" height="1"/><rect x="12" y="11" width="2" height="1"/><rect x="15" y="11" width="2" height="1"/><rect x="18" y="11" width="1" height="1"/><rect x="20" y="11" width="2" height="1"/><rect x="23" y="11" width="1" height="1"/><rect x="26" y="11" width="2" height="1"/>
+                          <rect x="0" y="12" width="1" height="1"/><rect x="3" y="12" width="2" height="1"/><rect x="6" y="12" width="1" height="1"/><rect x="8" y="12" width="2" height="1"/><rect x="11" y="12" width="1" height="1"/><rect x="14" y="12" width="1" height="1"/><rect x="16" y="12" width="2" height="1"/><rect x="19" y="12" width="2" height="1"/><rect x="22" y="12" width="1" height="1"/><rect x="25" y="12" width="2" height="1"/><rect x="28" y="12" width="1" height="1"/>
+                          <rect x="1" y="13" width="2" height="1"/><rect x="4" y="13" width="1" height="1"/><rect x="6" y="13" width="2" height="1"/><rect x="10" y="13" width="2" height="1"/><rect x="13" y="13" width="1" height="1"/><rect x="15" y="13" width="1" height="1"/><rect x="18" y="13" width="2" height="1"/><rect x="21" y="13" width="1" height="1"/><rect x="23" y="13" width="2" height="1"/><rect x="26" y="13" width="1" height="1"/>
+                          <rect x="0" y="14" width="2" height="1"/><rect x="3" y="14" width="1" height="1"/><rect x="5" y="14" width="1" height="1"/><rect x="7" y="14" width="2" height="1"/><rect x="11" y="14" width="1" height="1"/><rect x="13" y="14" width="2" height="1"/><rect x="16" y="14" width="1" height="1"/><rect x="19" y="14" width="1" height="1"/><rect x="20" y="14" width="2" height="1"/><rect x="24" y="14" width="1" height="1"/><rect x="26" y="14" width="2" height="1"/>
+                          <rect x="2" y="15" width="2" height="1"/><rect x="5" y="15" width="1" height="1"/><rect x="8" y="15" width="1" height="1"/><rect x="10" y="15" width="2" height="1"/><rect x="13" y="15" width="1" height="1"/><rect x="15" y="15" width="2" height="1"/><rect x="18" y="15" width="1" height="1"/><rect x="21" y="15" width="2" height="1"/><rect x="25" y="15" width="1" height="1"/><rect x="27" y="15" width="1" height="1"/>
+                          <rect x="0" y="16" width="1" height="1"/><rect x="3" y="16" width="2" height="1"/><rect x="6" y="16" width="1" height="1"/><rect x="8" y="16" width="2" height="1"/><rect x="12" y="16" width="2" height="1"/><rect x="15" y="16" width="1" height="1"/><rect x="17" y="16" width="1" height="1"/><rect x="19" y="16" width="2" height="1"/><rect x="22" y="16" width="1" height="1"/><rect x="24" y="16" width="2" height="1"/><rect x="28" y="16" width="1" height="1"/>
+                          <rect x="1" y="17" width="1" height="1"/><rect x="4" y="17" width="1" height="1"/><rect x="6" y="17" width="2" height="1"/><rect x="9" y="17" width="2" height="1"/><rect x="12" y="17" width="1" height="1"/><rect x="14" y="17" width="2" height="1"/><rect x="17" y="17" width="1" height="1"/><rect x="20" y="17" width="1" height="1"/><rect x="22" y="17" width="2" height="1"/><rect x="26" y="17" width="1" height="1"/><rect x="28" y="17" width="1" height="1"/>
+                          <rect x="0" y="18" width="2" height="1"/><rect x="3" y="18" width="1" height="1"/><rect x="5" y="18" width="1" height="1"/><rect x="8" y="18" width="2" height="1"/><rect x="11" y="18" width="1" height="1"/><rect x="13" y="18" width="1" height="1"/><rect x="16" y="18" width="2" height="1"/><rect x="19" y="18" width="1" height="1"/><rect x="21" y="18" width="1" height="1"/><rect x="23" y="18" width="2" height="1"/><rect x="26" y="18" width="2" height="1"/>
+                          <rect x="2" y="19" width="1" height="1"/><rect x="4" y="19" width="2" height="1"/><rect x="7" y="19" width="1" height="1"/><rect x="10" y="19" width="1" height="1"/><rect x="12" y="19" width="2" height="1"/><rect x="15" y="19" width="1" height="1"/><rect x="17" y="19" width="2" height="1"/><rect x="20" y="19" width="2" height="1"/><rect x="24" y="19" width="1" height="1"/><rect x="26" y="19" width="1" height="1"/><rect x="28" y="19" width="1" height="1"/>
+                          <rect x="0" y="20" width="1" height="1"/><rect x="3" y="20" width="2" height="1"/><rect x="6" y="20" width="1" height="1"/><rect x="9" y="20" width="2" height="1"/><rect x="13" y="20" width="1" height="1"/><rect x="16" y="20" width="1" height="1"/><rect x="18" y="20" width="2" height="1"/><rect x="21" y="20" width="1" height="1"/><rect x="23" y="20" width="1" height="1"/><rect x="25" y="20" width="2" height="1"/><rect x="28" y="20" width="1" height="1"/>
+                          <rect x="8" y="22" width="2" height="1"/><rect x="11" y="22" width="1" height="1"/><rect x="14" y="22" width="1" height="1"/><rect x="16" y="22" width="2" height="1"/><rect x="19" y="22" width="2" height="1"/><rect x="22" y="22" width="1" height="1"/><rect x="24" y="22" width="2" height="1"/><rect x="27" y="22" width="1" height="1"/>
+                          <rect x="8" y="23" width="1" height="1"/><rect x="10" y="23" width="1" height="1"/><rect x="12" y="23" width="2" height="1"/><rect x="15" y="23" width="1" height="1"/><rect x="17" y="23" width="1" height="1"/><rect x="19" y="23" width="1" height="1"/><rect x="21" y="23" width="1" height="1"/><rect x="23" y="23" width="2" height="1"/><rect x="27" y="23" width="2" height="1"/>
+                          <rect x="8" y="24" width="2" height="1"/><rect x="11" y="24" width="2" height="1"/><rect x="14" y="24" width="1" height="1"/><rect x="16" y="24" width="1" height="1"/><rect x="18" y="24" width="2" height="1"/><rect x="21" y="24" width="2" height="1"/><rect x="24" y="24" width="1" height="1"/><rect x="26" y="24" width="2" height="1"/>
+                          <rect x="9" y="25" width="1" height="1"/><rect x="12" y="25" width="1" height="1"/><rect x="14" y="25" width="2" height="1"/><rect x="17" y="25" width="2" height="1"/><rect x="20" y="25" width="1" height="1"/><rect x="22" y="25" width="1" height="1"/><rect x="25" y="25" width="1" height="1"/><rect x="27" y="25" width="1" height="1"/>
+                          <rect x="8" y="26" width="1" height="1"/><rect x="10" y="26" width="2" height="1"/><rect x="13" y="26" width="2" height="1"/><rect x="16" y="26" width="1" height="1"/><rect x="18" y="26" width="1" height="1"/><rect x="20" y="26" width="2" height="1"/><rect x="23" y="26" width="1" height="1"/><rect x="25" y="26" width="2" height="1"/><rect x="28" y="26" width="1" height="1"/>
+                          <rect x="9" y="27" width="1" height="1"/><rect x="11" y="27" width="1" height="1"/><rect x="13" y="27" width="1" height="1"/><rect x="15" y="27" width="2" height="1"/><rect x="18" y="27" width="2" height="1"/><rect x="21" y="27" width="2" height="1"/><rect x="24" y="27" width="1" height="1"/><rect x="26" y="27" width="1" height="1"/>
+                          <rect x="8" y="28" width="2" height="1"/><rect x="12" y="28" width="1" height="1"/><rect x="14" y="28" width="2" height="1"/><rect x="17" y="28" width="1" height="1"/><rect x="19" y="28" width="1" height="1"/><rect x="21" y="28" width="1" height="1"/><rect x="23" y="28" width="2" height="1"/><rect x="27" y="28" width="2" height="1"/>
+                        </g>
+                      </svg>
                     </div>
                   </div>
+
+                  {/* Title block */}
+                  <div style={{margin:"40px 0 6px 0",textAlign:"center"}}>
+                    <h1 style={{fontFamily:"Georgia, 'Times New Roman', serif",fontSize:40,fontWeight:900,
+                      letterSpacing:8,color:"#2a1b03",margin:0,lineHeight:1,
+                      textShadow:"0 1px 0 rgba(255,240,180,.5), 0 -1px 0 rgba(0,0,0,.3)"}}>SWEAR</h1>
+                    <div style={{fontFamily:"Georgia,serif",fontSize:9,letterSpacing:5,color:"#3d2a0a",
+                      margin:"6px 0 0",fontStyle:"italic",opacity:.7}}>
+                      {t("swear_card.reserve_member", lang)}
+                    </div>
+                  </div>
+
+                  {/* Rotating Ⓢ seal */}
+                  <div style={{display:"flex",justifyContent:"center",margin:"28px 0 20px"}}>
+                    <div style={{width:100,height:100,position:"relative"}}>
+                      <div className="sc-seal-glow"/>
+                      <svg className="sc-seal-ring" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+                        <defs>
+                          <path id="sc-seal-arc" d="M 50,50 m -42,0 a 42,42 0 1,1 84,0 a 42,42 0 1,1 -84,0"/>
+                        </defs>
+                        <text fontFamily="Georgia, serif" fontSize="6" letterSpacing="3" fill="#2a1b03" fontWeight="700">
+                          <textPath href="#sc-seal-arc">⋆ SWEAR ⋅ THE OATH CURRENCY ⋅ SINCE 2026 ⋆</textPath>
+                        </text>
+                      </svg>
+                      <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{position:"absolute",inset:0}}>
+                        <defs>
+                          <radialGradient id="sc-seal-fill">
+                            <stop offset="0%"  stopColor="#f8e58a"/>
+                            <stop offset="60%" stopColor="#d4a943"/>
+                            <stop offset="100%" stopColor="#8a6b28"/>
+                          </radialGradient>
+                        </defs>
+                        <circle cx="50" cy="50" r="30" fill="none" stroke="#2a1b03" strokeWidth="0.8" opacity="0.7"/>
+                        <circle cx="50" cy="50" r="27" fill="none" stroke="#2a1b03" strokeWidth="0.3" opacity="0.5"/>
+                        <circle cx="50" cy="50" r="24" fill="url(#sc-seal-fill)"/>
+                        <text x="50" y="60" textAnchor="middle" fontFamily="Georgia, serif" fontSize="32" fontWeight="900" fill="#1a0f00">Ⓢ</text>
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Balance + handle + tier badge */}
+                  <div style={{marginTop:"auto",textAlign:"left"}}>
+                    <p style={{fontFamily:"Georgia,serif",fontSize:8,letterSpacing:4,color:"#3d2a0a",margin:"0 0 4px",opacity:.7}}>
+                      {t("swear_card.balance_label", lang)}
+                    </p>
+                    <div style={{display:"flex",alignItems:"baseline"}}>
+                      <span style={{fontFamily:"Georgia, 'Times New Roman', serif",fontSize:48,fontWeight:900,
+                        color:"#1a0f00",margin:0,lineHeight:1,letterSpacing:-1,
+                        textShadow:"1px 1px 0 rgba(255,245,200,.4), -1px -1px 0 rgba(40,20,0,.4), 0 2px 3px rgba(0,0,0,.15)",
+                        fontVariantNumeric:"tabular-nums"}}>
+                        {swearBalance.toLocaleString("en-US")}
+                      </span>
+                      <span style={{fontFamily:"Georgia,serif",fontSize:13,letterSpacing:3,color:"#2a1b03",fontWeight:600,marginLeft:6}}>Ⓢ</span>
+                    </div>
+
+                    <div style={{height:1,background:"linear-gradient(90deg, transparent, rgba(42,27,3,.3) 20%, rgba(42,27,3,.3) 80%, transparent)",margin:"12px 0 6px"}}/>
+
+                    <div style={{marginTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:8}}>
+                      <div style={{minWidth:0,flex:1}}>
+                        <p style={{fontFamily:"Georgia,serif",fontSize:13,color:"#2a1b03",letterSpacing:1.5,
+                          fontWeight:700,textTransform:"uppercase",margin:0,
+                          overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                          {swearProfile?.handle ? `⋆ ${swearProfile.handle} ⋆` : "—"}
+                        </p>
+                        <div style={{fontFamily:"Georgia,serif",fontSize:8,letterSpacing:2,color:"#3d2a0a",marginTop:3,opacity:.7}}>
+                          {t("swear_card.member_since", lang, { date: formatMonthYear(swearProfile?.createdAt) })}
+                        </div>
+                      </div>
+                      {(() => {
+                        const badge = resolveSwearTierBadge(swearProfile, t, lang);
+                        if (!badge) return null;
+                        return (
+                          <div style={{fontFamily:"Georgia,serif",fontSize:7,letterSpacing:2,color:"#2a1b03",
+                            padding:"3px 8px",border:"1px solid rgba(42,27,3,.4)",borderRadius:3,
+                            background:"rgba(255,245,200,.15)",fontWeight:700,textAlign:"right",whiteSpace:"nowrap"}}>
+                            {badge}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Auxiliary UI below the card ── */}
+            <div className="sc-aux" style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
+              {/* Handle setter + sign-in/sign-out cluster */}
+              {authUser ? (
+                <div style={{
+                  background:"rgba(255,255,255,.03)",border:"1px solid rgba(255,255,255,.08)",
+                  borderRadius:12,padding:"12px 14px",
+                  display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",
+                }}>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontSize:11,color:"#e8e6e1",fontWeight:600,
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                      {t("auth.signed_in_as", lang, { email: authUser.email || authUser.displayName || authUser.uid.slice(0,8) })}
+                    </div>
+                    <button onClick={()=>{
+                        setHandleInput(swearProfile?.handle || "");
+                        setHandleError("");
+                        setShowHandleModal(true);
+                      }}
+                      style={{marginTop:6,background:"transparent",border:"1px solid rgba(232,197,71,.4)",
+                        color:"#e8c547",fontSize:10,letterSpacing:"1.5px",fontWeight:700,
+                        padding:"5px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>
+                      {swearProfile?.handle ? t("swear_card.change_handle", lang) : t("swear_card.set_handle", lang)}
+                    </button>
+                  </div>
                   <button onClick={()=>setSignOutConfirmOpen(true)}
-                    style={{background:"transparent",border:"1px solid rgba(244,63,94,.4)",
-                      color:"#f43f5e",fontSize:10,letterSpacing:"1.5px",fontWeight:700,
-                      padding:"6px 12px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>
+                    style={{background:"transparent",border:"none",color:"#f43f5e",
+                      fontSize:10,letterSpacing:"1.5px",fontWeight:700,
+                      padding:"6px 8px",cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase",
+                      textDecoration:"underline",textUnderlineOffset:2}}>
                     {t("auth.sign_out", lang)}
                   </button>
                 </div>
               ) : (
-                <div>
+                <div style={{
+                  background:"rgba(255,255,255,.03)",border:"1px solid rgba(232,197,71,.18)",
+                  borderRadius:12,padding:"14px 16px",
+                }}>
                   <div style={{fontSize:11,color:T.dim,lineHeight:1.45,marginBottom:10}}>
                     {t("auth.sign_in_subtitle", lang)}
                   </div>
-                  <button onClick={()=>{ setShowRabCard(false); setAuthModalOpen(true); }}
+                  <button onClick={()=>{ setShowSwearCard(false); setAuthModalOpen(true); }}
                     style={{width:"100%",padding:"10px 14px",fontSize:12,fontWeight:700,letterSpacing:"1.5px",
                       textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",
                       color:"#04060f",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4960,28 +5203,32 @@ export default function BluffGame() {
                   </button>
                 </div>
               )}
-            </div>
 
-            <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
-              {t("rab_card.stats_title", lang)}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:4}}>
-              {[
-                [t("rab_card.stat_solo", lang),    swearProfile?.stats?.soloWins || 0],
-                [t("rab_card.stat_blitz", lang),   swearProfile?.stats?.blitzWins || 0],
-                [t("rab_card.stat_duel", lang),    swearProfile?.stats?.duelWins || 0],
-                [t("rab_card.stat_daily", lang),   swearProfile?.stats?.dailyCompletes || 0],
-                [t("rab_card.stat_grand", lang),   swearProfile?.stats?.grandBluffs || 0],
-                [t("rab_card.stat_best_streak", lang), swearProfile?.stats?.bestStreak || best || 0],
-              ].map(([label, val]) => (
-                <div key={label} style={{
-                  background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",
-                  borderRadius:10,padding:"10px 10px",
-                }}>
-                  <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:"#e8e6e1",lineHeight:1.1}}>{val}</div>
-                  <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{label}</div>
+              {/* Stats grid */}
+              <div>
+                <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",
+                  marginBottom:8,fontWeight:600}}>
+                  {t("swear_card.stats_title", lang)}
                 </div>
-              ))}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  {[
+                    [t("swear_card.stat_solo", lang),        swearProfile?.stats?.soloWins || 0],
+                    [t("swear_card.stat_blitz", lang),       swearProfile?.stats?.blitzWins || 0],
+                    [t("swear_card.stat_duel", lang),        swearProfile?.stats?.duelWins || 0],
+                    [t("swear_card.stat_daily", lang),       swearProfile?.stats?.dailyCompletes || 0],
+                    [t("swear_card.stat_grand", lang),       swearProfile?.stats?.grandBluffs || 0],
+                    [t("swear_card.stat_best_streak", lang), swearProfile?.stats?.bestStreak || best || 0],
+                  ].map(([label, val]) => (
+                    <div key={label} style={{
+                      background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",
+                      borderRadius:10,padding:"10px 10px",
+                    }}>
+                      <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:"#e8e6e1",lineHeight:1.1}}>{val}</div>
+                      <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -5085,7 +5332,7 @@ export default function BluffGame() {
               <button onClick={async ()=>{
                   try { await signOutUser(); } catch {}
                   setSignOutConfirmOpen(false);
-                  setShowRabCard(false);
+                  setShowSwearCard(false);
                 }}
                 style={{padding:"10px",fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
                   background:"#f43f5e",color:"#04060f",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}>
