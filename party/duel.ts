@@ -157,11 +157,41 @@ export default class DuelServer implements Party.Server {
     console.log(`[server] onConnect ${conn.id.slice(0,8)} players=${Object.keys(this.state.players).length} phase=${this.state.phase} rounds=${this.state.rounds.length}`);
     this.room.broadcast(JSON.stringify({ type: "state", state: this.state }));
 
-    // If 2 players, seed fallback rounds and start immediately (no blocking fetch)
+    // If 2 players, seed rounds (cache first, fallback to static pool) and start
     if (Object.keys(this.state.players).length === 2 && this.state.rounds.length === 0) {
-      this.state.rounds = this.buildFallbackRounds();
-      console.log(`[server] seeded ${this.state.rounds.length} fallback rounds`);
+      const cached = await this.fetchRoundsFromCache();
+      this.state.rounds = cached || this.buildFallbackRounds();
+      console.log(`[server] seeded ${this.state.rounds.length} rounds (cache: ${cached ? "hit" : "miss"})`);
       this.startCountdown();
+    }
+  }
+
+  async fetchRoundsFromCache(): Promise<any[] | null> {
+    try {
+      const mode = this.state.mode;
+      const url = `https://playbluff.games/api/duel-rounds?mode=${mode}`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json" },
+      });
+      if (!res.ok) {
+        console.log(`[server] cache fetch failed: ${res.status}`);
+        return null;
+      }
+      const data: any = await res.json();
+      if (!data.rounds || data.rounds.length === 0) {
+        console.log(`[server] cache empty`);
+        return null;
+      }
+      if (data.partial) {
+        console.log(`[server] cache partial: ${data.rounds.length}/${data.requested}`);
+        return null;
+      }
+      console.log(`[server] fetched ${data.rounds.length} rounds from cache`);
+      return data.rounds;
+    } catch (err) {
+      console.log(`[server] cache fetch error: ${err}`);
+      return null;
     }
   }
 
@@ -296,7 +326,7 @@ export default class DuelServer implements Party.Server {
     }
   }
 
-  onMessage(message: string, sender: Party.Connection) {
+  async onMessage(message: string, sender: Party.Connection) {
     const msg = JSON.parse(message);
 
     if (msg.type === "new_game") {
@@ -306,7 +336,9 @@ export default class DuelServer implements Party.Server {
       }
       this.clearPendingTimers("new_game");
       this.bonusHolders.clear();
-      this.state.rounds = this.buildFallbackRounds();
+      const cached = await this.fetchRoundsFromCache();
+      this.state.rounds = cached || this.buildFallbackRounds();
+      console.log(`[server] new_game seeded ${this.state.rounds.length} rounds (cache: ${cached ? "hit" : "miss"})`);
       this.state.currentRound = 0;
       this.state.answers = {};
       this.state.phase = "countdown";
