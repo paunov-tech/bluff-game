@@ -27,6 +27,7 @@ const REGULAR_TIMER = 45_000; // 45 seconds per round
 export default class DuelServer implements Party.Server {
   state: DuelRoom;
   pendingTimers: Map<ReturnType<typeof setTimeout>, string> = new Map();
+  bonusHolders: Set<string> = new Set();
 
   schedule(fn: () => void, ms: number, tag: string = "untagged") {
     console.log(`[server] +schedule ${tag} in ${ms}ms`);
@@ -220,6 +221,7 @@ export default class DuelServer implements Party.Server {
     this.state.phase = "playing";
     this.state.roundStartTime = Date.now();
     this.state.answers = {};
+    this.bonusHolders.clear();
 
     // Start blitz clocks
     if (this.state.mode === "blitz") {
@@ -270,6 +272,7 @@ export default class DuelServer implements Party.Server {
           // Give opponent a bonus question opportunity
           const opponentId = Object.keys(this.state.players).find(id => id !== p.id);
           if (opponentId) {
+            this.bonusHolders.add(opponentId);
             this.room.broadcast(JSON.stringify({
               type: "bonus_opportunity",
               forPlayerId: opponentId,
@@ -302,6 +305,7 @@ export default class DuelServer implements Party.Server {
         return;
       }
       this.clearPendingTimers("new_game");
+      this.bonusHolders.clear();
       this.state.rounds = this.buildFallbackRounds();
       this.state.currentRound = 0;
       this.state.answers = {};
@@ -322,10 +326,25 @@ export default class DuelServer implements Party.Server {
       if (!player || this.state.answers[sender.id]) return;
 
       const round = this.state.rounds[this.state.currentRound];
+      if (!round || !Array.isArray(round.statements)) return;
+
+      // Validate sel is a valid integer index
+      if (typeof msg.sel !== "number" ||
+          !Number.isInteger(msg.sel) ||
+          msg.sel < 0 ||
+          msg.sel >= round.statements.length) {
+        console.log(`[server] invalid sel from ${sender.id.slice(0,8)}: ${msg.sel}`);
+        return;
+      }
+
       const bluffIdx = round.statements.findIndex((s: any) => !s.real);
       const correct = msg.sel === bluffIdx;
       const timeUsed = Date.now() - this.state.roundStartTime;
-      const doublePoints = msg.doublePoints || false;
+      const claimedDouble = msg.doublePoints === true;
+      const doublePoints = claimedDouble && this.bonusHolders.has(sender.id);
+      if (claimedDouble && !doublePoints) {
+        console.log(`[server] rejected unauthorized doublePoints from ${sender.id.slice(0,8)}`);
+      }
       const points = correct ? (doublePoints ? 2 : 1) : 0;
 
       this.state.answers[sender.id] = {
@@ -416,6 +435,7 @@ export default class DuelServer implements Party.Server {
     }
     if (Object.keys(this.state.players).length === 0) {
       this.clearPendingTimers("room-empty");
+      this.bonusHolders.clear();
       // Reset room so a fresh pair of players can start clean
       this.state.rounds = [];
       this.state.currentRound = 0;
