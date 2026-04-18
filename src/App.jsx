@@ -823,6 +823,342 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
 
 
 // ═══════════════════════════════════════════════════════════════
+// CASINO AUDIO HELPERS — stake ticks, roulette clicks, wheel chime
+// ═══════════════════════════════════════════════════════════════
+let _tickCtx = null;
+function _ensureTickCtx() {
+  if (_tickCtx) return _tickCtx;
+  try { _tickCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+  catch { return null; }
+  return _tickCtx;
+}
+function playTick(intensity = "light") {
+  const ctx = _ensureTickCtx(); if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.value = intensity === "heavy" ? 880 : intensity === "medium" ? 660 : 440;
+    const t = ctx.currentTime;
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.15, t + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t); osc.stop(t + 0.09);
+  } catch {}
+}
+function playRouletteClicks(durationMs) {
+  const ctx = _ensureTickCtx(); if (!ctx) return;
+  try {
+    const start = ctx.currentTime;
+    const clicks = 40;
+    for (let i = 0; i < clicks; i++) {
+      const progress = i / clicks;
+      const t = start + (progress * progress * (durationMs / 1000));
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "square";
+      osc.frequency.value = 1800 - progress * 1000;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.08, t + 0.002);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t); osc.stop(t + 0.05);
+    }
+  } catch {}
+}
+function playWheelChime(kind) {
+  const ctx = _ensureTickCtx(); if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const frequencies = {
+      jackpot: [523.25, 659.25, 783.99, 1046.5],
+      win:     [659.25, 783.99],
+      loss:    [196, 146.83],
+      catastrophe: [110, 82.4, 55],
+    };
+    const freqs = frequencies[kind] || frequencies.win;
+    freqs.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = kind === "catastrophe" ? "sawtooth" : "sine";
+      osc.frequency.value = f;
+      const t = now + i * 0.12;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(0.2, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(t); osc.stop(t + 1);
+    });
+  } catch {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CASINO CHIP (decorative SVG)
+// ═══════════════════════════════════════════════════════════════
+function CasinoChip({ tier = "gold", value, size = 56 }) {
+  const colors = {
+    bronze: { center:"#c08550",rim:"#8b5e2f",edge:"#6b4822",highlight:"#ffd9a8",text:"#3a2510",inner:"#9e6838" },
+    silver: { center:"#c8c8d0",rim:"#8e8e98",edge:"#5e5e68",highlight:"#f0f0f5",text:"#2a2a32",inner:"#a0a0aa" },
+    gold:   { center:"#e8c547",rim:"#9e7c1f",edge:"#6e5512",highlight:"#ffe99a",text:"#4a3a0e",inner:"#d4a830" },
+  };
+  const c = colors[tier] || colors.gold;
+  const id = useRef(`chip-${tier}-${Math.random().toString(36).slice(2,7)}`).current;
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{filter:`drop-shadow(0 6px 20px ${c.edge}88)`}}>
+      <defs>
+        <radialGradient id={`${id}-body`} cx="0.35" cy="0.3">
+          <stop offset="0%" stopColor={c.highlight}/>
+          <stop offset="50%" stopColor={c.center}/>
+          <stop offset="100%" stopColor={c.rim}/>
+        </radialGradient>
+        <radialGradient id={`${id}-inner`} cx="0.4" cy="0.35">
+          <stop offset="0%" stopColor={c.highlight} stopOpacity="0.9"/>
+          <stop offset="60%" stopColor={c.center}/>
+          <stop offset="100%" stopColor={c.inner}/>
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="48" fill={c.edge}/>
+      <circle cx="50" cy="50" r="47" fill={`url(#${id}-body)`}/>
+      <circle cx="50" cy="50" r="47" fill="none" stroke={c.edge} strokeWidth="0.5"/>
+      {[...Array(8)].map((_, i) => {
+        const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
+        const sx = 50 + 41 * Math.cos(angle);
+        const sy = 50 + 41 * Math.sin(angle);
+        return (
+          <rect key={i} x={sx-4} y={sy-2.5} width="8" height="5" rx="1"
+            fill="#fff" opacity="0.85"
+            transform={`rotate(${(i/8)*360+90} ${sx} ${sy})`}/>
+        );
+      })}
+      <circle cx="50" cy="50" r="36" fill="none" stroke={c.edge} strokeWidth="0.8" strokeDasharray="1.5 2"/>
+      <circle cx="50" cy="50" r="32" fill="none" stroke={c.edge} strokeWidth="1.5" opacity="0.4"/>
+      <circle cx="50" cy="50" r="29" fill={`url(#${id}-inner)`}/>
+      <circle cx="50" cy="50" r="29" fill="none" stroke={c.edge} strokeWidth="0.5"/>
+      {[...Array(16)].map((_, i) => {
+        const angle = (i / 16) * Math.PI * 2;
+        const x1 = 50 + 12 * Math.cos(angle);
+        const y1 = 50 + 12 * Math.sin(angle);
+        const x2 = 50 + 25 * Math.cos(angle);
+        const y2 = 50 + 25 * Math.sin(angle);
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.edge} strokeWidth="0.3" opacity="0.25"/>;
+      })}
+      <circle cx="50" cy="50" r="15" fill={c.center} stroke={c.edge} strokeWidth="0.8"/>
+      <text x="50" y="56" textAnchor="middle" fontFamily="Georgia, serif" fontSize="16" fontWeight="900" fill={c.text}>B</text>
+      {value !== undefined && (
+        <text x="50" y="80" textAnchor="middle" fontFamily="Georgia, serif" fontSize="7" fontWeight="700" fill={c.text} opacity="0.7">
+          {typeof value === "number" ? value.toLocaleString('en-US') : value}
+        </text>
+      )}
+    </svg>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WHEEL OF FORTUNE — Double-or-Nothing phase resolver
+// ═══════════════════════════════════════════════════════════════
+function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut, onSpinResult }) {
+  const [spinning, setSpinning] = useState(false);
+  const [resultZone, setResultZone] = useState(null);
+  const [finalAngle, setFinalAngle] = useState(0);
+  const [showOutcome, setShowOutcome] = useState(false);
+  const chipTier = phaseNum === 1 ? "bronze" : phaseNum === 2 ? "silver" : "gold";
+
+  const handleSpin = () => {
+    setSpinning(true);
+    const r = Math.random();
+    let zone;
+    if (r < 0.38) zone = "green";
+    else if (r < 0.76) zone = "red";
+    else if (r < 0.9375) zone = "gold";
+    else zone = "black";
+
+    let targetField;
+    if (zone === "green") targetField = Math.floor(Math.random() * 12);
+    else if (zone === "red") targetField = 12 + Math.floor(Math.random() * 12);
+    else if (zone === "gold") targetField = 24 + Math.floor(Math.random() * 6);
+    else targetField = 30 + Math.floor(Math.random() * 2);
+
+    const offsetInField = (Math.random() * 8 - 4);
+    const targetAngle = -(targetField * 11.25 + 5.625 + offsetInField);
+    const extraSpins = 5 + Math.random() * 2;
+    const finalAng = targetAngle - (extraSpins * 360);
+    setFinalAngle(finalAng);
+    try { playRouletteClicks(3500); } catch {}
+
+    setTimeout(() => {
+      setResultZone(zone);
+      setShowOutcome(true);
+      try {
+        if (zone === "gold") playWheelChime("jackpot");
+        else if (zone === "green") playWheelChime("win");
+        else if (zone === "red") playWheelChime("loss");
+        else playWheelChime("catastrophe");
+      } catch {}
+      setTimeout(() => onSpinResult(zone), 2600);
+    }, 3500);
+  };
+
+  return (
+    <div style={{
+      position:"fixed",inset:0,zIndex:2000,
+      background:"radial-gradient(ellipse at center,rgba(20,8,0,.94) 0%,rgba(4,6,15,.98) 70%)",
+      backdropFilter:"blur(12px)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      padding:"20px",animation:"wheel-overlay-in .4s ease",
+    }}>
+      <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
+        {[...Array(30)].map((_, i) => (
+          <div key={i} style={{
+            position:"absolute",width:2,height:2,borderRadius:"50%",
+            background:"#e8c547",
+            left:`${Math.random()*100}%`,top:`${Math.random()*100}%`,
+            opacity:0.2+Math.random()*0.3,
+            animation:`wheel-particle-drift ${4+Math.random()*4}s ease-in-out infinite`,
+            animationDelay:`${Math.random()*3}s`,
+          }}/>
+        ))}
+      </div>
+
+      {!spinning && !showOutcome && (
+        <>
+          <div style={{fontSize:10,letterSpacing:6,color:"rgba(232,197,71,.6)",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>
+            Phase {phaseNum} complete
+          </div>
+          <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:"#e8c547",marginBottom:32,textAlign:"center",textShadow:"0 0 30px rgba(232,197,71,.4)"}}>
+            {mandatory ? "Grand Bluff · The Spin" : "Cash or Spin?"}
+          </div>
+        </>
+      )}
+
+      <div style={{
+        marginBottom:24,
+        transform:spinning?"scale(0.6) translateY(-80px)":"scale(1)",
+        transition:"transform 0.5s cubic-bezier(0.4,0,0.2,1)",
+      }}>
+        <CasinoChip tier={chipTier} value={phaseScore} size={100}/>
+      </div>
+
+      {!showOutcome && (
+        <div style={{fontSize:11,letterSpacing:3,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:20}}>
+          Phase stake: <span style={{color:"#e8c547",fontWeight:700,fontSize:18,fontFamily:"Georgia,serif"}}>
+            {phaseScore.toLocaleString('en-US')}
+          </span>
+        </div>
+      )}
+
+      <div style={{
+        position:"relative",width:280,height:280,marginBottom:28,
+        display:spinning||showOutcome?"block":"none",
+      }}>
+        <svg width="280" height="280" viewBox="0 0 280 280"
+          style={{
+            transform:`rotate(${finalAngle}deg)`,
+            transition:spinning?"transform 3.5s cubic-bezier(0.17,0.67,0.12,0.99)":"none",
+            filter:"drop-shadow(0 0 40px rgba(232,197,71,.3))",
+          }}>
+          <circle cx="140" cy="140" r="135" fill="none" stroke="#e8c547" strokeWidth="3"/>
+          <circle cx="140" cy="140" r="130" fill="none" stroke="#8e6a0f" strokeWidth="1"/>
+          {[...Array(32)].map((_, i) => {
+            const sa = (i*11.25-90)*Math.PI/180;
+            const ea = ((i+1)*11.25-90)*Math.PI/180;
+            const r = 125;
+            const x1 = 140+r*Math.cos(sa), y1 = 140+r*Math.sin(sa);
+            const x2 = 140+r*Math.cos(ea), y2 = 140+r*Math.sin(ea);
+            let fill;
+            if (i < 12) fill = "#1a6b3a";
+            else if (i < 24) fill = "#6b1a1a";
+            else if (i < 30) fill = "#c49828";
+            else fill = "#0a0a0a";
+            return (
+              <path key={i}
+                d={`M 140 140 L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`}
+                fill={fill} stroke="rgba(0,0,0,.5)" strokeWidth="0.5"/>
+            );
+          })}
+          <circle cx="140" cy="140" r="60" fill="#1a0f00" stroke="#e8c547" strokeWidth="2"/>
+          <circle cx="140" cy="140" r="55" fill="none" stroke="rgba(232,197,71,.3)" strokeWidth="1" strokeDasharray="3 4"/>
+          <circle cx="140" cy="140" r="30" fill="#0a0a0a" stroke="#e8c547" strokeWidth="1.5"/>
+          <text x="140" y="147" textAnchor="middle" fontFamily="Georgia,serif" fontSize="24" fontWeight="900" fill="#e8c547">B</text>
+        </svg>
+        <div style={{
+          position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",
+          width:0,height:0,
+          borderLeft:"12px solid transparent",borderRight:"12px solid transparent",
+          borderTop:"22px solid #e8c547",
+          filter:"drop-shadow(0 0 10px rgba(232,197,71,.8))",
+          zIndex:10,
+        }}/>
+      </div>
+
+      {!spinning && !showOutcome && (
+        <div style={{display:"flex",gap:14,width:"100%",maxWidth:380,marginTop:10}}>
+          {!mandatory && (
+            <button onClick={onCashOut} style={{
+              flex:1,minHeight:56,padding:16,
+              fontSize:13,fontWeight:700,letterSpacing:2,textTransform:"uppercase",fontFamily:"inherit",
+              background:"rgba(255,255,255,.03)",color:"#e8e6e1",
+              border:"1.5px solid rgba(255,255,255,.15)",borderRadius:14,cursor:"pointer",
+            }}>
+              🪙 Cash Out
+              <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:1,marginTop:4}}>
+                Keep {phaseScore.toLocaleString('en-US')}
+              </div>
+            </button>
+          )}
+          <button onClick={handleSpin} style={{
+            flex:mandatory?2:1,minHeight:56,padding:16,
+            fontSize:14,fontWeight:700,letterSpacing:2,textTransform:"uppercase",fontFamily:"inherit",
+            background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#1a0f00",
+            border:"none",borderRadius:14,cursor:"pointer",
+            boxShadow:"0 0 40px rgba(232,197,71,.4)",
+            position:"relative",overflow:"hidden",
+          }}>
+            <div style={{
+              position:"absolute",inset:0,
+              background:"linear-gradient(90deg,transparent,rgba(255,255,255,.3),transparent)",
+              animation:"stake-shimmer 2s infinite",
+            }}/>
+            <div style={{position:"relative"}}>
+              🎰 {mandatory ? "Spin the Wheel" : "Spin"}
+              <div style={{fontSize:10,opacity:.7,letterSpacing:1,marginTop:4}}>×2 · ×3 · or bust</div>
+            </div>
+          </button>
+        </div>
+      )}
+
+      {!spinning && !showOutcome && (
+        <div style={{marginTop:20,display:"flex",gap:14,fontSize:10,letterSpacing:1,color:"rgba(255,255,255,.4)",textTransform:"uppercase"}}>
+          <span><span style={{color:"#4ade80"}}>●</span> ×2 · 38%</span>
+          <span><span style={{color:"#f43f5e"}}>●</span> ×0 · 38%</span>
+          <span><span style={{color:"#e8c547"}}>●</span> ×3 · 19%</span>
+          <span><span style={{color:"#888"}}>●</span> bust · 6%</span>
+        </div>
+      )}
+
+      {showOutcome && resultZone && (
+        <div style={{textAlign:"center",marginTop:10,animation:"wheel-outcome-in .5s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          <div style={{
+            fontFamily:"Georgia,serif",fontSize:42,fontWeight:900,
+            color:resultZone==="gold"?"#e8c547":resultZone==="green"?"#4ade80":resultZone==="red"?"#f43f5e":"#888",
+            marginBottom:8,
+            textShadow:`0 0 40px ${resultZone==="gold"?"rgba(232,197,71,.6)":resultZone==="green"?"rgba(74,222,128,.5)":resultZone==="red"?"rgba(244,63,94,.5)":"rgba(0,0,0,.8)"}`,
+          }}>
+            {resultZone==="gold"?"JACKPOT!":resultZone==="green"?"WINNER":resultZone==="red"?"LOST":"CATASTROPHE"}
+          </div>
+          <div style={{fontSize:14,color:"rgba(255,255,255,.7)"}}>
+            {resultZone==="gold"?`+${(phaseScore*3).toLocaleString('en-US')} points`
+              :resultZone==="green"?`+${(phaseScore*2).toLocaleString('en-US')} points`
+              :resultZone==="red"?`AXIOM takes ${phaseScore.toLocaleString('en-US')}`
+              :`−50% of total score`}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // WEB AUDIO TENSION ENGINE
 // ═══════════════════════════════════════════════════════════════
 const AudioTension = (() => {
@@ -867,6 +1203,20 @@ export default function BluffGame() {
   const [multiplier, setMultiplier] = useState(1.0);
   const multiplierRef = useRef(1.0);
   const [multiplierLocked, setMultiplierLocked] = useState(null);
+  // Casino stake mechanic
+  const STAKE_LEVELS = [1.0, 1.3, 1.8, 2.5, 3.5];
+  const [stakeLevel, setStakeLevel] = useState(0);
+  const [stakeAnim, setStakeAnim] = useState(null);
+  const stakeTimersRef = useRef([]);
+  const stakeLevelRef = useRef(0);
+  // Phase scoring (rounds 1-4 → wheel, 5-8 → wheel, 9-12 → wheel)
+  const [phaseScore, setPhaseScore] = useState(0);
+  const phaseScoreRef = useRef(0);
+  // Wheel-of-fortune state
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const [wheelPhaseNum, setWheelPhaseNum] = useState(1);
+  // Chip flight on Lock In
+  const [chipFlying, setChipFlying] = useState(false);
   const milestonesFiredRef = useRef(new Set());
   const [lastRoundResult, setLastRoundResult] = useState(null);
   const [correctCount, setCorrectCount] = useState(0);
@@ -965,6 +1315,89 @@ export default function BluffGame() {
   const resultsHistoryRef = useRef([]); // boolean per round — duel results
   const gameStartTimeRef = useRef(null); // ms timestamp — duel total time
   const roundCategoriesRef = useRef(null); // shuffled CATEGORIES for current match
+
+  // ── Stake mechanic sync + scheduler ──────────────────────────
+  useEffect(() => {
+    stakeLevelRef.current = stakeLevel;
+    const mult = STAKE_LEVELS[stakeLevel] || 1.0;
+    if (multiplierLocked === null) {
+      setMultiplier(mult);
+      multiplierRef.current = mult;
+    }
+  }, [stakeLevel, multiplierLocked]);
+
+  useEffect(() => { phaseScoreRef.current = phaseScore; }, [phaseScore]);
+
+  function clearStakeTimers() {
+    stakeTimersRef.current.forEach(clearTimeout);
+    stakeTimersRef.current = [];
+  }
+
+  function scheduleStakeEvents(totalSeconds) {
+    clearStakeTimers();
+    setStakeLevel(0);
+    setStakeAnim(null);
+    if (totalSeconds < 10) return;
+
+    const bangCount = 4 + Math.floor(Math.random() * 2);
+    const fallCount = 1 + Math.floor(Math.random() * 2);
+    const minGap = 4;
+
+    const bangTimes = [];
+    for (let i = 0; i < bangCount; i++) {
+      let attempts = 0;
+      while (attempts < 20) {
+        const t = 3 + Math.random() * (totalSeconds - 5);
+        if (bangTimes.every(bt => Math.abs(bt - t) > minGap)) {
+          bangTimes.push(t); break;
+        }
+        attempts++;
+      }
+    }
+    bangTimes.sort((a, b) => a - b);
+
+    const fallTimes = [];
+    for (let i = 0; i < fallCount; i++) {
+      let attempts = 0;
+      while (attempts < 20) {
+        const t = 8 + Math.random() * Math.max(1, totalSeconds - 12);
+        const clashBang = bangTimes.some(bt => Math.abs(bt - t) < 2);
+        const clashFall = fallTimes.some(ft => Math.abs(ft - t) < 5);
+        if (!clashBang && !clashFall) { fallTimes.push(t); break; }
+        attempts++;
+      }
+    }
+
+    bangTimes.forEach(sec => {
+      const id = setTimeout(() => {
+        setStakeLevel(lvl => {
+          const next = Math.min(STAKE_LEVELS.length - 1, lvl + 1);
+          if (next !== lvl) {
+            setStakeAnim("bang");
+            setTimeout(() => setStakeAnim(null), 600);
+            try { playTick("medium"); } catch {}
+          }
+          return next;
+        });
+      }, sec * 1000);
+      stakeTimersRef.current.push(id);
+    });
+
+    fallTimes.forEach(sec => {
+      const id = setTimeout(() => {
+        setStakeLevel(lvl => {
+          const next = Math.max(0, lvl - 1);
+          if (next !== lvl) {
+            setStakeAnim("fall");
+            setTimeout(() => setStakeAnim(null), 800);
+            try { playTick("heavy"); } catch {}
+          }
+          return next;
+        });
+      }, sec * 1000);
+      stakeTimersRef.current.push(id);
+    });
+  }
 
   // ── Blitz Mode ───────────────────────────────────────────────
   const [blitzMode, setBlitzMode] = useState(false);
@@ -1263,6 +1696,7 @@ export default function BluffGame() {
   // ── REVEAL ───────────────────────────────────────────────────
   function doReveal() {
     clearInterval(timerRef.current);
+    clearStakeTimers();
     const stmtsCurrent = currentStmtsRef.current;
     const selCurrent = currentSelRef.current;
     const bi = stmtsCurrent.findIndex(s=>!s.real);
@@ -1296,7 +1730,8 @@ export default function BluffGame() {
       AudioTension.stopDrone();
       AudioTension.fanfare();
       earned = Math.round(BASE_POINTS * lockedMult * streakMultAtLock);
-      setScore(s=>s+earned);
+      if (blitzMode) setScore(s=>s+earned);
+      else setPhaseScore(s=>s+earned);
       setCorrectCount(c => { correctCountRef.current = c + 1; return c + 1; });
       setMaxCashout(m => { const next = Math.max(m, lockedMult); maxCashoutRef.current = next; return next; });
       wrongCountRef.current = 0;
@@ -1318,7 +1753,8 @@ export default function BluffGame() {
       if (autoReveal) {
         penalty += blitzMode ? NEGLIGENCE_PENALTY_BLITZ : NEGLIGENCE_PENALTY_REGULAR;
       }
-      setScore(s=>Math.max(0, s - penalty));
+      if (blitzMode) setScore(s=>Math.max(0, s - penalty));
+      else setPhaseScore(s=>Math.max(0, s - penalty));
       wrongCountRef.current++;
       const lieStmt = stmtsCurrent.find(s => !s.real);
       setLastWrongStmt(lieStmt?.text || null);
@@ -1361,6 +1797,10 @@ export default function BluffGame() {
     currentSelRef.current=null;
     setRevealed(false);
     setConfetti(false);
+    setStakeLevel(0);
+    stakeLevelRef.current = 0;
+    setStakeAnim(null);
+    clearStakeTimers();
     // Check if entering new wave
     if(!blitzMode && isWaveStart(next)) {
       const wave = getWave(next);
@@ -1636,9 +2076,34 @@ export default function BluffGame() {
     setShowWaveIntro(true);
     setTimeout(() => setShowWaveIntro(false), 1800);
     setFetchError(false);
+    setPhaseScore(0);
+    phaseScoreRef.current = 0;
+    setStakeLevel(0);
+    stakeLevelRef.current = 0;
+    setStakeAnim(null);
+    clearStakeTimers();
+    setWheelOpen(false);
+    setChipFlying(false);
     roundCategoriesRef.current = [...CATEGORIES].sort(() => Math.random() - 0.5);
     fetchRound(0);
     axiomSpeak("intro","idle");
+  }
+
+  // Wheel-aware advance: rounds 4/8/12 (solo) trigger Wheel of Fortune
+  function advanceAfterRound() {
+    const justCompleted = roundIdx + 1; // 1-indexed
+    const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
+    const isPhaseEnd = !blitzMode && (justCompleted === 4 || justCompleted === 8 || justCompleted === 12);
+    if (isPhaseEnd) {
+      setWheelPhaseNum(justCompleted === 4 ? 1 : justCompleted === 8 ? 2 : 3);
+      clearStakeTimers();
+      clearTimeout(autoAdvanceRef.current);
+      setAutoAdvanceCount(null);
+      setWheelOpen(true);
+      return;
+    }
+    if (justCompleted >= totalRounds) showResultScreen();
+    else nextRound();
   }
 
   // ── CREATE DUEL ──────────────────────────────────────────────
@@ -1888,10 +2353,12 @@ export default function BluffGame() {
       const diff = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
       const maxT = blitzMode ? BLITZ_TIMER : (TIMER_PER_DIFF[diff] || 60);
       setTime(maxT);
+      // Stake mechanic drives multiplier in solo mode (replaces time-based curve)
+      if (!blitzMode) scheduleStakeEvents(maxT);
       timerRef.current = setInterval(() => {
         setTime(t => {
           const next = t <= 1 ? 0 : t - 1;
-          if (multiplierLocked === null) {
+          if (blitzMode && multiplierLocked === null) {
             const elapsed = maxT - next;
             const m = computeMultiplier(elapsed, maxT, blitzMode);
             multiplierRef.current = m;
@@ -1938,7 +2405,7 @@ export default function BluffGame() {
       const isLast = roundIdx + 1 >= (blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length);
       webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
       webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
-      webApp.MainButton.onClick(isLast ? showResultScreen : nextRound);
+      webApp.MainButton.onClick(advanceAfterRound);
       webApp.MainButton.show();
     }
   }, [screen, sel, revealed, roundIdx]);
@@ -1968,7 +2435,7 @@ export default function BluffGame() {
     setAutoAdvanceCount(count);
     const tick=()=>{
       count--;
-      if(count<=0){ setAutoAdvanceCount(null); if(roundIdx+1<(blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length)) nextRound(); else showResultScreen(); }
+      if(count<=0){ setAutoAdvanceCount(null); advanceAfterRound(); }
       else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
     };
     autoAdvanceRef.current=setTimeout(tick, blitzMode ? 100 : 800);
@@ -3137,6 +3604,43 @@ export default function BluffGame() {
         background:"radial-gradient(ellipse at 50% 50%,rgba(232,197,71,.05) 0%,rgba(8,8,15,0) 70%)",
         animation:"ambient-breath 8s ease-in-out infinite",
       }}/>
+      {chipFlying && (
+        <div style={{
+          position:"fixed",zIndex:100,pointerEvents:"none",
+          left:"50%",bottom:140,
+          animation:"chip-fly .5s cubic-bezier(0.5,0,0.75,1) forwards",
+        }}>
+          <CasinoChip tier="gold" size={60}/>
+        </div>
+      )}
+      {wheelOpen && (
+        <WheelOfFortune
+          phaseNum={wheelPhaseNum}
+          phaseScore={phaseScore}
+          totalScore={score}
+          mandatory={wheelPhaseNum === 3}
+          onCashOut={() => {
+            setScore(s => s + phaseScore);
+            setPhaseScore(0);
+            phaseScoreRef.current = 0;
+            setWheelOpen(false);
+            if (wheelPhaseNum === 3) showResultScreen();
+            else nextRound();
+          }}
+          onSpinResult={(zone) => {
+            const stake = phaseScoreRef.current;
+            if (zone === "green") setScore(s => s + stake * 2);
+            else if (zone === "gold") setScore(s => s + stake * 3);
+            else if (zone === "black") setScore(s => Math.floor(s * 0.5));
+            // red: phase lost, player gets nothing
+            setPhaseScore(0);
+            phaseScoreRef.current = 0;
+            setWheelOpen(false);
+            if (wheelPhaseNum === 3) showResultScreen();
+            else nextRound();
+          }}
+        />
+      )}
       <Particles count={10}/>
       {confetti&&<Confetti/>}
       {showWaveIntro&&(
@@ -3348,81 +3852,83 @@ export default function BluffGame() {
               ? <button
                   disabled
                   style={{
-                    width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,16px)",
-                    fontSize:"clamp(12px,3vw,13px)",fontWeight:700,letterSpacing:"3px",
-                    textTransform:"uppercase",fontFamily:"inherit",
-                    background:"rgba(255,255,255,.03)",
-                    color:"rgba(232,197,71,.45)",
-                    border:"1px dashed rgba(232,197,71,.25)",
-                    borderRadius:14,cursor:"not-allowed",opacity:.7,
+                    width:"100%",minHeight:64,padding:18,
+                    opacity:0.4,
+                    background:"rgba(255,255,255,.02)",
+                    border:"1.5px dashed rgba(232,197,71,.2)",
+                    color:"rgba(232,197,71,.3)",
+                    fontSize:12,letterSpacing:3,textTransform:"uppercase",
+                    borderRadius:16,fontFamily:"inherit",cursor:"not-allowed",
                   }}
                 >
                   Pick your bluff
                 </button>
               : <button
-                  key={`lockin-${sel}`}
                   onClick={() => {
-                    if (flipping) return;
+                    if (flipping || chipFlying) return;
                     haptic.lockIn();
                     AudioTension.lockIn();
-                    setFlipping(true);
-                    setTimeout(() => { setFlipping(false); doReveal(); }, 400);
+                    try { playTick("medium"); } catch {}
+                    setChipFlying(true);
+                    setTimeout(() => {
+                      setChipFlying(false);
+                      setFlipping(true);
+                      setTimeout(() => { setFlipping(false); doReveal(); }, 400);
+                    }, 500);
                   }}
                   style={{
-                    width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,16px)",
+                    width:"100%",minHeight:64,padding:0,
                     position:"relative",overflow:"hidden",
-                    fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"3px",
-                    textTransform:"uppercase",fontFamily:"inherit",
-                    background:"rgba(232,197,71,.08)",
-                    color:"#e8c547",
-                    border:"1.5px solid rgba(232,197,71,.4)",
-                    borderRadius:14,cursor:"pointer",
-                    boxShadow:"0 0 32px rgba(232,197,71,.18), 0 6px 18px rgba(232,197,71,.14)",
+                    background:"rgba(4,6,15,.7)",
+                    border:`2px solid ${
+                      stakeAnim==="fall"?"#f43f5e":stakeAnim==="bang"?"#f0d878":"rgba(232,197,71,.5)"
+                    }`,
+                    borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+                    boxShadow:stakeAnim==="bang"
+                      ?"0 0 60px rgba(232,197,71,.5), 0 0 120px rgba(232,197,71,.2)"
+                      :stakeAnim==="fall"
+                      ?"0 0 40px rgba(244,63,94,.4)"
+                      :`0 0 ${20+stakeLevel*12}px rgba(232,197,71,${0.15+stakeLevel*0.07})`,
+                    transition:"box-shadow .4s, border-color .3s",
+                    animation:stakeAnim==="bang"?"stake-bang .6s ease-out":stakeAnim==="fall"?"stake-fall .8s ease-out":"none",
                   }}
                 >
                   <div style={{
                     position:"absolute",left:0,top:0,bottom:0,
-                    background:"linear-gradient(90deg,#d4a830,#e8c547,#f0d878)",
-                    animation:"lockin-fill 1s ease-out forwards",
+                    width:`${((stakeLevel+1)/STAKE_LEVELS.length)*100}%`,
+                    background:stakeAnim==="fall"
+                      ?"linear-gradient(90deg, rgba(244,63,94,.35), rgba(244,63,94,.15))"
+                      :"linear-gradient(90deg, #d4a830 0%, #e8c547 50%, #f0d878 100%)",
+                    transition:"width .6s cubic-bezier(0.34,1.56,0.64,1), background .3s",
                     zIndex:0,
                   }}/>
                   <div style={{
                     position:"absolute",inset:0,pointerEvents:"none",
-                    background:"linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent)",
-                    animation:"lockin-shimmer 1.5s ease-in-out infinite",
+                    background:"linear-gradient(90deg, transparent 20%, rgba(255,255,255,.15) 50%, transparent 80%)",
+                    backgroundSize:"200% 100%",
+                    animation:"stake-shimmer 2.5s linear infinite",
                     zIndex:1,
                   }}/>
-                  {multiplier > 1.05 && (
-                    <svg
-                      viewBox="0 0 100 100"
-                      preserveAspectRatio="none"
-                      style={{
-                        position:"absolute",inset:0,width:"100%",height:"100%",
-                        pointerEvents:"none",zIndex:2,
-                        animation: multiplier >= 3.0 ? "cashoutPulse 0.8s ease-in-out infinite" : "none",
-                      }}
-                    >
-                      <rect
-                        x="1" y="1" width="98" height="98" rx="12" ry="12"
-                        fill="none"
-                        stroke={getRingColor(multiplier)}
-                        strokeWidth="2"
-                        strokeDasharray={`${((multiplier - 1) / 2.5) * 392} 392`}
-                        style={{ transition:"stroke-dasharray 0.3s ease, stroke 0.5s ease" }}
-                      />
-                    </svg>
-                  )}
                   <div style={{
-                    position:"relative",zIndex:3,color:"#04060f",fontWeight:900,
-                    display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                    position:"relative",zIndex:2,
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    gap:14,padding:18,
+                    color:"#04060f",fontWeight:900,
+                    textShadow:"0 1px 0 rgba(255,255,255,.1)",
                   }}>
-                    <span style={{fontSize:18}}>🎰</span>
-                    <span>{multiplier > 1.05 ? `Lock in @ ${multiplier.toFixed(1)}x` : "Lock it in"}</span>
+                    <span style={{fontSize:14,letterSpacing:3,textTransform:"uppercase"}}>Lock in</span>
+                    <span style={{
+                      fontSize:26,fontFamily:"Georgia,serif",fontWeight:900,
+                      transform:stakeAnim==="bang"?"scale(1.25)":"scale(1)",
+                      transition:"transform .4s cubic-bezier(0.34,1.56,0.64,1)",
+                    }}>
+                      ×{STAKE_LEVELS[stakeLevel].toFixed(1)}
+                    </span>
                   </div>
                 </button>
             :<div style={{display:"flex",gap:10}}>
               <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);if(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)) nextRound(); else showResultScreen();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
+              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);advanceAfterRound();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
                 <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?`Next in ${autoAdvanceCount}...`:`Results in ${autoAdvanceCount}...`):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?"Next round →":"See results →")}</span>
               </button>
@@ -3483,7 +3989,13 @@ export default function BluffGame() {
             );
           })()}
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
-            <span>Points <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
+            <span>Banked <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
+            {!blitzMode && phaseScore > 0 && (
+              <>
+                <span style={{opacity:.2}}>|</span>
+                <span>Stake <b style={{color:"#f0d878",fontSize:13}}>{phaseScore.toLocaleString('en-US')}</b></span>
+              </>
+            )}
             <span style={{opacity:.2}}>|</span>
             <span>Hits <b style={{color:T.gold,fontSize:13}}>{correctCount}/{total}</b></span>
             <span style={{opacity:.2}}>|</span>
@@ -3889,6 +4401,41 @@ function GameStyles(){
       0%{transform:perspective(600px) rotateX(0)}
       50%{transform:perspective(600px) rotateX(90deg) scale(.95);opacity:.5}
       100%{transform:perspective(600px) rotateX(0)}
+    }
+    @keyframes stake-bang{
+      0%{transform:scale(1)}
+      30%{transform:scale(1.04) translateY(-2px)}
+      60%{transform:scale(1.02) translateY(-1px)}
+      100%{transform:scale(1)}
+    }
+    @keyframes stake-fall{
+      0%,100%{transform:translateX(0)}
+      15%{transform:translateX(-4px)}
+      30%{transform:translateX(4px)}
+      45%{transform:translateX(-3px)}
+      60%{transform:translateX(3px)}
+      75%{transform:translateX(-1px)}
+    }
+    @keyframes stake-shimmer{
+      0%{background-position:-200% center}
+      100%{background-position:200% center}
+    }
+    @keyframes chip-fly{
+      0%{opacity:0;transform:translateX(-50%) translateY(0) scale(.4) rotate(0deg)}
+      20%{opacity:1;transform:translateX(-50%) translateY(-80px) scale(1.1) rotate(180deg)}
+      100%{opacity:.7;transform:translateX(-50%) translateY(-340px) scale(.85) rotate(540deg)}
+    }
+    @keyframes wheel-overlay-in{
+      from{opacity:0}
+      to{opacity:1}
+    }
+    @keyframes wheel-outcome-in{
+      0%{opacity:0;transform:scale(.5) translateY(20px)}
+      100%{opacity:1;transform:scale(1) translateY(0)}
+    }
+    @keyframes wheel-particle-drift{
+      0%,100%{transform:translateY(0) translateX(0);opacity:.2}
+      50%{transform:translateY(-20px) translateX(8px);opacity:.5}
     }
     @media (prefers-reduced-motion: reduce){
       *,*::before,*::after{
