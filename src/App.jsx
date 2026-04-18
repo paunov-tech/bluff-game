@@ -2711,35 +2711,59 @@ export default function BluffGame() {
     const diff = blitzModeRef.current ? (BLITZ_DIFFICULTY[idx] || 4) : (ROUND_DIFFICULTY[idx]||3);
     const cat = (roundCategoriesRef.current || CATEGORIES)[idx % CATEGORIES.length];
     setCategory(cat);
-    const controller = new AbortController();
-    const fetchTimeout = setTimeout(() => controller.abort(), 9000);
+
+    // Non-EN generation is slower (Claude multilingual adds ~2x latency).
+    // 9s was too aggressive and caused frequent fallback to the hardcoded EN pool.
+    const isNonEn = lang !== "en";
+    const attemptTimeoutMs = isNonEn ? 20000 : 12000;
+
+    async function attempt() {
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), attemptTimeoutMs);
+      try {
+        const res = await fetch("/api/generate-round",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ category:cat, difficulty:diff, lang, mode: blitzModeRef.current ? "blitz" : "regular" }),
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        const normalized = (data.statements||[]).map(s=>({
+          text: String(s.text||""),
+          real: s.real===true||s.real==="true",
+        }));
+        const lies = normalized.filter(s=>!s.real);
+        if(lies.length!==1) throw new Error("Bad lie count");
+        return normalized;
+      } finally {
+        clearTimeout(fetchTimeout);
+      }
+    }
+
     try {
-      const res = await fetch("/api/generate-round",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ category:cat, difficulty:diff, lang, mode: blitzModeRef.current ? "blitz" : "regular" }),
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      const normalized = (data.statements||[]).map(s=>({
-        text: String(s.text||""),
-        real: s.real===true||s.real==="true",
-      }));
-      const lies = normalized.filter(s=>!s.real);
-      if(lies.length!==1) throw new Error("Bad lie count");
+      let normalized;
+      try {
+        normalized = await attempt();
+      } catch (err1) {
+        console.warn("[fetchRound] attempt 1 failed:",
+          err1.name === "AbortError" ? `timeout ${attemptTimeoutMs}ms` : err1.message,
+          "— retrying");
+        normalized = await attempt();
+      }
       const shuffled = shuffle(normalized);
       setStmts(shuffled);
       currentStmtsRef.current = shuffled;
       roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
     } catch(e) {
-      console.warn("[fetchRound] fallback:", e.name === "AbortError" ? "timeout 9s" : e.message);
-      // Silent fallback — game continues seamlessly
+      // Both attempts failed. Last-resort hardcoded fallback is EN-only and
+      // category-agnostic — a known visual mismatch we accept over a frozen UI.
+      console.error("[fetchRound] both attempts failed, using hardcoded fallback:",
+        e.name === "AbortError" ? `timeout ${attemptTimeoutMs}ms` : e.message);
       const fb = shuffle(getFallback(blitzModeRef.current ? "blitz" : "regular"));
       setStmts(fb);
       currentStmtsRef.current = fb;
       roundsPlayedRef.current[idx] = { statements: fb, category: cat };
     } finally {
-      clearTimeout(fetchTimeout);
       setLoadingRound(false);
     }
   }
