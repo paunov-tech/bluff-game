@@ -2135,6 +2135,9 @@ export default function BluffGame() {
   const duelSocketRef = useRef(null);
   const duelCountdownIntervalRef = useRef(null);
   const duelAnswerSentRef = useRef(false);
+  // Stable per-match timestamp used as the SWEAR earn gameId component.
+  // Bumped on each fresh countdown so rematches dedup correctly.
+  const duelGameStartRef = useRef(null);
   const [duelConnectionState, setDuelConnectionState] = useState("idle");
   const [duelRetryAttempt, setDuelRetryAttempt] = useState(0);
   const [lobbyElapsed, setLobbyElapsed] = useState(0);
@@ -3077,6 +3080,7 @@ export default function BluffGame() {
     }
     if (msg.type === "countdown") {
       if (duelCountdownIntervalRef.current) clearInterval(duelCountdownIntervalRef.current);
+      if (!duelGameStartRef.current) duelGameStartRef.current = Date.now();
       setDuelCountdown(msg.seconds);
       let c = msg.seconds;
       duelCountdownIntervalRef.current = setInterval(() => {
@@ -3128,6 +3132,16 @@ export default function BluffGame() {
       setDuelScores(msg.scores);
       setDuelPhase("finished");
       setDuelScreen("result");
+      // SWEAR: award duel outcome. Ties count as a loss for now (small
+      // participation reward). gid combines the room id with the per-match
+      // start timestamp so rematches don't dedup against prior games.
+      const iWon = !msg.isTie && msg.winner === ws.id;
+      const gid = `duel_${duelRoomId || "unknown"}_${duelGameStartRef.current || Date.now()}`;
+      awardSwear(iWon ? "duel_win" : "duel_loss", gid, {
+        label: t(iWon ? "swear.duel_win" : "swear.duel_loss", lang),
+        meta: { scores: msg.scores, isTie: !!msg.isTie },
+      });
+      duelGameStartRef.current = null;
     }
     if (msg.type === "player_left") {
       setDuelPhase("abandoned");
