@@ -457,9 +457,9 @@ function Confetti() {
 
 function TimerRing({time,max=45,size=48}) {
   const r=(size-6)/2,circ=2*Math.PI*r;
-  const color=time<=10?"#f43f5e":time<=20?"#fb923c":"#e8c547";
+  const color=time<=5?"#f43f5e":time<=10?"#fb923c":time<=15?"#e8c547":"#e8c547";
   const pct=Math.max(0,time/max);
-  const strokeW = time<=10 ? 5 : 3;
+  const strokeW = time<=5 ? 5 : time<=10 ? 4.5 : time<=15 ? 4 : 3;
   const [glitchKey,setGlitchKey]=useState(0);
   useEffect(()=>{
     if(time<=0) return;
@@ -844,6 +844,7 @@ export default function BluffGame() {
   const [category, setCategory] = useState("history");
   const [sel, setSel] = useState(null);
   const [revealed, setRevealed] = useState(false);
+  const [flipping, setFlipping] = useState(false);
   const [score, setScore] = useState(0);
   const [total, setTotal] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -1888,9 +1889,12 @@ export default function BluffGame() {
           }
           if (t <= 1) { clearInterval(timerRef.current); return 0; }
           if (t === Math.floor(maxT * .45)) axiomSpeak("taunt_early", "taunting");
-          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); }
-          if (t === 5) haptic.timerWarning();
-          if (t === 3) haptic.timerWarning();
+          if (t === 15) { try { AudioTension.tick(1); } catch {} haptic.timerWarning(); }
+          if (t === 10) { axiomSpeak("taunt_late", "taunting"); haptic.timerWarning(); try { AudioTension.tick(1); } catch {} }
+          if (t === 5) { haptic.timerWarning(); try { AudioTension.tick(2); } catch {} }
+          if (t === 3) { haptic.timerWarning(); try { AudioTension.tick(3); } catch {} }
+          if (t === 2) { try { AudioTension.tick(3); } catch {} }
+          if (t === 1) { try { AudioTension.tick(3); } catch {} }
           return t - 1;
         });
       }, 1000);
@@ -3110,6 +3114,7 @@ export default function BluffGame() {
         "radial-gradient(ellipse at 50% 0%,rgba(232,197,71,.08) 0%,rgba(8,8,15,0) 55%),"
         + "radial-gradient(ellipse at 50% 115%,rgba(20,83,45,.28) 0%,rgba(8,8,15,0) 60%),"
         + `${T.bg}`,
+      animation: !revealed && time>0 && time<=3 ? "screen-shake 200ms infinite" : "none",
     }}>
       <div aria-hidden="true" style={{
         position:"absolute",inset:0,pointerEvents:"none",zIndex:0,
@@ -3135,7 +3140,16 @@ export default function BluffGame() {
           </div>
         </div>
       )}
-      {!revealed&&time<=3&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:50,animation:"vignette-pulse .9s ease-in-out infinite"}}/>}
+      {!revealed&&time>0&&time<=5&&(
+        <div style={{
+          position:"fixed",inset:0,pointerEvents:"none",zIndex:50,
+          boxShadow: time<=3
+            ? "inset 0 0 150px 30px rgba(244,63,94,.4), inset 0 0 280px 60px rgba(244,63,94,.22)"
+            : "inset 0 0 100px 18px rgba(244,63,94,.25), inset 0 0 200px 40px rgba(244,63,94,.12)",
+          animation: time<=3 ? "vignette-pulse .9s ease-in-out infinite" : "none",
+          transition:"box-shadow .4s ease",
+        }}/>
+      )}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
@@ -3240,7 +3254,7 @@ export default function BluffGame() {
               if(revealed&&isB){bg="rgba(244,63,94,.07)";border="rgba(244,63,94,.4)";anim="g-glow .8s";}
               if(revealed&&isS&&correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";anim="g-correctGlow .8s";}
               return (
-                <button key={i} onClick={()=>handleCardSelect(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed?"default":"pointer",transition:"all .22s ease, transform .25s ease, box-shadow .25s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,boxShadow:revealed&&isB?"0 6px 22px rgba(244,63,94,.22), inset 0 1px 0 rgba(255,255,255,.04)":revealed&&isS&&correct?"0 6px 22px rgba(45,212,160,.22), inset 0 1px 0 rgba(255,255,255,.04)":"0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)",animation:`g-cardIn .3s ${i*.055}s both${revealed&&isB?`, card-kick .5s ${.05+i*.04}s ease-out both`:""}${anim?`, ${anim}`:""}`}}>
+                <button key={i} onClick={()=>handleCardSelect(i)} disabled={flipping||revealed} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||flipping?"default":"pointer",transition:"all .22s ease, transform .25s ease, box-shadow .25s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,boxShadow:revealed&&isB?"0 6px 22px rgba(244,63,94,.22), inset 0 1px 0 rgba(255,255,255,.04)":revealed&&isS&&correct?"0 6px 22px rgba(45,212,160,.22), inset 0 1px 0 rgba(255,255,255,.04)":"0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)",animation:flipping?`card-flip 400ms ${i*.04}s ease-in-out both`:`g-cardIn .3s ${i*.055}s both${revealed&&isB?`, card-kick .5s ${.05+i*.04}s ease-out both`:""}${anim?`, ${anim}`:""}`}}>
                   <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
                     {revealed&&isB?"!":String.fromCharCode(65+i)}
                   </div>
@@ -3314,59 +3328,82 @@ export default function BluffGame() {
           )}
 
           {!revealed
-            ?<button
-              onClick={() => { if (sel !== null) { haptic.lockIn(); AudioTension.lockIn(); doReveal(); }}}
-              disabled={sel === null}
-              style={{
-                width: "100%",
-                minHeight: 52,
-                padding: "clamp(14px,3.5vw,16px)",
-                fontSize: "clamp(13px,3.5vw,15px)",
-                fontWeight: 700,
-                letterSpacing: "1.5px",
-                textTransform: "uppercase",
-                background: sel !== null ? "linear-gradient(135deg,#e8c547,#d4a830)" : T.card,
-                color: sel !== null ? T.bg : T.dim,
-                border: sel !== null ? "none" : `1.5px solid ${T.gb}`,
-                borderRadius: 16,
-                cursor: sel !== null ? "pointer" : "not-allowed",
-                transition: "all .25s",
-                fontFamily: "inherit",
-                position: "relative",
-                overflow: "hidden",
-              }}
-            >
-              {sel !== null && multiplier > 1.05 && (
-                <svg
-                  viewBox="0 0 100 100"
-                  preserveAspectRatio="none"
+            ? sel === null
+              ? <button
+                  disabled
                   style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    pointerEvents: "none",
-                    animation: multiplier >= 3.0 ? "cashoutPulse 0.8s ease-in-out infinite" : "none",
+                    width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,16px)",
+                    fontSize:"clamp(12px,3vw,13px)",fontWeight:700,letterSpacing:"3px",
+                    textTransform:"uppercase",fontFamily:"inherit",
+                    background:"rgba(255,255,255,.03)",
+                    color:"rgba(232,197,71,.45)",
+                    border:"1px dashed rgba(232,197,71,.25)",
+                    borderRadius:14,cursor:"not-allowed",opacity:.7,
                   }}
                 >
-                  <rect
-                    x="1" y="1" width="98" height="98" rx="12" ry="12"
-                    fill="none"
-                    stroke={getRingColor(multiplier)}
-                    strokeWidth="2"
-                    strokeDasharray={`${((multiplier - 1) / 2.5) * 392} 392`}
-                    style={{ transition: "stroke-dasharray 0.3s ease, stroke 0.5s ease" }}
-                  />
-                </svg>
-              )}
-              <span style={{ position: "relative", zIndex: 1 }}>
-                {sel === null
-                  ? "Select a statement"
-                  : multiplier > 1.05
-                    ? `🔒 Lock in @ ${multiplier.toFixed(1)}x 💰`
-                    : "🔒 Lock in answer"}
-              </span>
-            </button>
+                  Pick your bluff
+                </button>
+              : <button
+                  key={`lockin-${sel}`}
+                  onClick={() => {
+                    if (flipping) return;
+                    haptic.lockIn();
+                    AudioTension.lockIn();
+                    setFlipping(true);
+                    setTimeout(() => { setFlipping(false); doReveal(); }, 400);
+                  }}
+                  style={{
+                    width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,16px)",
+                    position:"relative",overflow:"hidden",
+                    fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"3px",
+                    textTransform:"uppercase",fontFamily:"inherit",
+                    background:"rgba(232,197,71,.08)",
+                    color:"#e8c547",
+                    border:"1.5px solid rgba(232,197,71,.4)",
+                    borderRadius:14,cursor:"pointer",
+                    boxShadow:"0 0 32px rgba(232,197,71,.18), 0 6px 18px rgba(232,197,71,.14)",
+                  }}
+                >
+                  <div style={{
+                    position:"absolute",left:0,top:0,bottom:0,
+                    background:"linear-gradient(90deg,#d4a830,#e8c547,#f0d878)",
+                    animation:"lockin-fill 1s ease-out forwards",
+                    zIndex:0,
+                  }}/>
+                  <div style={{
+                    position:"absolute",inset:0,pointerEvents:"none",
+                    background:"linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent)",
+                    animation:"lockin-shimmer 1.5s ease-in-out infinite",
+                    zIndex:1,
+                  }}/>
+                  {multiplier > 1.05 && (
+                    <svg
+                      viewBox="0 0 100 100"
+                      preserveAspectRatio="none"
+                      style={{
+                        position:"absolute",inset:0,width:"100%",height:"100%",
+                        pointerEvents:"none",zIndex:2,
+                        animation: multiplier >= 3.0 ? "cashoutPulse 0.8s ease-in-out infinite" : "none",
+                      }}
+                    >
+                      <rect
+                        x="1" y="1" width="98" height="98" rx="12" ry="12"
+                        fill="none"
+                        stroke={getRingColor(multiplier)}
+                        strokeWidth="2"
+                        strokeDasharray={`${((multiplier - 1) / 2.5) * 392} 392`}
+                        style={{ transition:"stroke-dasharray 0.3s ease, stroke 0.5s ease" }}
+                      />
+                    </svg>
+                  )}
+                  <div style={{
+                    position:"relative",zIndex:3,color:"#04060f",fontWeight:900,
+                    display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                  }}>
+                    <span style={{fontSize:18}}>🎰</span>
+                    <span>{multiplier > 1.05 ? `Lock in @ ${multiplier.toFixed(1)}x` : "Lock it in"}</span>
+                  </div>
+                </button>
             :<div style={{display:"flex",gap:10}}>
               <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
               <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);if(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)) nextRound(); else showResultScreen();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
@@ -3394,12 +3431,41 @@ export default function BluffGame() {
             </div>
           )}
 
-          {/* Wave progress dots */}
-          <div style={{display:"flex",justifyContent:"center",gap:5,marginTop:10,marginBottom:4}}>
-            {Array.from({length:12},(_,i)=>(
-              <div key={i} style={{width:i===roundIdx?8:5,height:i===roundIdx?8:5,borderRadius:"50%",transition:"all .2s",background:i<roundIdx?"rgba(255,255,255,.45)":i===roundIdx?WAVE_COLORS[getWave(i)]:"rgba(255,255,255,.1)",marginTop:i===roundIdx?-1.5:0}}/>
-            ))}
-          </div>
+          {/* Segment indicator — round progress */}
+          {(() => {
+            const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
+            return (
+              <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,padding:"12px 0",marginTop:6,marginBottom:4,position:"relative"}}>
+                <div style={{position:"absolute",left:"18%",right:"18%",top:"50%",height:1,background:"rgba(232,197,71,.1)",transform:"translateY(-50%)",zIndex:0}}/>
+                {Array.from({length:totalRounds}).map((_,i)=>{
+                  const isActive = i===roundIdx;
+                  const isPast = i<roundIdx;
+                  const pastResult = isPast ? resultsHistoryRef.current[i] : undefined;
+                  const isCorrect = pastResult===true;
+                  const isWrong = pastResult===false;
+                  const isFuture = !isActive && !isPast;
+                  return (
+                    <div key={i} style={{
+                      position:"relative",zIndex:1,
+                      width:isActive?14:10,height:isActive?14:10,borderRadius:"50%",
+                      background:isActive?"#e8c547":isCorrect?"#2dd4a0":isWrong?"#f43f5e":"rgba(255,255,255,.1)",
+                      boxShadow:isActive?"0 0 16px #e8c547,0 0 32px rgba(232,197,71,.4)":"none",
+                      border:isFuture?"1px solid rgba(232,197,71,.18)":"none",
+                      animation:isActive?"segment-pulse 1.4s ease-in-out infinite":"none",
+                      transition:"all .3s ease",
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                    }}>
+                      {(isCorrect||isWrong) && (
+                        <span style={{fontSize:8,fontWeight:900,color:"#04060f",lineHeight:1}}>
+                          {isCorrect?"✓":"✗"}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
           <div style={{display:"flex",justifyContent:"center",gap:"clamp(12px,4vw,18px)",marginTop:12,fontSize:"clamp(10px,2.5vw,12px)",color:T.dim}}>
             <span>Points <b style={{color:T.gold,fontSize:13}}>{score.toLocaleString('en-US')}</b></span>
             <span style={{opacity:.2}}>|</span>
@@ -3783,6 +3849,30 @@ function GameStyles(){
       30%{transform:translateX(-6px) rotate(-0.5deg)}
       60%{transform:translateX(4px) rotate(0.3deg)}
       100%{transform:translateX(0)}
+    }
+    @keyframes segment-pulse{
+      0%,100%{transform:scale(1);box-shadow:0 0 16px #e8c547,0 0 32px rgba(232,197,71,.4)}
+      50%{transform:scale(1.15);box-shadow:0 0 24px #e8c547,0 0 48px rgba(232,197,71,.6)}
+    }
+    @keyframes screen-shake{
+      0%{transform:translate(0,0)}
+      25%{transform:translate(1px,-1px)}
+      50%{transform:translate(-1px,1px)}
+      75%{transform:translate(1px,1px)}
+      100%{transform:translate(0,0)}
+    }
+    @keyframes lockin-fill{
+      0%{width:0}
+      100%{width:100%}
+    }
+    @keyframes lockin-shimmer{
+      0%{transform:translateX(-100%)}
+      100%{transform:translateX(100%)}
+    }
+    @keyframes card-flip{
+      0%{transform:perspective(600px) rotateX(0)}
+      50%{transform:perspective(600px) rotateX(90deg) scale(.95);opacity:.5}
+      100%{transform:perspective(600px) rotateX(0)}
     }
     @media (prefers-reduced-motion: reduce){
       *,*::before,*::after{
