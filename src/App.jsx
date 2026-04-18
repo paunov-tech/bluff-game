@@ -2087,7 +2087,7 @@ export default function BluffGame() {
   const [showWheelTeaser, setShowWheelTeaser] = useState(false);
   const [earlyAdopterSlotsRemaining, setEarlyAdopterSlotsRemaining] = useState(null);
 
-  // ── SWEAR currency / Rab Card ────────────────────────────────
+  // ── SWEAR currency / SWEAR Card ──────────────────────────────
   const [swearProfile, setSwearProfile] = useState(null);
   const swearProfileRef = useRef(null);
   const [swearBalance, setSwearBalance] = useState(0);
@@ -4553,7 +4553,7 @@ export default function BluffGame() {
         background:"radial-gradient(ellipse 80% 50% at 50% 0%, rgba(232,197,71,0.05), transparent 70%), radial-gradient(ellipse 60% 40% at 50% 100%, rgba(34,211,238,0.03), transparent 70%)"
       }}/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
-      {/* SWEAR balance chip — opens Rab Card */}
+      {/* SWEAR balance chip — opens SWEAR Card */}
       <button
         onClick={() => setShowSwearCard(true)}
         style={{
