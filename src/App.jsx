@@ -499,10 +499,36 @@ function TimerRing({time,max=45,size=48}) {
   );
 }
 
-function generateShareCard(score, total, best, speech, won, correctCount, maxCashout) {
+// ── Freemium: 3 free solo games/day, localStorage counter with midnight reset ──
+function getFreeGamesKey() {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  return `bluff_free_games_${yyyy}-${mm}-${dd}`;
+}
+
+function getFreeGamesUsed() {
+  try {
+    const key = getFreeGamesKey();
+    return parseInt(localStorage.getItem(key) || "0", 10);
+  } catch { return 0; }
+}
+
+function incrementFreeGames() {
+  try {
+    const key = getFreeGamesKey();
+    const current = getFreeGamesUsed();
+    localStorage.setItem(key, String(current + 1));
+    return current + 1;
+  } catch { return 0; }
+}
+
+function generateShareCard(score, total, best, speech, won, correctCount, maxCashout, axiomScore) {
   try {
     correctCount = correctCount ?? total;
     maxCashout = maxCashout ?? 1.0;
+    axiomScore = axiomScore ?? 0;
     const c = document.createElement("canvas");
     c.width = 900; c.height = 500;
     const ctx = c.getContext("2d");
@@ -537,8 +563,9 @@ function generateShareCard(score, total, best, speech, won, correctCount, maxCas
     ctx.fillText("POINTS", 450, 298);
 
     ctx.font = "500 13px system-ui";
+    const axiomFmt = axiomScore.toLocaleString('en-US');
     const stats = [
-      { label: `${correctCount}/${total} correct`, color: "#2dd4a0" },
+      { label: won ? `Beat AXIOM ${score.toLocaleString('en-US')} vs ${axiomFmt}` : `Lost ${score.toLocaleString('en-US')} vs ${axiomFmt}`, color: won ? "#2dd4a0" : "#f43f5e" },
       { label: `Best streak ${best}🔥`, color: "#e8c547" },
       { label: `Max ${maxCashout.toFixed(1)}x 💰`, color: "#f43f5e" },
     ];
@@ -570,9 +597,10 @@ function generateShareCard(score, total, best, speech, won, correctCount, maxCas
   } catch (e) { console.error("[share-card]", e); return null; }
 }
 
-function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine, correctCount, maxCashout) {
+function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roastLine, correctCount, maxCashout, axiomScore) {
   correctCount = correctCount ?? total;
   maxCashout = maxCashout ?? 1.0;
+  axiomScore = axiomScore ?? 0;
   try {
     const W = 540, H = 960; // 1:1.77 = 9:16 portrait
     const c = document.createElement("canvas");
@@ -701,7 +729,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
     ctx.fillText(won ? "I DEFEATED AXIOM" : "AXIOM DEFEATED ME", W/2, cy + 155);
 
     const scoreFmt = score.toLocaleString('en-US');
-    const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+    const axiomFmt = axiomScore.toLocaleString('en-US');
 
     ctx.fillStyle = "#e8c547";
     ctx.font = "900 64px Georgia,serif";
@@ -715,7 +743,7 @@ function generateStoriesCard(score, total, best, axiomSpeech, won, lieText, roas
     const panelY = cy + 266;
     const rowH = 30;
     const rows = [
-      { label: "Correct", value: `${correctCount}/${total} · ${accuracy}%`, color: "#2dd4a0" },
+      { label: "vs AXIOM", value: `${scoreFmt} vs ${axiomFmt}`, color: won ? "#2dd4a0" : "#f43f5e" },
       { label: "Best streak", value: `${best} 🔥`, color: "#e8c547" },
       { label: "Max cashout", value: `${maxCashout.toFixed(1)}x 💰`, color: "#f43f5e" },
     ];
@@ -1503,6 +1531,161 @@ const AudioTension = (() => {
 })();
 
 // ═══════════════════════════════════════════════════════════════
+// PAYWALL SCREEN
+// ═══════════════════════════════════════════════════════════════
+function PaywallScreen({ reason, onClose, slotsRemaining }) {
+  const [loading, setLoading] = useState(null);
+
+  const headline = reason === "blitz"
+    ? "BLITZ mode is Pro"
+    : reason === "wheel"
+    ? "Wheel of Fortune is Pro"
+    : "Daily limit reached";
+  const subline = reason === "blitz"
+    ? "Unlock 20-round sprint runs with bonus multipliers."
+    : reason === "wheel"
+    ? "Unlock the Wheel of Fortune — up to 3x phase multipliers."
+    : "You've used your 3 free games today. Unlock unlimited play.";
+
+  async function checkout(plan) {
+    setLoading(plan);
+    try {
+      let userId = "";
+      try { userId = localStorage.getItem("bluff_user_id") || ""; } catch {}
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan, user_id: userId }),
+      });
+      const data = await res.json();
+      if (data && data.url) {
+        window.location.href = data.url;
+        return;
+      }
+      setLoading(null);
+      alert(data?.error || "Checkout failed. Please try again.");
+    } catch {
+      setLoading(null);
+      alert("Checkout failed. Please check your connection.");
+    }
+  }
+
+  return (
+    <div className="dvh-screen" style={{
+      position:"fixed",inset:0,zIndex:9999,
+      background:"linear-gradient(180deg,#04060f 0%,#0a0d1a 100%)",
+      color:"#e8e6e1",fontFamily:"inherit",
+      display:"flex",flexDirection:"column",
+      padding:"24px 20px",overflow:"auto",
+      animation:"g-fadeUp .4s both",
+    }}>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+        <button onClick={onClose} aria-label="Close" style={{
+          minHeight:36,minWidth:36,padding:"0 12px",background:"transparent",
+          color:"rgba(255,255,255,.6)",border:"1px solid rgba(255,255,255,.15)",
+          borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:14,
+        }}>✕</button>
+      </div>
+
+      <div style={{textAlign:"center",marginBottom:24}}>
+        <div style={{fontSize:11,letterSpacing:"2px",color:"rgba(232,197,71,.7)",marginBottom:8,textTransform:"uppercase",fontWeight:700}}>
+          BLUFF™ Pro
+        </div>
+        <div style={{
+          fontSize:"clamp(22px,6vw,30px)",fontWeight:900,fontFamily:"Georgia,serif",
+          color:"#e8c547",marginBottom:8,lineHeight:1.1,
+        }}>
+          {headline}
+        </div>
+        <div style={{fontSize:14,color:"rgba(232,230,225,.75)",lineHeight:1.5,maxWidth:380,margin:"0 auto"}}>
+          {subline}
+        </div>
+      </div>
+
+      {typeof slotsRemaining === "number" && slotsRemaining > 0 && (
+        <div style={{
+          textAlign:"center",marginBottom:20,padding:"10px 14px",
+          background:"linear-gradient(135deg,rgba(232,197,71,.12),rgba(232,197,71,.04))",
+          border:"1px solid rgba(232,197,71,.3)",borderRadius:12,
+          maxWidth:380,width:"100%",margin:"0 auto 20px",
+        }}>
+          <div style={{fontSize:11,letterSpacing:"1.5px",color:"#e8c547",fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>
+            🏆 Early Adopter Window
+          </div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.85)"}}>
+            Only <b style={{color:"#e8c547"}}>{slotsRemaining}</b> lifetime free slots left. First 100 users play Pro forever.
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:380,width:"100%",margin:"0 auto"}}>
+        {/* Yearly — featured */}
+        <button onClick={()=>checkout("yearly")} disabled={loading!==null} style={{
+          position:"relative",minHeight:72,padding:"14px 18px",
+          background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
+          border:"none",borderRadius:14,cursor:loading?"wait":"pointer",fontFamily:"inherit",
+          opacity:loading&&loading!=="yearly"?.5:1,textAlign:"left",
+          boxShadow:"0 8px 24px rgba(232,197,71,0.25)",
+        }}>
+          <div style={{
+            position:"absolute",top:-8,right:12,background:"#04060f",color:"#e8c547",
+            fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:99,
+            letterSpacing:"1px",border:"1px solid rgba(232,197,71,.5)",
+          }}>BEST VALUE · SAVE 42%</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:900,fontSize:15,letterSpacing:"1.5px",textTransform:"uppercase"}}>Yearly</div>
+              <div style={{fontSize:12,opacity:.75,marginTop:2}}>Unlimited play · all modes</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontWeight:900,fontSize:22,fontFamily:"Georgia,serif"}}>€34.99</div>
+              <div style={{fontSize:10,opacity:.7}}>€2.92/mo</div>
+            </div>
+          </div>
+        </button>
+
+        {/* Monthly */}
+        <button onClick={()=>checkout("monthly")} disabled={loading!==null} style={{
+          minHeight:60,padding:"12px 18px",
+          background:"rgba(255,255,255,.04)",color:"#e8e6e1",
+          border:"1px solid rgba(255,255,255,.15)",borderRadius:14,cursor:loading?"wait":"pointer",fontFamily:"inherit",
+          opacity:loading&&loading!=="monthly"?.5:1,textAlign:"left",
+        }}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase"}}>Monthly</div>
+              <div style={{fontSize:11,opacity:.6,marginTop:2}}>Cancel anytime</div>
+            </div>
+            <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",color:"#e8c547"}}>€4.99</div>
+          </div>
+        </button>
+
+        {/* Lifetime */}
+        <button onClick={()=>checkout("lifetime")} disabled={loading!==null} style={{
+          minHeight:60,padding:"12px 18px",
+          background:"rgba(244,63,94,.06)",color:"#e8e6e1",
+          border:"1px solid rgba(244,63,94,.25)",borderRadius:14,cursor:loading?"wait":"pointer",fontFamily:"inherit",
+          opacity:loading&&loading!=="lifetime"?.5:1,textAlign:"left",
+        }}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase",color:"#f43f5e"}}>Lifetime</div>
+              <div style={{fontSize:11,opacity:.6,marginTop:2}}>One-time · forever</div>
+            </div>
+            <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",color:"#f43f5e"}}>€69.99</div>
+          </div>
+        </button>
+      </div>
+
+      <div style={{marginTop:"auto",paddingTop:20,textAlign:"center",fontSize:11,color:"rgba(255,255,255,.4)",maxWidth:380,width:"100%",margin:"auto auto 0"}}>
+        <div style={{marginBottom:6}}>Duels & Daily Challenge stay free forever.</div>
+        <div>Secured by Stripe · Cancel anytime</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function BluffGame() {
@@ -1564,6 +1747,19 @@ export default function BluffGame() {
   const [duelId, setDuelId] = useState(null);
   const [duelCreating, setDuelCreating] = useState(false);
   const [duelName, setDuelName] = useState(() => safeLSGet("bluff_duel_name", ""));
+
+  // ── Freemium / Pro ───────────────────────────────────────────
+  const [isPro, setIsPro] = useState(() => {
+    try { return localStorage.getItem("bluff_pro") === "1"; } catch { return false; }
+  });
+  const [isEarlyAdopter, setIsEarlyAdopter] = useState(() => {
+    try { return localStorage.getItem("bluff_early_adopter") === "1"; } catch { return false; }
+  });
+  const [freeGamesRemaining, setFreeGamesRemaining] = useState(() => Math.max(0, 3 - getFreeGamesUsed()));
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [paywallReason, setPaywallReason] = useState("daily_limit");
+  const [showWheelTeaser, setShowWheelTeaser] = useState(false);
+  const [earlyAdopterSlotsRemaining, setEarlyAdopterSlotsRemaining] = useState(null);
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -2410,6 +2606,34 @@ export default function BluffGame() {
   }
 
   // ── START ────────────────────────────────────────────────────
+  // ── Freemium wrappers ──
+  function tryStartSoloGame() {
+    if (!isPro) {
+      const used = getFreeGamesUsed();
+      const remaining = Math.max(0, 3 - used);
+      setFreeGamesRemaining(remaining);
+      if (remaining <= 0) {
+        setPaywallReason("daily_limit");
+        setShowPaywall(true);
+        return false;
+      }
+      const next = incrementFreeGames();
+      setFreeGamesRemaining(Math.max(0, 3 - next));
+    }
+    startGame();
+    return true;
+  }
+
+  function tryStartBlitz() {
+    if (!isPro) {
+      setPaywallReason("blitz");
+      setShowPaywall(true);
+      return false;
+    }
+    startBlitz();
+    return true;
+  }
+
   function startGame() {
     userInteractedRef.current = true;
     AudioTension.init();
@@ -2494,6 +2718,16 @@ export default function BluffGame() {
       clearStakeTimers();
       clearTimeout(autoAdvanceRef.current);
       setAutoAdvanceCount(null);
+      if (!isPro) {
+        // Free users: show teaser instead of wheel, auto-continue
+        setShowWheelTeaser(true);
+        setTimeout(() => {
+          setShowWheelTeaser(false);
+          if (justCompleted >= totalRounds) showResultScreen();
+          else nextRound();
+        }, 2200);
+        return;
+      }
       setWheelOpen(true);
       return;
     }
@@ -2568,7 +2802,7 @@ export default function BluffGame() {
     // Share card — wait for AXIOM speech to land (~1s)
     setTimeout(() => {
       setAxiomSpeech(speech => {
-        const img = generateShareCard(finalScore, finalTotal, finalBest, speech, won, correctCountRef.current, maxCashoutRef.current);
+        const img = generateShareCard(finalScore, finalTotal, finalBest, speech, won, correctCountRef.current, maxCashoutRef.current, axiomScoreRef.current);
         setShareImg(img);
         return speech;
       });
@@ -2579,7 +2813,7 @@ export default function BluffGame() {
       const lieStmt = currentStmtsRef.current.find(s => !s.real);
       const lieText = lieStmt?.text || "";
       setAxiomSpeech(speech => {
-        const img = generateStoriesCard(finalScore, finalTotal, finalBest, speech, won, lieText, lastAxiomLine, correctCountRef.current, maxCashoutRef.current);
+        const img = generateStoriesCard(finalScore, finalTotal, finalBest, speech, won, lieText, lastAxiomLine, correctCountRef.current, maxCashoutRef.current, axiomScoreRef.current);
         setStoriesImg(img);
         setChallengeURL(buildChallengeURL(finalScore, finalTotal));
         return speech;
@@ -2729,6 +2963,79 @@ export default function BluffGame() {
 
   // Load daily challenge on mount and on return to home
   useEffect(() => { loadDailyChallenge(); }, []);
+
+  // Freemium: claim early-adopter slot + verify returning Stripe checkout + refresh free games counter
+  useEffect(() => {
+    let userId = null;
+    try {
+      userId = localStorage.getItem("bluff_user_id");
+      if (!userId) {
+        userId = "u_" + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem("bluff_user_id", userId);
+      }
+    } catch {}
+
+    setFreeGamesRemaining(Math.max(0, 3 - getFreeGamesUsed()));
+
+    try {
+      if (localStorage.getItem("bluff_pro") === "1") setIsPro(true);
+      if (localStorage.getItem("bluff_early_adopter") === "1") {
+        setIsEarlyAdopter(true);
+        setIsPro(true);
+      }
+    } catch {}
+
+    if (userId) {
+      fetch("/api/early-adopter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.is_early_adopter) {
+            setIsEarlyAdopter(true);
+            setIsPro(true);
+            try {
+              localStorage.setItem("bluff_early_adopter", "1");
+              localStorage.setItem("bluff_pro", "1");
+              if (data.rank) localStorage.setItem("bluff_early_adopter_rank", String(data.rank));
+            } catch {}
+          }
+        })
+        .catch(() => { /* offline: localStorage fallback already applied */ });
+    }
+
+    fetch("/api/early-adopter")
+      .then(r => r.json())
+      .then(data => {
+        if (data && typeof data.slots_remaining === "number") {
+          setEarlyAdopterSlotsRemaining(data.slots_remaining);
+        }
+      })
+      .catch(() => {});
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get("session_id");
+      if (sessionId) {
+        fetch(`/api/verify?session_id=${encodeURIComponent(sessionId)}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.verified) {
+              setIsPro(true);
+              try {
+                localStorage.setItem("bluff_pro", "1");
+                if (data.plan) localStorage.setItem("bluff_pro_plan", data.plan);
+                if (data.email) localStorage.setItem("bluff_pro_email", data.email);
+              } catch {}
+              window.history.replaceState({}, "", window.location.pathname);
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {}
+  }, []);
   useEffect(() => {
     if (screen === "home") loadDailyChallenge();
   }, [screen]);
@@ -3568,6 +3875,17 @@ export default function BluffGame() {
     display:"inline-block", width:6, height:6, borderRadius:"50%",
     background:"#e8c547", marginLeft:4,
   };
+
+  if (showPaywall) {
+    return (
+      <PaywallScreen
+        reason={paywallReason}
+        slotsRemaining={earlyAdopterSlotsRemaining}
+        onClose={()=>setShowPaywall(false)}
+      />
+    );
+  }
+
   return (
     <div style={wrap}>
       <Particles/>
@@ -3605,7 +3923,7 @@ export default function BluffGame() {
               <span style={{opacity:.7}}>Can you beat them?</span>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>{setChallenge(null);startGame();}}
+              <button onClick={()=>{setChallenge(null);tryStartSoloGame();}}
                 style={{flex:2,minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
                 <span style={{position:"relative"}}>Accept challenge</span>
@@ -3681,12 +3999,46 @@ export default function BluffGame() {
           </div>
         </div>
 
+        {/* 4. FREE GAMES / PRO BADGE */}
+        {isPro ? (
+          <div style={{
+            textAlign:"center",marginBottom:10,padding:"8px 14px",
+            background:isEarlyAdopter
+              ? "linear-gradient(135deg,rgba(232,197,71,.14),rgba(232,197,71,.05))"
+              : "linear-gradient(135deg,rgba(45,212,160,.12),rgba(45,212,160,.04))",
+            border:isEarlyAdopter?"1px solid rgba(232,197,71,.35)":"1px solid rgba(45,212,160,.3)",
+            borderRadius:10,fontSize:11,letterSpacing:"2px",fontWeight:700,
+            color:isEarlyAdopter?"#e8c547":"#2dd4a0",textTransform:"uppercase",
+            animation:"g-fadeUp .5s .18s both",
+          }}>
+            {isEarlyAdopter ? "🏆 Early Adopter · Pro Forever" : "✓ BLUFF Pro"}
+          </div>
+        ) : (
+          <div style={{
+            display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,
+            marginBottom:10,padding:"8px 12px",
+            background:freeGamesRemaining>0?"rgba(255,255,255,.03)":"rgba(244,63,94,.06)",
+            border:freeGamesRemaining>0?"1px solid rgba(255,255,255,.08)":"1px solid rgba(244,63,94,.25)",
+            borderRadius:10,fontSize:11,letterSpacing:"1.5px",
+            color:freeGamesRemaining>0?"rgba(232,230,225,.75)":"#f43f5e",
+            textTransform:"uppercase",fontWeight:600,
+            animation:"g-fadeUp .5s .18s both",
+          }}>
+            <span>{freeGamesRemaining>0 ? `${freeGamesRemaining}/3 free games today` : "Daily limit reached"}</span>
+            <button onClick={()=>{setPaywallReason(freeGamesRemaining>0?"daily_limit":"daily_limit");setShowPaywall(true);}} style={{
+              background:"transparent",border:"none",color:"#e8c547",
+              fontSize:11,letterSpacing:"1.5px",fontWeight:700,
+              cursor:"pointer",fontFamily:"inherit",padding:0,textTransform:"uppercase",
+            }}>Go Pro →</button>
+          </div>
+        )}
+
         {/* 4. PRIMARY CTA */}
         <button onClick={() => {
             userInteractedRef.current = true;
             const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARAAAAAgABAAIAZGF0YQQAAAAAAA==");
             silent.play().catch(()=>{});
-            startGame();
+            tryStartSoloGame();
           }}
           style={{width:"100%",minHeight:64,padding:"18px",fontSize:"clamp(14px,4vw,17px)",fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 60px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
@@ -3697,7 +4049,7 @@ export default function BluffGame() {
 
         {/* 5. SECONDARY MODES — Blitz + Duel side-by-side */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,animation:"g-fadeUp .5s .28s both"}}>
-          <button onClick={startBlitz} style={{
+          <button onClick={tryStartBlitz} style={{
             minHeight:48,padding:12,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
             background:"linear-gradient(135deg,rgba(244,63,94,.15),rgba(244,63,94,.05))",
             color:"#f43f5e",border:"1px solid rgba(244,63,94,.3)",
@@ -4007,6 +4359,33 @@ export default function BluffGame() {
           animation:"chip-fly .5s cubic-bezier(0.5,0,0.75,1) forwards",
         }}>
           <CasinoChip tier="gold" size={60}/>
+        </div>
+      )}
+      {showWheelTeaser && (
+        <div style={{
+          position:"fixed",inset:0,zIndex:5000,
+          background:"radial-gradient(ellipse at center, rgba(232,197,71,.18) 0%, rgba(4,6,15,.92) 60%)",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          animation:"g-fadeUp .4s both",padding:"0 24px",
+        }}>
+          <div style={{
+            textAlign:"center",maxWidth:340,
+            background:"linear-gradient(135deg,rgba(232,197,71,.08),rgba(232,197,71,.02))",
+            border:"1px solid rgba(232,197,71,.35)",borderRadius:18,
+            padding:"24px 20px",
+            boxShadow:"0 0 60px rgba(232,197,71,0.2)",
+          }}>
+            <div style={{fontSize:40,marginBottom:8}}>🎰</div>
+            <div style={{fontSize:11,letterSpacing:"2px",color:"rgba(232,197,71,.7)",fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
+              Pro Feature
+            </div>
+            <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",color:"#e8c547",marginBottom:6,lineHeight:1.2}}>
+              Wheel of Fortune
+            </div>
+            <div style={{fontSize:13,color:"rgba(232,230,225,.8)",lineHeight:1.5}}>
+              Up to 3x phase multiplier. Unlock with Pro.
+            </div>
+          </div>
         </div>
       )}
       {wheelOpen && (
@@ -4491,23 +4870,19 @@ export default function BluffGame() {
         </div>
 
         {/* STATS ROW */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20,animation:"g-fadeUp 0.6s 0.3s both"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:20,animation:"g-fadeUp 0.6s 0.3s both"}}>
           <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(34,211,238,0.15)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#22d3ee"}}>{axiomScore.toLocaleString('en-US')}</div>
             <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>AXIOM</div>
           </div>
           <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#e8c547"}}>{total?Math.round(correctCount/total*100):0}%</div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Accuracy</div>
-          </div>
-          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#a78bfa"}}>{best}🔥</div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Streak</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Best streak</div>
           </div>
         </div>
 
         {/* PRIMARY CTA — Play again */}
-        <button onClick={startGame} style={{
+        <button onClick={tryStartSoloGame} style={{
           width:"100%",minHeight:60,padding:18,
           fontSize:"clamp(14px,4vw,16px)",fontWeight:700,letterSpacing:2,textTransform:"uppercase",
           background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#120c08",
