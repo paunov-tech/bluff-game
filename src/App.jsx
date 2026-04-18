@@ -2011,10 +2011,10 @@ export default function BluffGame() {
     dim:"#5a5a68",glass:"rgba(255,255,255,.03)",gb:"rgba(255,255,255,.07)",
   };
   const wrap = {
-    minHeight:"100vh",
+    minHeight:"100dvh",
     background:`radial-gradient(ellipse at 50% 0%,rgba(232,197,71,.05) 0%,${T.bg} 55%)`,
     fontFamily:"'Segoe UI',system-ui,sans-serif",
-    display:"flex",flexDirection:"column",alignItems:"center",
+    display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
     position:"relative",overflow:"hidden",color:"#e8e6e1",
     paddingTop:"env(safe-area-inset-top)",
     paddingBottom:"max(24px,env(safe-area-inset-bottom))",
@@ -2484,53 +2484,85 @@ export default function BluffGame() {
   );
 
   // ─── DUEL RESULT ───────────────────────────────────────────
-  if (duelScreen === "result") return (
-    <div style={{minHeight:"100vh",background:"#04060f",display:"flex",flexDirection:"column",
-      alignItems:"center",justifyContent:"center",padding:"24px",color:"#e8e6e1",
-      fontFamily:"'Segoe UI',system-ui,sans-serif"}}>
-      <div style={{width:"100%",maxWidth:420,textAlign:"center"}}>
-        <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(255,255,255,.3)",marginBottom:16}}>
-          DUEL OVER
+  if (duelScreen === "result") {
+    const iWon = duelWinner === myDuelId;
+    const myScore = duelScores[myDuelId] || 0;
+    const duelGlyph = duelIsTie ? "🤝" : iWon ? "👑" : "💀";
+    const duelVerdict = duelIsTie ? "TIE" : iWon ? "VICTORY" : "DEFEATED";
+    const duelHeroText = duelIsTie ? "Equally matched" : iWon ? "You beat them" : "They beat you";
+    const duelShareURL = duelRoomId ? `${window.location.origin}/duel/${duelRoomId}` : null;
+    return (
+    <div style={{
+      minHeight:"100dvh",
+      background:"radial-gradient(ellipse 100% 60% at 50% 30%, rgba(232,197,71,0.08), transparent 60%), #04060f",
+      display:"flex",flexDirection:"column",alignItems:"center",
+      padding:"max(28px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom))",
+      color:"#e8e6e1",fontFamily:"'Segoe UI',system-ui,sans-serif",
+      position:"relative",overflow:"hidden"
+    }}>
+      <Particles/>
+      {iWon && !duelIsTie && <Confetti/>}
+      <div style={{width:"100%",maxWidth:440,position:"relative",zIndex:1}}>
+
+        {/* HERO */}
+        <div style={{textAlign:"center",marginBottom:24,animation:"result-heroIn 0.8s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          <div style={{fontSize:56,marginBottom:8,filter:"drop-shadow(0 0 20px rgba(232,197,71,0.4))"}}>
+            {duelGlyph}
+          </div>
+          <div style={{fontSize:11,letterSpacing:6,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>
+            {duelVerdict}
+          </div>
+          <div style={{
+            fontFamily:"Georgia,serif",
+            fontSize:"clamp(28px,7.5vw,42px)",
+            fontWeight:900,letterSpacing:-1,lineHeight:1.1,
+            background: duelIsTie
+              ? "linear-gradient(135deg,#e8c547,#f0d878,#e8c547)"
+              : iWon
+                ? "linear-gradient(135deg,#f0d878,#e8c547,#fff,#e8c547)"
+                : "linear-gradient(135deg,#f43f5e,#a78bfa)",
+            backgroundSize:"200% auto",
+            WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+            animation:"g-shimmer 3s linear infinite",
+            marginBottom:14
+          }}>
+            {duelHeroText}
+          </div>
+          <div style={{
+            fontFamily:"Georgia,serif",
+            fontSize:"clamp(48px,14vw,76px)",
+            fontWeight:900,lineHeight:1,
+            color:"#e8c547",
+            textShadow:"0 0 40px rgba(232,197,71,0.3)",
+            marginBottom:6
+          }}>
+            {myScore}
+          </div>
+          <div style={{fontSize:11,letterSpacing:4,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>
+            Your points
+          </div>
         </div>
 
-        {duelIsTie ? (
-          <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,
-              color:"#e8c547",marginBottom:8}}>
-              IT'S A TIE
+        {/* PLAYER COMPARISON */}
+        <div style={{marginBottom:18,animation:"g-fadeUp 0.6s 0.3s both"}}>
+          {Object.values(duelPlayers).map((p)=>(
+            <div key={p.id} style={{
+              display:"flex",justifyContent:"space-between",alignItems:"center",
+              padding:"14px 18px",marginBottom:8,
+              background: p.id===duelWinner?"rgba(232,197,71,.1)":"rgba(255,255,255,.03)",
+              border: p.id===duelWinner?"1px solid rgba(232,197,71,.3)":"1px solid rgba(255,255,255,.07)",
+              borderRadius:12,
+            }}>
+              <div style={{fontWeight:700,fontSize:15}}>{p.id===myDuelId?"You":p.name}</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,
+                color:p.id===duelWinner?"#e8c547":"rgba(255,255,255,.5)"}}>
+                {duelScores[p.id]||0}
+              </div>
             </div>
-            <div style={{fontSize:14,color:"rgba(255,255,255,.4)"}}>
-              🤝 Equally matched deceivers
-            </div>
-          </div>
-        ) : duelWinner && (
-          <div style={{marginBottom:24}}>
-            <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,
-              color: duelWinner===myDuelId?"#e8c547":"#f43f5e",marginBottom:8}}>
-              {duelWinner===myDuelId?"YOU WIN":"YOU LOSE"}
-            </div>
-            <div style={{fontSize:14,color:"rgba(255,255,255,.4)"}}>
-              {duelWinner===myDuelId?"🏆 Opponent humiliated":"💀 AXIOM is disappointed in you"}
-            </div>
-          </div>
-        )}
+          ))}
+        </div>
 
-        {Object.values(duelPlayers).map((p)=>(
-          <div key={p.id} style={{
-            display:"flex",justifyContent:"space-between",alignItems:"center",
-            padding:"14px 18px",marginBottom:8,
-            background: p.id===duelWinner?"rgba(232,197,71,.1)":"rgba(255,255,255,.03)",
-            border: p.id===duelWinner?"1px solid rgba(232,197,71,.3)":"1px solid rgba(255,255,255,.07)",
-            borderRadius:12,
-          }}>
-            <div style={{fontWeight:700,fontSize:15}}>{p.id===myDuelId?"You":p.name}</div>
-            <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,
-              color:p.id===duelWinner?"#e8c547":"rgba(255,255,255,.5)"}}>
-              {duelScores[p.id]||0}
-            </div>
-          </div>
-        ))}
-
+        {/* PRIMARY CTA */}
         <button onClick={()=>{
           if (duelSocketRef.current?.readyState === 1) {
             setDuelScores({});
@@ -2548,31 +2580,83 @@ export default function BluffGame() {
             setDuelIsTie(false);
             setDuelConnectionState("idle"); setDuelRetryAttempt(0);
           }
-        }} style={{width:"100%",marginTop:20,padding:"16px",fontSize:14,fontWeight:700,
-          background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
-          border:"none",borderRadius:14,cursor:"pointer",fontFamily:"inherit",
-          letterSpacing:"1px",textTransform:"uppercase"}}>
-          Play again
+        }} style={{
+          width:"100%",minHeight:60,padding:18,
+          fontSize:"clamp(14px,4vw,16px)",fontWeight:700,letterSpacing:2,textTransform:"uppercase",
+          background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#120c08",
+          border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+          boxShadow:"0 0 50px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.12)",
+          marginBottom:10,position:"relative",overflow:"hidden",
+          animation:"g-fadeUp 0.5s 0.4s both"
+        }}>
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
+          <span style={{position:"relative"}}>⚔️ Play again</span>
         </button>
 
-        <button onClick={()=>{
-          duelSocketRef.current?.close();
-          setDuelScreen(null);
-          setDuelPlayers({});
-          setDuelScores({});
-          setDuelWinner(null);
-          setDuelIsTie(false);
-          setDuelConnectionState("idle"); setDuelRetryAttempt(0);
-        }} style={{width:"100%",marginTop:10,padding:"14px",fontSize:13,fontWeight:600,
-          background:"transparent",color:"rgba(255,255,255,.5)",
-          border:"1px solid rgba(255,255,255,.1)",borderRadius:12,cursor:"pointer",
-          fontFamily:"inherit",letterSpacing:"1px"}}>
-          Exit to home
-        </button>
+        {/* SECONDARY */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18,animation:"g-fadeUp 0.5s 0.5s both"}}>
+          <button
+            onClick={()=>{
+              if (!duelShareURL) return;
+              if (navigator.share) {
+                navigator.share({
+                  title:"BLUFF™ Duel",
+                  text: iWon
+                    ? `Won a BLUFF duel ${myScore}-${duelScores[duelWinner===myDuelId?Object.keys(duelPlayers).find(k=>k!==myDuelId):duelWinner]||0}. Who's next? ⚔️`
+                    : "Think you can deceive better? Jump in this duel room.",
+                  url: duelShareURL,
+                }).catch(()=>{
+                  navigator.clipboard?.writeText(duelShareURL);
+                  alert("Duel link copied!");
+                });
+              } else {
+                navigator.clipboard?.writeText(duelShareURL);
+                alert("Duel link copied!");
+              }
+            }}
+            disabled={!duelShareURL}
+            style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+              background:"rgba(34,211,238,0.08)",color:"#22d3ee",border:"1px solid rgba(34,211,238,0.3)",
+              borderRadius:12,cursor:duelShareURL?"pointer":"not-allowed",opacity:duelShareURL?1:0.5,fontFamily:"inherit"}}>
+            ⚔️ Invite another
+          </button>
+          <button
+            onClick={()=>{
+              const text = iWon
+                ? `Won a BLUFF duel ${myScore} points! Can you deceive better? 🎭 playbluff.games`
+                : `Got BLUFFED ${myScore} points. Think you can do better? 🎭 playbluff.games`;
+              if (navigator.share) navigator.share({ text, url:"https://playbluff.games" }).catch(()=>navigator.clipboard?.writeText(text));
+              else navigator.clipboard?.writeText(text).then(()=>alert("Copied!")).catch(()=>alert(text));
+            }}
+            style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+              background:"linear-gradient(135deg,rgba(131,58,180,0.2),rgba(253,29,29,0.15),rgba(252,176,69,0.2))",
+              color:"#fff",border:"1px solid rgba(255,255,255,0.15)",
+              borderRadius:12,cursor:"pointer",fontFamily:"inherit"}}>
+            📸 Share result
+          </button>
+        </div>
+
+        {/* TERTIARY HOME */}
+        <div style={{textAlign:"center",marginTop:8,animation:"g-fadeUp .5s .7s both"}}>
+          <button onClick={()=>{
+            duelSocketRef.current?.close();
+            setDuelScreen(null);
+            setDuelPlayers({});
+            setDuelScores({});
+            setDuelWinner(null);
+            setDuelIsTie(false);
+            setDuelConnectionState("idle"); setDuelRetryAttempt(0);
+          }} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.3)",
+            fontSize:12,letterSpacing:2,textTransform:"uppercase",
+            cursor:"pointer",fontFamily:"inherit",padding:"8px 16px"}}>
+            ← Home
+          </button>
+        </div>
       </div>
       <GameStyles/>
     </div>
-  );
+    );
+  }
 
   // ─── HOME ──────────────────────────────────────────────────
   if(screen==="home") {
@@ -2591,6 +2675,10 @@ export default function BluffGame() {
   return (
     <div style={wrap}>
       <Particles/>
+      <div style={{
+        position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse 80% 50% at 50% 0%, rgba(232,197,71,0.05), transparent 70%), radial-gradient(ellipse 60% 40% at 50% 100%, rgba(34,211,238,0.03), transparent 70%)"
+      }}/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
         {/* 1. LOGO */}
@@ -2668,15 +2756,23 @@ export default function BluffGame() {
           </div>
         )}
 
-        {/* 3. AXIOM TEASER — compact inline */}
+        {/* 3. AXIOM TEASER — feature panel */}
         <div style={{
-          background:"linear-gradient(135deg,rgba(34,211,238,.04),rgba(232,197,71,.04))",
-          border:"1px solid rgba(34,211,238,.2)",
-          borderRadius:12,padding:"12px 14px",marginBottom:14,
-          display:"flex",alignItems:"center",gap:12,animation:"g-fadeUp .5s .1s both"
+          background:"linear-gradient(135deg, rgba(34,211,238,0.08) 0%, rgba(232,197,71,0.06) 50%, rgba(244,63,94,0.04) 100%)",
+          border:"1px solid rgba(232,197,71,0.2)",
+          borderRadius:16,padding:"16px 18px",marginBottom:16,
+          display:"flex",alignItems:"center",gap:14,
+          boxShadow:"0 0 40px rgba(232,197,71,0.08), inset 0 1px 0 rgba(255,255,255,0.04)",
+          position:"relative",overflow:"hidden",
+          animation:"g-fadeUp .5s .1s both"
         }}>
-          <AxiomFace mood={axiomMood} size={44}/>
-          <div style={{flex:1,minWidth:0}}>
+          <div style={{
+            position:"absolute",inset:0,pointerEvents:"none",
+            background:"linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.05) 50%, transparent 100%)",
+            animation:"home-shimmer 6s ease-in-out infinite"
+          }}/>
+          <AxiomFace mood={axiomMood} size={52}/>
+          <div style={{flex:1,minWidth:0,position:"relative"}}>
             <div style={{fontSize:10,letterSpacing:"2px",color:"#22d3ee",
                          textTransform:"uppercase",fontWeight:600,marginBottom:2}}>
               AXIOM
@@ -2696,7 +2792,7 @@ export default function BluffGame() {
             silent.play().catch(()=>{});
             startGame();
           }}
-          style={{width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,18px)",fontSize:"clamp(14px,3.8vw,16px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.18)",animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10}}
+          style={{width:"100%",minHeight:64,padding:"18px",fontSize:"clamp(14px,4vw,17px)",fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 60px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
@@ -3264,25 +3360,124 @@ export default function BluffGame() {
 
   // ─── RESULT ────────────────────────────────────────────────
   const won = correctCount >= Math.ceil(total * 0.67);
+  const respectable = correctCount >= Math.floor(total / 2);
   return (
-    <div style={wrap}>
+    <div style={{
+      minHeight:"100dvh",
+      background:"radial-gradient(ellipse 100% 60% at 50% 30%, rgba(232,197,71,0.08), transparent 60%), #04060f",
+      display:"flex",flexDirection:"column",alignItems:"center",
+      padding:"max(28px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom))",
+      position:"relative",overflow:"hidden",
+      color:"#e8e6e1",fontFamily:"'Segoe UI',system-ui,sans-serif"
+    }}>
       <Particles/>
-      {confetti&&<Confetti/>}
-      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(36px,env(safe-area-inset-top))"}}>
-        <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={false}/>
-        <div style={{background:T.glass,borderRadius:16,border:`1px solid ${T.gb}`,padding:"clamp(18px,4vw,24px)",marginBottom:16,textAlign:"center",animation:"g-fadeUp .5s .2s both"}}>
-          <div style={{fontSize:48,marginBottom:8}}>{won?"🏆":"💀"}</div>
-          <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(18px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:won?T.gold:T.bad}}>{won?"You beat AXIOM!":"AXIOM wins... this time."}</h2>
-          <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:"0 0 16px"}}>{won?"Impressive. AXIOM did not expect this.":"Train harder. AXIOM is patient."}</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,`Accuracy ${total?Math.round(correctCount/total*100):0}%`,T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
-              <div key={l} style={{background:"#07070e",borderRadius:10,border:`1px solid ${T.gb}`,padding:"12px 6px"}}>
-                <div style={{fontSize:22,fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
-                <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:2}}>{l}</div>
-              </div>
-            ))}
+      {won && confetti && <Confetti/>}
+      <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:440}}>
+        {/* HERO BLOCK */}
+        <div style={{textAlign:"center",marginBottom:24,animation:"result-heroIn 0.8s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          <div style={{fontSize:56,marginBottom:8,filter:"drop-shadow(0 0 20px rgba(232,197,71,0.4))"}}>
+            {won ? "👑" : respectable ? "🎭" : "💀"}
+          </div>
+          <div style={{fontSize:11,letterSpacing:6,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>
+            {won ? "CHAMPION" : respectable ? "RESPECTABLE" : "AXIOM WINS"}
+          </div>
+          <div style={{
+            fontFamily:"Georgia,serif",
+            fontSize:"clamp(28px,7.5vw,42px)",
+            fontWeight:900,letterSpacing:-1,lineHeight:1.1,
+            background: won
+              ? "linear-gradient(135deg,#f0d878,#e8c547,#fff,#e8c547)"
+              : "linear-gradient(135deg,#a78bfa,#e8c547)",
+            backgroundSize:"200% auto",
+            WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",
+            animation:"g-shimmer 3s linear infinite",
+            marginBottom:14
+          }}>
+            {won ? "You beat AXIOM" : respectable ? "Close, but not enough" : "AXIOM fooled you"}
+          </div>
+          <div style={{
+            fontFamily:"Georgia,serif",
+            fontSize:"clamp(48px,14vw,76px)",
+            fontWeight:900,lineHeight:1,
+            color:"#e8c547",
+            textShadow:"0 0 40px rgba(232,197,71,0.3)",
+            marginBottom:6
+          }}>
+            {score.toLocaleString('en-US')}
+          </div>
+          <div style={{fontSize:11,letterSpacing:4,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>
+            Points
           </div>
         </div>
+
+        {/* STATS ROW */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20,animation:"g-fadeUp 0.6s 0.3s both"}}>
+          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#2dd4a0"}}>{correctCount}/{total}</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Correct</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#e8c547"}}>{total?Math.round(correctCount/total*100):0}%</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Accuracy</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+            <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#a78bfa"}}>{best}🔥</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Streak</div>
+          </div>
+        </div>
+
+        {/* PRIMARY CTA — Play again */}
+        <button onClick={startGame} style={{
+          width:"100%",minHeight:60,padding:18,
+          fontSize:"clamp(14px,4vw,16px)",fontWeight:700,letterSpacing:2,textTransform:"uppercase",
+          background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#120c08",
+          border:"none",borderRadius:16,cursor:"pointer",fontFamily:"inherit",
+          boxShadow:"0 0 50px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.12)",
+          marginBottom:10,position:"relative",overflow:"hidden",
+          animation:"g-fadeUp 0.5s 0.4s both"
+        }}>
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
+          <span style={{position:"relative"}}>⚔️ Play again</span>
+        </button>
+
+        {/* SECONDARY ROW — Duel + Share Card */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:18,animation:"g-fadeUp 0.5s 0.5s both"}}>
+          <button
+            onClick={()=>{
+              if(!challengeURL) return;
+              if(navigator.share){
+                navigator.share({
+                  title:"BLUFF™ — Can you beat me?",
+                  text: won
+                    ? `Crushed AXIOM with ${score.toLocaleString('en-US')} points. Think you can do better? 🎯`
+                    : `AXIOM got me. Think you can beat ${score.toLocaleString('en-US')}? 🎭`,
+                  url: challengeURL,
+                }).catch(()=>{
+                  navigator.clipboard?.writeText(challengeURL);
+                  alert("Link copied!");
+                });
+              } else {
+                navigator.clipboard?.writeText(challengeURL);
+                alert("Challenge link copied!");
+              }
+            }}
+            disabled={!challengeURL}
+            style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+              background:"rgba(34,211,238,0.08)",color:"#22d3ee",border:"1px solid rgba(34,211,238,0.3)",
+              borderRadius:12,cursor:challengeURL?"pointer":"not-allowed",opacity:challengeURL?1:0.5,fontFamily:"inherit"}}>
+            ⚔️ Duel a Friend
+          </button>
+          <button
+            onClick={()=>document.getElementById("share-card-link")?.click()}
+            disabled={!storiesImg}
+            style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+              background:"linear-gradient(135deg,rgba(131,58,180,0.2),rgba(253,29,29,0.15),rgba(252,176,69,0.2))",
+              color:"#fff",border:"1px solid rgba(255,255,255,0.15)",
+              borderRadius:12,cursor:storiesImg?"pointer":"not-allowed",opacity:storiesImg?1:0.5,fontFamily:"inherit"}}>
+            📸 Share Card
+          </button>
+        </div>
+        {storiesImg && <a id="share-card-link" href={storiesImg} download="bluff-score.png" style={{display:"none"}}/>}
         {/* Daily result summary */}
         {dailyMode && (
           <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px",marginBottom:16,animation:"g-fadeUp .5s .35s both"}}>
@@ -3330,65 +3525,8 @@ export default function BluffGame() {
           </div>
         )}
 
-        {/* Share section */}
-        <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .5s both" }}>
-
-          {/* Stories card */}
-          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
-            📸 Instagram Stories
-          </div>
-          {storiesImg ? (
-            <div style={{ marginBottom: 14 }}>
-              <img
-                src={storiesImg}
-                alt="Stories card"
-                style={{ width: "50%", maxWidth: 180, borderRadius: 12, border: "1px solid rgba(255,255,255,.07)", marginBottom: 10, display: "block", margin: "0 auto 10px" }}
-              />
-              <a
-                href={storiesImg}
-                download="bluff-story.png"
-                style={{ display: "block", width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,rgba(131,58,180,.5),rgba(253,29,29,.5),rgba(252,176,69,.5))", color: "#fff", border: "1px solid rgba(255,255,255,.15)", borderRadius: 12, textAlign: "center", textDecoration: "none", fontFamily: "inherit" }}>
-                📸 Save for Stories
-              </a>
-            </div>
-          ) : (
-            <div style={{ background: "rgba(255,255,255,.03)", border: "1px solid rgba(255,255,255,.07)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(255,255,255,.3)", marginBottom: 14 }}>
-              Generating...
-            </div>
-          )}
-
-          {/* Challenge link */}
-          <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginBottom: 10 }}>
-            ⚔️ Challenge a friend
-          </div>
-          {challengeURL ? (
-            <button
-              onClick={() => {
-                if (navigator.share) {
-                  navigator.share({
-                    title: "BLUFF™ — Can you beat me?",
-                    text: won
-                      ? `Crushed AXIOM with ${score.toLocaleString('en-US')} points. ${correctCount}/${total} reads. Think you can do better? 🎯`
-                      : `AXIOM got me with ${score.toLocaleString('en-US')} points. ${correctCount}/${total} reads. Think you can do better? 🎭`,
-                    url: challengeURL,
-                  }).catch(() => {
-                    navigator.clipboard?.writeText(challengeURL);
-                    alert("Link copied! Share it with a friend.");
-                  });
-                } else {
-                  navigator.clipboard?.writeText(challengeURL)
-                    .then(() => alert("Challenge link copied! 📋"))
-                    .catch(() => alert(challengeURL));
-                }
-              }}
-              style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "rgba(34,211,238,.08)", color: "#22d3ee", border: "1px solid rgba(34,211,238,.25)", borderRadius: 12, fontFamily: "inherit", cursor: "pointer" }}>
-              ⚔️ Send challenge link
-            </button>
-          ) : (
-            <div style={{ background: "rgba(34,211,238,.04)", border: "1px solid rgba(34,211,238,.1)", borderRadius: 12, padding: 14, textAlign: "center", fontSize: 13, color: "rgba(34,211,238,.3)" }}>
-              Generating...
-            </div>
-          )}
+        {/* Secondary share options */}
+        <div style={{ marginBottom: 16, animation: "g-fadeUp .6s .6s both" }}>
 
           {/* DUEL — same questions, head-to-head */}
           {!dailyMode && roundsPlayedRef.current.filter(Boolean).length >= ROUND_DIFFICULTY.length && (
@@ -3509,11 +3647,12 @@ export default function BluffGame() {
           </div>
         )}
 
-        <div style={{display:"flex",gap:10,animation:"g-fadeUp .6s .6s both"}}>
-          <button onClick={()=>setScreen("home")} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
-          <button onClick={startGame} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-            <span style={{position:"relative"}}>⚔️ Rematch</span>
+        <div style={{textAlign:"center",marginTop:8,animation:"g-fadeUp .5s .7s both"}}>
+          <button onClick={()=>setScreen("home")}
+            style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.3)",
+              fontSize:12,letterSpacing:2,textTransform:"uppercase",
+              cursor:"pointer",fontFamily:"inherit",padding:"8px 16px"}}>
+            ← Home
           </button>
         </div>
       </div>
@@ -3561,5 +3700,7 @@ function GameStyles(){
     @keyframes lobby-timeout-fadeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
     @keyframes lobby-dotwave{0%,100%{opacity:0.4;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
     @keyframes lobby-tick{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
+    @keyframes home-shimmer{0%,100%{transform:translateX(-100%)}50%{transform:translateX(100%)}}
+    @keyframes result-heroIn{0%{opacity:0;transform:translateY(40px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}
   `}</style>;
 }
