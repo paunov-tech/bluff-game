@@ -898,61 +898,94 @@ function playWheelChime(kind) {
 // ═══════════════════════════════════════════════════════════════
 function CasinoChip({ tier = "gold", value, size = 56 }) {
   const colors = {
-    bronze: { center:"#c08550",rim:"#8b5e2f",edge:"#6b4822",highlight:"#ffd9a8",text:"#3a2510",inner:"#9e6838" },
-    silver: { center:"#c8c8d0",rim:"#8e8e98",edge:"#5e5e68",highlight:"#f0f0f5",text:"#2a2a32",inner:"#a0a0aa" },
-    gold:   { center:"#e8c547",rim:"#9e7c1f",edge:"#6e5512",highlight:"#ffe99a",text:"#4a3a0e",inner:"#d4a830" },
+    bronze: { center:"#c08550",rim:"#8b5e2f",edge:"#6b4822",highlight:"#ffd9a8",text:"#3a2510",inner:"#9e6838",shimmer:"#ffe5c2" },
+    silver: { center:"#c8c8d0",rim:"#8e8e98",edge:"#5e5e68",highlight:"#f8f8fc",text:"#2a2a32",inner:"#a0a0aa",shimmer:"#fff" },
+    gold:   { center:"#e8c547",rim:"#9e7c1f",edge:"#6e5512",highlight:"#ffe99a",text:"#4a3a0e",inner:"#d4a830",shimmer:"#fff8d4" },
   };
   const c = colors[tier] || colors.gold;
   const id = useRef(`chip-${tier}-${Math.random().toString(36).slice(2,7)}`).current;
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={{filter:`drop-shadow(0 6px 20px ${c.edge}88)`}}>
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{filter:`drop-shadow(0 8px 24px ${c.edge}aa)`}}>
       <defs>
         <radialGradient id={`${id}-body`} cx="0.35" cy="0.3">
-          <stop offset="0%" stopColor={c.highlight}/>
+          <stop offset="0%" stopColor={c.shimmer}/>
+          <stop offset="20%" stopColor={c.highlight}/>
           <stop offset="50%" stopColor={c.center}/>
           <stop offset="100%" stopColor={c.rim}/>
         </radialGradient>
         <radialGradient id={`${id}-inner`} cx="0.4" cy="0.35">
-          <stop offset="0%" stopColor={c.highlight} stopOpacity="0.9"/>
+          <stop offset="0%" stopColor={c.highlight} stopOpacity="0.95"/>
           <stop offset="60%" stopColor={c.center}/>
           <stop offset="100%" stopColor={c.inner}/>
         </radialGradient>
+        <linearGradient id={`${id}-sheen`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#fff" stopOpacity="0.4"/>
+          <stop offset="40%" stopColor="#fff" stopOpacity="0.1"/>
+          <stop offset="100%" stopColor="#fff" stopOpacity="0"/>
+        </linearGradient>
+        <path id={`${id}-text-path`}
+              d="M 50 50 m -42 0 a 42 42 0 1 1 84 0 a 42 42 0 1 1 -84 0"
+              fill="none"/>
       </defs>
-      <circle cx="50" cy="50" r="48" fill={c.edge}/>
-      <circle cx="50" cy="50" r="47" fill={`url(#${id}-body)`}/>
-      <circle cx="50" cy="50" r="47" fill="none" stroke={c.edge} strokeWidth="0.5"/>
+      <circle cx="50" cy="50" r="49" fill={c.edge}/>
+      <circle cx="50" cy="50" r="48" fill={`url(#${id}-body)`}/>
+      <circle cx="50" cy="50" r="48" fill={`url(#${id}-sheen)`}/>
+      <circle cx="50" cy="50" r="48" fill="none" stroke={c.edge} strokeWidth="0.5"/>
       {[...Array(8)].map((_, i) => {
         const angle = (i / 8) * Math.PI * 2 - Math.PI / 2;
-        const sx = 50 + 41 * Math.cos(angle);
-        const sy = 50 + 41 * Math.sin(angle);
+        const sx = 50 + 42 * Math.cos(angle);
+        const sy = 50 + 42 * Math.sin(angle);
         return (
-          <rect key={i} x={sx-4} y={sy-2.5} width="8" height="5" rx="1"
-            fill="#fff" opacity="0.85"
-            transform={`rotate(${(i/8)*360+90} ${sx} ${sy})`}/>
+          <g key={i}>
+            <rect x={sx-4} y={sy-2.5} width="8" height="5" rx="1"
+              fill="#fff" opacity="0.9"
+              transform={`rotate(${(i/8)*360+90} ${sx} ${sy})`}/>
+            <rect x={sx-4} y={sy-2.5} width="8" height="1" rx="1"
+              fill={c.edge} opacity="0.3"
+              transform={`rotate(${(i/8)*360+90} ${sx} ${sy})`}/>
+          </g>
         );
       })}
-      <circle cx="50" cy="50" r="36" fill="none" stroke={c.edge} strokeWidth="0.8" strokeDasharray="1.5 2"/>
-      <circle cx="50" cy="50" r="32" fill="none" stroke={c.edge} strokeWidth="1.5" opacity="0.4"/>
-      <circle cx="50" cy="50" r="29" fill={`url(#${id}-inner)`}/>
-      <circle cx="50" cy="50" r="29" fill="none" stroke={c.edge} strokeWidth="0.5"/>
-      {[...Array(16)].map((_, i) => {
-        const angle = (i / 16) * Math.PI * 2;
-        const x1 = 50 + 12 * Math.cos(angle);
-        const y1 = 50 + 12 * Math.sin(angle);
-        const x2 = 50 + 25 * Math.cos(angle);
-        const y2 = 50 + 25 * Math.sin(angle);
-        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.edge} strokeWidth="0.3" opacity="0.25"/>;
+      <text fontFamily="Georgia, serif" fontSize="5" fontWeight="700"
+            fill={c.text} letterSpacing="1.2">
+        <textPath href={`#${id}-text-path`} startOffset="13%">
+          BLUFF · CASINO ROYALE · BLUFF · CASINO ROYALE
+        </textPath>
+      </text>
+      <circle cx="50" cy="50" r="34" fill="none" stroke={c.edge} strokeWidth="0.8" strokeDasharray="1.5 2"/>
+      <circle cx="50" cy="50" r="30" fill="none" stroke={c.edge} strokeWidth="1.5" opacity="0.5"/>
+      <circle cx="50" cy="50" r="27" fill={`url(#${id}-inner)`}/>
+      <circle cx="50" cy="50" r="27" fill="none" stroke={c.edge} strokeWidth="0.5"/>
+      {[...Array(20)].map((_, i) => {
+        const angle = (i / 20) * Math.PI * 2;
+        const x1 = 50 + 11 * Math.cos(angle);
+        const y1 = 50 + 11 * Math.sin(angle);
+        const x2 = 50 + 24 * Math.cos(angle);
+        const y2 = 50 + 24 * Math.sin(angle);
+        return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke={c.edge} strokeWidth="0.3" opacity="0.3"/>;
       })}
-      <circle cx="50" cy="50" r="15" fill={c.center} stroke={c.edge} strokeWidth="0.8"/>
-      <text x="50" y="56" textAnchor="middle" fontFamily="Georgia, serif" fontSize="16" fontWeight="900" fill={c.text}>B</text>
+      <circle cx="50" cy="50" r="14" fill={c.center} stroke={c.edge} strokeWidth="1"/>
+      <circle cx="50" cy="50" r="13" fill="none" stroke="rgba(255,255,255,0.4)" strokeWidth="0.4"/>
+      <text x="50" y="56" textAnchor="middle" fontFamily="Georgia, serif" fontSize="14" fontWeight="900"
+            fill={c.text}
+            style={{filter:`drop-shadow(0 1px 1px ${c.edge}88)`}}>B</text>
       {value !== undefined && (
-        <text x="50" y="80" textAnchor="middle" fontFamily="Georgia, serif" fontSize="7" fontWeight="700" fill={c.text} opacity="0.7">
+        <text x="50" y="78" textAnchor="middle" fontFamily="Georgia, serif" fontSize="6" fontWeight="700" fill={c.text} opacity="0.75">
           {typeof value === "number" ? value.toLocaleString('en-US') : value}
         </text>
       )}
     </svg>
   );
 }
+
+// Interleaved wheel field colors — visual layout independent from odds.
+// Spin math picks a matching field by zone; layout is just for realism.
+const FIELD_COLORS = [
+  "green", "red", "green", "red", "green", "red", "green", "black",
+  "green", "red", "green", "red", "green", "gold", "green", "red",
+  "green", "red", "green", "red", "green", "black", "green", "red",
+  "green", "gold", "green", "red", "green", "red", "green", "gold",
+];
 
 // ═══════════════════════════════════════════════════════════════
 // WHEEL OF FORTUNE — Double-or-Nothing phase resolver
@@ -972,11 +1005,13 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
     else if (r < 0.9375) zone = "gold";
     else zone = "black";
 
-    let targetField;
-    if (zone === "green") targetField = Math.floor(Math.random() * 12);
-    else if (zone === "red") targetField = 12 + Math.floor(Math.random() * 12);
-    else if (zone === "gold") targetField = 24 + Math.floor(Math.random() * 6);
-    else targetField = 30 + Math.floor(Math.random() * 2);
+    // Pick a visible field that matches the chosen zone color.
+    const matchingFields = FIELD_COLORS
+      .map((col, idx) => col === zone ? idx : -1)
+      .filter(idx => idx !== -1);
+    const targetField = matchingFields.length > 0
+      ? matchingFields[Math.floor(Math.random() * matchingFields.length)]
+      : Math.floor(Math.random() * 32);
 
     const offsetInField = (Math.random() * 8 - 4);
     const targetAngle = -(targetField * 11.25 + 5.625 + offsetInField);
@@ -1014,17 +1049,41 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       padding:"20px",animation:"wheel-overlay-in .4s ease",
     }}>
       <div style={{position:"absolute",inset:0,pointerEvents:"none"}}>
-        {[...Array(30)].map((_, i) => (
-          <div key={i} style={{
-            position:"absolute",width:2,height:2,borderRadius:"50%",
-            background:"#e8c547",
-            left:`${Math.random()*100}%`,top:`${Math.random()*100}%`,
-            opacity:0.2+Math.random()*0.3,
-            animation:`wheel-particle-drift ${4+Math.random()*4}s ease-in-out infinite`,
-            animationDelay:`${Math.random()*3}s`,
-          }}/>
-        ))}
+        {[...Array(60)].map((_, i) => {
+          const size = 1 + Math.random() * 3;
+          const isLarge = Math.random() > 0.85;
+          return (
+            <div key={i} style={{
+              position:"absolute",
+              width: isLarge ? size*2 : size,
+              height: isLarge ? size*2 : size,
+              borderRadius:"50%",
+              background: isLarge ? "#fff" : "#e8c547",
+              left:`${Math.random()*100}%`,top:`${Math.random()*100}%`,
+              opacity:0.15 + Math.random()*0.4,
+              boxShadow: isLarge
+                ? "0 0 8px rgba(255,255,255,0.8)"
+                : "0 0 4px rgba(232,197,71,0.6)",
+              animation:`wheel-particle-drift ${5+Math.random()*6}s ease-in-out infinite`,
+              animationDelay:`${Math.random()*4}s`,
+            }}/>
+          );
+        })}
       </div>
+
+      {/* Radial spotlight glow behind wheel */}
+      <div style={{
+        position:"absolute",
+        left:"50%",top:"50%",
+        width:500,height:500,
+        borderRadius:"50%",
+        background:"radial-gradient(circle, rgba(232,197,71,0.18) 0%, rgba(232,197,71,0.05) 40%, transparent 70%)",
+        filter:"blur(40px)",
+        pointerEvents:"none",
+        zIndex:0,
+        transform:"translate(-50%,-50%)",
+        animation:"wheel-spotlight-pulse 4s ease-in-out infinite",
+      }}/>
 
       {!spinning && !showOutcome && (
         <>
@@ -1055,46 +1114,123 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
 
       <div style={{
         position:"relative",width:280,height:280,marginBottom:28,
-        display:"block",
+        display:"block",zIndex:1,
       }}>
         <svg width="280" height="280" viewBox="0 0 280 280"
           style={{
             transform:`rotate(${finalAngle}deg)`,
             transition:spinning?"transform 3.5s cubic-bezier(0.17,0.67,0.12,0.99)":"none",
-            filter:"drop-shadow(0 0 40px rgba(232,197,71,.3))",
+            filter:"drop-shadow(0 0 40px rgba(232,197,71,.35))",
           }}>
-          <circle cx="140" cy="140" r="135" fill="none" stroke="#e8c547" strokeWidth="3"/>
-          <circle cx="140" cy="140" r="130" fill="none" stroke="#8e6a0f" strokeWidth="1"/>
+          <defs>
+            <radialGradient id="field-green" cx="0.5" cy="0.3">
+              <stop offset="0%" stopColor="#2d8a4d"/>
+              <stop offset="60%" stopColor="#1a6b3a"/>
+              <stop offset="100%" stopColor="#0d4e26"/>
+            </radialGradient>
+            <radialGradient id="field-red" cx="0.5" cy="0.3">
+              <stop offset="0%" stopColor="#a82a2a"/>
+              <stop offset="60%" stopColor="#6b1a1a"/>
+              <stop offset="100%" stopColor="#3d0a0a"/>
+            </radialGradient>
+            <radialGradient id="field-gold" cx="0.5" cy="0.3">
+              <stop offset="0%" stopColor="#ffe99a"/>
+              <stop offset="50%" stopColor="#e8c547"/>
+              <stop offset="100%" stopColor="#9e7c1f"/>
+            </radialGradient>
+            <radialGradient id="field-black" cx="0.5" cy="0.3">
+              <stop offset="0%" stopColor="#2a2a2a"/>
+              <stop offset="60%" stopColor="#0a0a0a"/>
+              <stop offset="100%" stopColor="#000"/>
+            </radialGradient>
+            <linearGradient id="wheel-rim" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ffe99a"/>
+              <stop offset="50%" stopColor="#c49828"/>
+              <stop offset="100%" stopColor="#6b4f0f"/>
+            </linearGradient>
+            <radialGradient id="wheel-hub" cx="0.4" cy="0.3">
+              <stop offset="0%" stopColor="#3a2a14"/>
+              <stop offset="60%" stopColor="#1a0f00"/>
+              <stop offset="100%" stopColor="#000"/>
+            </radialGradient>
+            <radialGradient id="wheel-monogram-bg" cx="0.4" cy="0.3">
+              <stop offset="0%" stopColor="#2a1a08"/>
+              <stop offset="100%" stopColor="#0a0500"/>
+            </radialGradient>
+            <filter id="wheel-glow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="3" result="blur"/>
+              <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Outer bevel ring — thick gold with depth */}
+          <circle cx="140" cy="140" r="138" fill="url(#wheel-rim)"/>
+          <circle cx="140" cy="140" r="135" fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1"/>
+          <circle cx="140" cy="140" r="130" fill="#1a0f00"/>
+
+          {/* 32 interleaved fields */}
           {[...Array(32)].map((_, i) => {
             const sa = (i*11.25-90)*Math.PI/180;
             const ea = ((i+1)*11.25-90)*Math.PI/180;
             const r = 125;
             const x1 = 140+r*Math.cos(sa), y1 = 140+r*Math.sin(sa);
             const x2 = 140+r*Math.cos(ea), y2 = 140+r*Math.sin(ea);
-            let fill;
-            if (i < 12) fill = "#1a6b3a";
-            else if (i < 24) fill = "#6b1a1a";
-            else if (i < 30) fill = "#c49828";
-            else fill = "#0a0a0a";
+            const colorKey = FIELD_COLORS[i];
             return (
               <path key={i}
                 d={`M 140 140 L ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2} Z`}
-                fill={fill} stroke="rgba(0,0,0,.5)" strokeWidth="0.5"/>
+                fill={`url(#field-${colorKey})`}
+                stroke="rgba(255,215,80,0.3)" strokeWidth="0.8"/>
             );
           })}
-          <circle cx="140" cy="140" r="60" fill="#1a0f00" stroke="#e8c547" strokeWidth="2"/>
-          <circle cx="140" cy="140" r="55" fill="none" stroke="rgba(232,197,71,.3)" strokeWidth="1" strokeDasharray="3 4"/>
-          <circle cx="140" cy="140" r="30" fill="#0a0a0a" stroke="#e8c547" strokeWidth="1.5"/>
-          <text x="140" y="147" textAnchor="middle" fontFamily="Georgia,serif" fontSize="24" fontWeight="900" fill="#e8c547">B</text>
+
+          {/* Inner hub ring */}
+          <circle cx="140" cy="140" r="60" fill="url(#wheel-hub)" stroke="url(#wheel-rim)" strokeWidth="2.5"/>
+
+          {/* Decorative dashed ring */}
+          <circle cx="140" cy="140" r="55" fill="none" stroke="rgba(232,197,71,0.4)" strokeWidth="1" strokeDasharray="2 4"/>
+
+          {/* 8 decorative dots around hub */}
+          {[...Array(8)].map((_, i) => {
+            const a = (i / 8) * Math.PI * 2;
+            const x = 140 + 50 * Math.cos(a);
+            const y = 140 + 50 * Math.sin(a);
+            return <circle key={i} cx={x} cy={y} r="1.5" fill="#e8c547" opacity="0.6"/>;
+          })}
+
+          {/* Center monogram disc */}
+          <circle cx="140" cy="140" r="32" fill="url(#wheel-monogram-bg)" stroke="url(#wheel-rim)" strokeWidth="2"/>
+          <circle cx="140" cy="140" r="28" fill="none" stroke="rgba(232,197,71,0.3)" strokeWidth="0.5"/>
+          <text x="140" y="148" textAnchor="middle" fontFamily="Georgia, serif" fontSize="26" fontWeight="900"
+                fill="#e8c547" filter="url(#wheel-glow)">B</text>
         </svg>
-        <div style={{
-          position:"absolute",top:-10,left:"50%",transform:"translateX(-50%)",
-          width:0,height:0,
-          borderLeft:"12px solid transparent",borderRight:"12px solid transparent",
-          borderTop:"22px solid #e8c547",
-          filter:"drop-shadow(0 0 10px rgba(232,197,71,.8))",
+
+        {/* Dramatic SVG pointer with jewel */}
+        <svg width="50" height="60" style={{
+          position:"absolute",top:-22,left:"50%",
+          transform:"translateX(-50%)",
           zIndex:10,
-        }}/>
+          filter:"drop-shadow(0 0 12px rgba(232,197,71,0.9))",
+        }} viewBox="0 0 50 60">
+          <defs>
+            <linearGradient id="pointer-grad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#ffe99a"/>
+              <stop offset="50%" stopColor="#e8c547"/>
+              <stop offset="100%" stopColor="#9e7c1f"/>
+            </linearGradient>
+          </defs>
+          <circle cx="25" cy="12" r="8" fill="#e8c547" opacity="0.3"/>
+          <path d="M 25 50 L 12 18 L 18 14 L 25 6 L 32 14 L 38 18 Z"
+                fill="url(#pointer-grad)"
+                stroke="#3a2a08" strokeWidth="0.5"/>
+          <path d="M 25 50 L 12 18 L 18 14 L 25 6 Z"
+                fill="rgba(255,233,154,0.4)"/>
+          <circle cx="25" cy="11" r="3.5" fill="#fff" opacity="0.85"/>
+          <circle cx="25" cy="11" r="2" fill="#e8c547"/>
+        </svg>
       </div>
 
       {!spinning && !showOutcome && (
@@ -1143,20 +1279,54 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       )}
 
       {showOutcome && resultZone && (
-        <div style={{textAlign:"center",marginTop:10,animation:"wheel-outcome-in .5s cubic-bezier(0.34,1.56,0.64,1)"}}>
+        <div style={{
+          textAlign:"center",marginTop:10,
+          animation:"wheel-outcome-in .5s cubic-bezier(0.34,1.56,0.64,1)",
+          position:"relative",
+        }}>
+          {/* Glow halo behind text */}
           <div style={{
-            fontFamily:"Georgia,serif",fontSize:42,fontWeight:900,
-            color:resultZone==="gold"?"#e8c547":resultZone==="green"?"#4ade80":resultZone==="red"?"#f43f5e":"#888",
+            position:"absolute",
+            inset:-40,
+            background:`radial-gradient(circle, ${
+              resultZone==="gold" ? "rgba(232,197,71,0.4)"
+                : resultZone==="green" ? "rgba(74,222,128,0.3)"
+                : resultZone==="red" ? "rgba(244,63,94,0.3)"
+                : "rgba(50,50,50,0.5)"
+            } 0%, transparent 70%)`,
+            filter:"blur(20px)",
+            zIndex:-1,
+            animation:"wheel-outcome-pulse 2s ease-in-out infinite",
+          }}/>
+          <div style={{
+            fontFamily:"Georgia, serif",
+            fontSize:48,fontWeight:900,
+            color: resultZone==="gold" ? "#e8c547"
+              : resultZone==="green" ? "#4ade80"
+              : resultZone==="red" ? "#f43f5e"
+              : "#888",
             marginBottom:8,
-            textShadow:`0 0 40px ${resultZone==="gold"?"rgba(232,197,71,.6)":resultZone==="green"?"rgba(74,222,128,.5)":resultZone==="red"?"rgba(244,63,94,.5)":"rgba(0,0,0,.8)"}`,
+            letterSpacing:2,
+            textShadow:`0 0 60px ${
+              resultZone==="gold" ? "rgba(232,197,71,0.8)"
+                : resultZone==="green" ? "rgba(74,222,128,0.6)"
+                : resultZone==="red" ? "rgba(244,63,94,0.6)"
+                : "rgba(0,0,0,0.9)"
+            }, 0 4px 12px rgba(0,0,0,0.8)`,
           }}>
-            {resultZone==="gold"?"JACKPOT!":resultZone==="green"?"WINNER":resultZone==="red"?"LOST":"CATASTROPHE"}
+            {resultZone==="gold" ? "JACKPOT"
+              : resultZone==="green" ? "WINNER"
+              : resultZone==="red" ? "LOST"
+              : "BUST"}
           </div>
-          <div style={{fontSize:14,color:"rgba(255,255,255,.7)"}}>
-            {resultZone==="gold"?`+${(phaseScore*3).toLocaleString('en-US')} points`
-              :resultZone==="green"?`+${(phaseScore*2).toLocaleString('en-US')} points`
-              :resultZone==="red"?`AXIOM takes ${phaseScore.toLocaleString('en-US')}`
-              :`−50% of total score`}
+          <div style={{
+            fontSize:14,color:"rgba(255,255,255,0.8)",
+            letterSpacing:1,fontWeight:600,
+          }}>
+            {resultZone==="gold" ? `+${(phaseScore*3).toLocaleString('en-US')} points`
+              : resultZone==="green" ? `+${(phaseScore*2).toLocaleString('en-US')} points`
+              : resultZone==="red" ? `AXIOM takes ${phaseScore.toLocaleString('en-US')}`
+              : "−50% of total score"}
           </div>
         </div>
       )}
@@ -4550,6 +4720,14 @@ function GameStyles(){
     @keyframes wheel-particle-drift{
       0%,100%{transform:translateY(0) translateX(0);opacity:.2}
       50%{transform:translateY(-20px) translateX(8px);opacity:.5}
+    }
+    @keyframes wheel-spotlight-pulse{
+      0%,100%{opacity:.6;transform:translate(-50%,-50%) scale(1)}
+      50%{opacity:1;transform:translate(-50%,-50%) scale(1.05)}
+    }
+    @keyframes wheel-outcome-pulse{
+      0%,100%{opacity:.7}
+      50%{opacity:1}
     }
     @media (prefers-reduced-motion: reduce){
       *,*::before,*::after{
