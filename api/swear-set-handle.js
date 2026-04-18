@@ -14,6 +14,28 @@ const HANDLES = "bluff_handles";
 
 const HANDLE_RE = /^[a-zA-Z0-9_]{3,16}$/;
 
+// Reserved handles that impersonate staff/system accounts (exact lowercased match).
+const RESERVED = new Set([
+  "admin","administrator","staff","mod","moderator","support","system",
+  "bluff","axiom","official","root","null","undefined",
+]);
+
+// Substring-matched slur/profanity blocklist. Kept short and obvious —
+// this is launch-day hygiene, not a content-moderation system. Lowercased.
+const BANNED_SUBSTRINGS = [
+  "nigger","nigga","faggot","retard","tranny","kike","chink","spic",
+  "cunt","whore","slut","nazi","hitler","rape","pedo",
+  "fuck","shit","dick","pussy","bitch","asshole",
+];
+
+function isBannedHandle(lower) {
+  if (RESERVED.has(lower)) return true;
+  for (const needle of BANNED_SUBSTRINGS) {
+    if (lower.includes(needle)) return true;
+  }
+  return false;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -35,6 +57,9 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "invalid", detail: "3-16 chars, letters/digits/underscore only" });
   }
   const lower = raw.toLowerCase();
+  if (isBannedHandle(lower)) {
+    return res.status(400).json({ error: "banned", detail: "handle not allowed" });
+  }
 
   try {
     const prof = await fsGetFields(PLAYERS, uid);
