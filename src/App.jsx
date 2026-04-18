@@ -897,6 +897,8 @@ export default function BluffGame() {
     catch { return ["default"]; }
   });
   const [showShop, setShowShop] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
+  const [showLangModal, setShowLangModal] = useState(false);
   const [lastWrongStmt, setLastWrongStmt] = useState(null);
   const [shameSent, setShameSent] = useState(false);
   const [lastAxiomLine, setLastAxiomLine] = useState("");
@@ -1966,6 +1968,15 @@ export default function BluffGame() {
     return () => clearInterval(iv);
   }, [duelPhase, duelRoundStart, duelRoundTimerMs, duelMode]);
 
+  // First-visit auto-show of How-to-Play
+  useEffect(() => {
+    if (total === 0 && !safeLSGet("bluff_howto_shown")) {
+      setShowHowToPlay(true);
+      safeLSSet("bluff_howto_shown", "1");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Lobby elapsed-time tracker
   useEffect(() => {
     if (duelScreen === "lobby") {
@@ -2564,186 +2575,61 @@ export default function BluffGame() {
   );
 
   // ─── HOME ──────────────────────────────────────────────────
-  if(screen==="home") return (
+  if(screen==="home") {
+  const settingButtonStyle = {
+    flex:1, minHeight:36, padding:"8px 4px",
+    background:"transparent", border:"none", cursor:"pointer",
+    color:"#5a5a68", fontSize:11, letterSpacing:1,
+    textTransform:"uppercase", fontFamily:"inherit",
+    display:"flex", alignItems:"center", justifyContent:"center", gap:4,
+    transition:"color 0.2s",
+  };
+  const newBadgeStyle = {
+    display:"inline-block", width:6, height:6, borderRadius:"50%",
+    background:"#e8c547", marginLeft:4,
+  };
+  return (
     <div style={wrap}>
       <Particles/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
-        <div style={{textAlign:"center",marginBottom:"clamp(18px,4vw,26px)",animation:"g-fadeUp .5s ease both"}}>
-          <div style={{fontSize:"clamp(10px,2.5vw,11px)",letterSpacing:"6px",color:T.dim,marginBottom:14,fontWeight:500}}>SIAL GAMES</div>
-          <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(52px,13vw,78px)",fontWeight:900,letterSpacing:-2,margin:"0 0 4px",lineHeight:1,background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.5),#e8c547)",backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"g-shimmer 4s linear infinite",filter:"drop-shadow(0 0 22px rgba(232,197,71,.18))"}}>
-            BLUFF<sup style={{fontSize:"clamp(11px,2.5vw,14px)",WebkitTextFillColor:"rgba(232,197,71,.5)",position:"relative",top:"clamp(-22px,-5vw,-30px)",marginLeft:2,fontFamily:"system-ui",fontWeight:400}}>™</sup>
+        {/* 1. LOGO */}
+        <div style={{textAlign:"center",marginBottom:18,animation:"g-fadeUp .5s ease both"}}>
+          <div style={{fontSize:10,letterSpacing:"5px",color:T.dim,marginBottom:10,fontWeight:500}}>SIAL GAMES</div>
+          <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(44px,11vw,64px)",fontWeight:900,letterSpacing:-2,margin:"0 0 4px",lineHeight:1,background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.5),#e8c547)",backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"g-shimmer 4s linear infinite",filter:"drop-shadow(0 0 22px rgba(232,197,71,.18))"}}>
+            BLUFF<sup style={{fontSize:"clamp(10px,2vw,12px)",WebkitTextFillColor:"rgba(232,197,71,.5)",position:"relative",top:"clamp(-18px,-4vw,-24px)",marginLeft:2,fontFamily:"system-ui",fontWeight:400}}>™</sup>
           </h1>
-          <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,letterSpacing:"4px",textTransform:"uppercase",margin:0,fontWeight:500}}>The AI Deception Game</p>
+          <p style={{fontSize:11,letterSpacing:"3px",color:T.dim,textTransform:"uppercase",margin:0,fontWeight:500}}>The AI Deception Game</p>
         </div>
 
-        <LangPicker lang={lang} onChange={changeLang}/>
-
-        <div style={{
-          display:"flex", alignItems:"center", justifyContent:"space-between",
-          background:"rgba(255,255,255,.03)", border:"1px solid rgba(255,255,255,.07)",
-          borderRadius:12, padding:"10px 14px", marginBottom:12,
-        }}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:16}}>{voiceEnabled ? "🔊" : "🔇"}</span>
-            <div>
-              <div style={{fontSize:13,fontWeight:500,color:"#e8e6e1"}}>AXIOM Voice</div>
-              <div style={{fontSize:11,color:"#5a5a68"}}>{voiceEnabled ? "ElevenLabs TTS active" : "Text only"}</div>
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              const next = !voiceEnabled;
-              setVoiceEnabled(next);
-              localStorage.setItem("bluff_voice", next ? "on" : "off");
-              if (!next && audioRef.current) {
-                audioRef.current.pause();
-                isPlayingRef.current = false;
-                audioQueueRef.current = [];
-              }
-            }}
-            style={{
-              width:44, height:24, borderRadius:12, cursor:"pointer",
-              background: voiceEnabled ? "rgba(45,212,160,.3)" : "rgba(255,255,255,.08)",
-              border: voiceEnabled ? "1px solid rgba(45,212,160,.5)" : "1px solid rgba(255,255,255,.1)",
-              position:"relative", transition:"all .25s",
-            }}>
-            <div style={{
-              width:16, height:16, borderRadius:"50%",
-              background: voiceEnabled ? "#2dd4a0" : "#5a5a68",
-              position:"absolute", top:3,
-              left: voiceEnabled ? 22 : 4,
-              transition:"all .25s",
-            }}/>
-          </button>
-        </div>
-
+        {/* 2. EVENT BANNERS — urgent items stay high */}
         {challenge && (
           <div style={{
-            background: "rgba(232,197,71,.08)",
-            border: "1px solid rgba(232,197,71,.3)",
-            borderRadius: 14, padding: "14px 16px",
-            marginBottom: 14, animation: "g-fadeUp .4s ease both",
+            background:"rgba(232,197,71,.08)",border:"1px solid rgba(232,197,71,.3)",
+            borderRadius:14,padding:"14px 16px",marginBottom:12,animation:"g-fadeUp .4s ease both",
           }}>
-            <div style={{ fontSize: 10, letterSpacing: "3px", color: "#e8c547", fontWeight: 700, marginBottom: 6, textTransform: "uppercase" }}>
+            <div style={{fontSize:10,letterSpacing:"3px",color:"#e8c547",fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
               ⚔️ Challenge received
             </div>
-            <div style={{ fontSize: "clamp(13px,3.5vw,15px)", color: "#e8e6e1", marginBottom: 8 }}>
+            <div style={{fontSize:"clamp(13px,3.5vw,15px)",color:"#e8e6e1",marginBottom:8}}>
               Your friend scored{" "}
-              <span style={{ color: "#e8c547", fontWeight: 700, fontFamily: "Georgia,serif", fontSize: 18 }}>
+              <span style={{color:"#e8c547",fontWeight:700,fontFamily:"Georgia,serif",fontSize:18}}>
                 {challenge.s}/{challenge.t}
               </span>
-              {" "}({challenge.t ? Math.round(challenge.s / challenge.t * 100) : 0}% accuracy).
+              {" "}({challenge.t?Math.round(challenge.s/challenge.t*100):0}% accuracy).
               <br/>
-              <span style={{ opacity: .7 }}>Can you beat them?</span>
+              <span style={{opacity:.7}}>Can you beat them?</span>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                onClick={() => { setChallenge(null); startGame(); }}
-                style={{ flex: 2, minHeight: 44, padding: "10px 14px", fontSize: 13, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "linear-gradient(135deg,#e8c547,#d4a830)", color: "#04060f", borderRadius: 10, fontFamily: "inherit", cursor: "pointer", position: "relative", overflow: "hidden" }}>
-                <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)", animation: "g-btnShimmer 2.5s infinite" }}/>
-                <span style={{ position: "relative" }}>Accept challenge</span>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{setChallenge(null);startGame();}}
+                style={{flex:2,minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
+                <span style={{position:"relative"}}>Accept challenge</span>
               </button>
-              <button
-                onClick={() => setChallenge(null)}
-                style={{ flex: 1, minHeight: 44, padding: "10px", fontSize: 13, fontWeight: 600, background: "transparent", color: "#5a5a68", border: "1px solid rgba(255,255,255,.07)", borderRadius: 10, fontFamily: "inherit", cursor: "pointer" }}>
+              <button onClick={()=>setChallenge(null)}
+                style={{flex:1,minHeight:44,padding:"10px",fontSize:13,fontWeight:600,background:"transparent",color:"#5a5a68",border:"1px solid rgba(255,255,255,.07)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
                 Dismiss
               </button>
-            </div>
-          </div>
-        )}
-
-        <AxiomPanel mood={axiomMood} speech={axiomSpeech} loading={axiomLoading} compact={false}/>
-
-        <div style={{background:T.glass,borderRadius:16,border:`1px solid ${T.gb}`,padding:"clamp(16px,4vw,22px)",marginBottom:14,animation:"g-fadeUp .5s .1s both"}}>
-          <div style={{fontSize:"clamp(10px,2.5vw,11px)",color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:12}}>How to play</div>
-          {["🧠 AI generates 4 surprising statements","🎭 One is a masterfully crafted LIE","⏱️ Find the BLUFF before AXIOM wins","🔥 Build streaks — beat the machine"].map((t,i)=>(
-            <div key={i} style={{display:"flex",gap:10,marginBottom:i<3?10:0,fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.5,animation:`g-fadeUp .5s ${.15+i*.07}s both`}}>
-              <span style={{fontSize:16,flexShrink:0}}>{t.slice(0,2)}</span>
-              <span style={{opacity:.8}}>{t.slice(3)}</span>
-            </div>
-          ))}
-        </div>
-
-        {total>0&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14,animation:"g-fadeUp .5s .3s both"}}>
-            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,"Correct",T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
-              <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
-                <div style={{fontSize:"clamp(20px,6vw,28px)",fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
-                <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Blitz button */}
-        <button onClick={startBlitz} style={{
-          width:"100%",minHeight:48,padding:"13px",marginBottom:10,
-          fontSize:"clamp(12px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",
-          textTransform:"uppercase",
-          background:"linear-gradient(135deg,rgba(244,63,94,.15),rgba(244,63,94,.05))",
-          color:"#f43f5e",border:"1px solid rgba(244,63,94,.3)",
-          borderRadius:16,fontFamily:"inherit",cursor:"pointer",
-          display:"flex",alignItems:"center",justifyContent:"center",gap:8,
-          animation:"g-fadeUp .5s .38s both",
-        }}>
-          <span>⚡</span>
-          <span>Blitz — 4 questions, 18 seconds</span>
-        </button>
-
-        {/* Duel button → mode-select */}
-        <div style={{display:"flex",gap:8,marginBottom:10,animation:"g-fadeUp .5s .42s both"}}>
-          <button onClick={()=>setDuelScreen("mode-select")} style={{
-            flex:1,minHeight:48,padding:"13px",
-            fontSize:"clamp(11px,3vw,13px)",fontWeight:700,letterSpacing:"1px",
-            textTransform:"uppercase",
-            background:"rgba(232,197,71,.06)",color:"#e8c547",
-            border:"1px solid rgba(232,197,71,.2)",
-            borderRadius:14,fontFamily:"inherit",cursor:"pointer",
-          }}>
-            ⚔️ Duel a Friend
-          </button>
-        </div>
-
-        {tg.isInsideTelegram && (
-          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginBottom:12,fontSize:11,color:"rgba(41,182,246,.45)",letterSpacing:"1px"}}>
-            <span>✈️</span><span>Running inside Telegram</span>
-          </div>
-        )}
-
-        {axiomPower !== null && !Number.isNaN(axiomPower) && (
-          <div style={{
-            background:"rgba(4,6,15,.8)",border:"1px solid rgba(34,211,238,.15)",
-            borderRadius:14,padding:"12px 16px",marginBottom:14,
-          }}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(34,211,238,.6)",fontWeight:700}}>
-                AXIOM POWER
-              </div>
-              <div style={{fontSize:11,fontWeight:700,
-                color:axiomPower<200?"#f43f5e":axiomPower<500?"#fb923c":"#22d3ee"}}>
-                {Math.round(axiomPower)}/1000
-              </div>
-            </div>
-            <div style={{height:6,background:"rgba(255,255,255,.06)",borderRadius:3,overflow:"hidden"}}>
-              <div style={{
-                height:"100%",borderRadius:3,transition:"width 1s ease",
-                width:`${(axiomPower/1000)*100}%`,
-                background:axiomPower<200
-                  ?"linear-gradient(90deg,#f43f5e,#fb923c)"
-                  :axiomPower<500
-                  ?"linear-gradient(90deg,#fb923c,#e8c547)"
-                  :"linear-gradient(90deg,#22d3ee,#0891b2)",
-              }}/>
-            </div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.25)",marginTop:6}}>
-              {axiomPower <= 0
-                ? "⚡ AXIOM is weakened — Slayer Event OPEN"
-                : axiomPower < 100
-                ? "🔴 AXIOM is nearly defeated"
-                : axiomPower < 300
-                ? "🟠 AXIOM is struggling"
-                : "Every win chips away at AXIOM's power"}
             </div>
           </div>
         )}
@@ -2752,7 +2638,7 @@ export default function BluffGame() {
           <div style={{
             background:"linear-gradient(135deg,rgba(244,63,94,.12),rgba(251,146,60,.08))",
             border:"1px solid rgba(244,63,94,.4)",borderRadius:16,
-            padding:"16px",marginBottom:14,position:"relative",overflow:"hidden",
+            padding:"16px",marginBottom:12,position:"relative",overflow:"hidden",
           }}>
             <div style={{position:"absolute",top:0,left:0,right:0,height:2,
               background:"linear-gradient(90deg,#f43f5e,#fb923c,#f43f5e)",
@@ -2766,14 +2652,13 @@ export default function BluffGame() {
             {slayerEntered ? (
               <div style={{fontSize:12,color:"#2dd4a0",fontWeight:600}}>✓ You're in — play to win</div>
             ) : (
-              <button
-                onClick={() => {
-                  fetch("/api/slayer-event", {
-                    method: "POST",
-                    headers: {"Content-Type":"application/json"},
-                    body: JSON.stringify({ action: "enter", userId: localStorage.getItem("bluff_user_id") }),
-                  }).then(r => r.json()).then(d => { if (d.url) window.location.href = d.url; }).catch(()=>{});
-                }}
+              <button onClick={()=>{
+                fetch("/api/slayer-event",{
+                  method:"POST",
+                  headers:{"Content-Type":"application/json"},
+                  body:JSON.stringify({action:"enter",userId:localStorage.getItem("bluff_user_id")}),
+                }).then(r=>r.json()).then(d=>{if(d.url)window.location.href=d.url;}).catch(()=>{});
+              }}
                 style={{width:"100%",padding:"12px",fontSize:13,fontWeight:700,
                   background:"linear-gradient(135deg,#f43f5e,#d4294a)",color:"#fff",
                   border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",letterSpacing:"1px"}}>
@@ -2783,34 +2668,189 @@ export default function BluffGame() {
           </div>
         )}
 
+        {/* 3. AXIOM TEASER — compact inline */}
+        <div style={{
+          background:"linear-gradient(135deg,rgba(34,211,238,.04),rgba(232,197,71,.04))",
+          border:"1px solid rgba(34,211,238,.2)",
+          borderRadius:12,padding:"12px 14px",marginBottom:14,
+          display:"flex",alignItems:"center",gap:12,animation:"g-fadeUp .5s .1s both"
+        }}>
+          <AxiomFace mood={axiomMood} size={44}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:10,letterSpacing:"2px",color:"#22d3ee",
+                         textTransform:"uppercase",fontWeight:600,marginBottom:2}}>
+              AXIOM
+            </div>
+            <div style={{fontSize:13,color:"#e8e6e1",lineHeight:1.3,
+                         overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",
+                         fontStyle:"italic",opacity:axiomLoading?.5:1}}>
+              {axiomLoading ? "..." : (axiomSpeech || "Ready when you are.")}
+            </div>
+          </div>
+        </div>
+
+        {/* 4. PRIMARY CTA */}
         <button onClick={() => {
             userInteractedRef.current = true;
             const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARAAAAAgABAAIAZGF0YQQAAAAAAA==");
             silent.play().catch(()=>{});
             startGame();
-          }} style={{width:"100%",minHeight:52,padding:"clamp(14px,3.5vw,17px)",fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.14)",animation:"g-fadeUp .5s .4s both",transition:"transform .15s"}}
+          }}
+          style={{width:"100%",minHeight:56,padding:"clamp(14px,3.5vw,18px)",fontSize:"clamp(14px,3.8vw,16px)",fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 36px rgba(232,197,71,.18)",animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10}}
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
           <span style={{position:"relative"}}>{total>0?"⚔️ Challenge AXIOM again":"⚔️ Challenge AXIOM"}</span>
         </button>
-        <button
-          onClick={() => setShowShop(true)}
-          style={{width:"100%",minHeight:48,padding:"13px",marginTop:10,
-            fontSize:"clamp(12px,3.5vw,14px)",fontWeight:600,letterSpacing:"1px",
-            textTransform:"uppercase",background:"rgba(255,255,255,.03)",
-            color:"#5a5a68",border:"1px solid rgba(255,255,255,.07)",
-            borderRadius:16,fontFamily:"inherit",cursor:"pointer",
-            display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-          <span style={{fontSize:16}}>🎭</span>
-          <span>AXIOM Skins</span>
-          {ownedSkins.length <= 1 &&
-            <span style={{fontSize:10,padding:"2px 7px",background:"rgba(232,197,71,.12)",
-              color:"#e8c547",borderRadius:10,letterSpacing:"1px"}}>NEW</span>
-          }
-        </button>
-        <div style={{marginTop:20,textAlign:"center",fontSize:10,color:"rgba(255,255,255,.1)",letterSpacing:"1px"}}>playbluff.games · SIAL Consulting d.o.o.</div>
+
+        {/* 5. SECONDARY MODES — Blitz + Duel side-by-side */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,animation:"g-fadeUp .5s .28s both"}}>
+          <button onClick={startBlitz} style={{
+            minHeight:48,padding:12,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+            background:"linear-gradient(135deg,rgba(244,63,94,.15),rgba(244,63,94,.05))",
+            color:"#f43f5e",border:"1px solid rgba(244,63,94,.3)",
+            borderRadius:12,cursor:"pointer",fontFamily:"inherit"
+          }}>
+            ⚡ Blitz
+          </button>
+          <button onClick={()=>setDuelScreen("mode-select")} style={{
+            minHeight:48,padding:12,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+            background:"rgba(232,197,71,.06)",color:"#e8c547",
+            border:"1px solid rgba(232,197,71,.3)",borderRadius:12,
+            cursor:"pointer",fontFamily:"inherit"
+          }}>
+            ⚔️ Duel
+          </button>
+        </div>
+
+        {/* 6. STATS — only if played */}
+        {total>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,animation:"g-fadeUp .5s .35s both"}}>
+            {[[score.toLocaleString('en-US'),"Points",T.gold],[correctCount+"/"+total,"Correct",T.ok],[best+"🔥","Streak","#a78bfa"]].map(([v,l,c])=>(
+              <div key={l} style={{background:T.glass,borderRadius:12,border:`1px solid ${T.gb}`,padding:"clamp(10px,3vw,14px) 6px",textAlign:"center"}}>
+                <div style={{fontSize:"clamp(20px,6vw,28px)",fontWeight:800,color:c,fontFamily:"Georgia,serif"}}>{v}</div>
+                <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{l}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 7. AXIOM POWER — compact */}
+        {axiomPower !== null && !Number.isNaN(axiomPower) && (
+          <div style={{
+            background:"rgba(4,6,15,.6)",border:"1px solid rgba(34,211,238,.15)",
+            borderRadius:10,padding:"10px 14px",marginBottom:14
+          }}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:9,letterSpacing:"2px",color:"rgba(34,211,238,.6)",fontWeight:700}}>
+                AXIOM POWER
+              </div>
+              <div style={{fontSize:11,fontWeight:700,
+                color:axiomPower<200?"#f43f5e":axiomPower<500?"#fb923c":"#22d3ee"}}>
+                {Math.round(axiomPower)}/1000
+              </div>
+            </div>
+            <div style={{height:4,background:"rgba(255,255,255,.06)",borderRadius:2,overflow:"hidden"}}>
+              <div style={{height:"100%",transition:"width 1s ease",
+                width:`${(axiomPower/1000)*100}%`,
+                background:axiomPower<200
+                  ?"linear-gradient(90deg,#f43f5e,#fb923c)"
+                  :axiomPower<500
+                  ?"linear-gradient(90deg,#fb923c,#e8c547)"
+                  :"linear-gradient(90deg,#22d3ee,#0891b2)"
+              }}/>
+            </div>
+          </div>
+        )}
+
+        {/* 8. SETTINGS ROW */}
+        <div style={{
+          display:"flex",gap:6,padding:"10px 0",marginTop:8,
+          borderTop:"1px solid rgba(255,255,255,.05)"
+        }}>
+          <button onClick={()=>setShowLangModal(true)} style={settingButtonStyle}>
+            🌐 {(lang||"en").toUpperCase()}
+          </button>
+          <button onClick={()=>{
+            const next=!voiceEnabled;
+            setVoiceEnabled(next);
+            safeLSSet("bluff_voice", next?"on":"off");
+            if(!next && audioRef.current){
+              audioRef.current.pause();
+              isPlayingRef.current=false;
+              audioQueueRef.current=[];
+            }
+          }} style={settingButtonStyle}>
+            {voiceEnabled?"🔊":"🔇"} Voice
+          </button>
+          <button onClick={()=>setShowShop(true)} style={settingButtonStyle}>
+            🎭 Skins
+            {ownedSkins.length<=1 && <span style={newBadgeStyle}/>}
+          </button>
+          <button onClick={()=>setShowHowToPlay(true)} style={settingButtonStyle}>
+            ? Help
+          </button>
+        </div>
+
+        {tg.isInsideTelegram && (
+          <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginTop:10,fontSize:10,color:"rgba(41,182,246,.4)",letterSpacing:"1px"}}>
+            <span>✈️</span><span>Running inside Telegram</span>
+          </div>
+        )}
+
+        <div style={{marginTop:16,textAlign:"center",fontSize:10,color:"rgba(255,255,255,.1)",letterSpacing:"1px"}}>playbluff.games · SIAL Consulting d.o.o.</div>
       </div>
+
+      {showHowToPlay && (
+        <div onClick={()=>setShowHowToPlay(false)}
+          style={{position:"fixed",inset:0,zIndex:600,background:"rgba(4,6,15,.9)",
+            backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:360,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.25)",borderRadius:18,
+              padding:"24px 22px 22px",position:"relative",
+              boxShadow:"0 0 40px rgba(232,197,71,.1)",
+              animation:"g-fadeUp .3s ease both"}}>
+            <button onClick={()=>setShowHowToPlay(false)}
+              style={{position:"absolute",top:10,right:10,width:32,height:32,
+                borderRadius:"50%",background:"rgba(255,255,255,.06)",
+                border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
+                fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <div style={{fontSize:11,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:16,textAlign:"center"}}>
+              How to play
+            </div>
+            {["🧠 AI generates 4 surprising statements","🎭 One is a masterfully crafted LIE","⏱️ Find the BLUFF before AXIOM wins","🔥 Build streaks — beat the machine"].map((t,i)=>(
+              <div key={i} style={{display:"flex",gap:10,marginBottom:i<3?12:0,fontSize:14,lineHeight:1.5}}>
+                <span style={{fontSize:18,flexShrink:0}}>{t.slice(0,2)}</span>
+                <span style={{opacity:.85,color:"#e8e6e1"}}>{t.slice(3)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showLangModal && (
+        <div onClick={()=>setShowLangModal(false)}
+          style={{position:"fixed",inset:0,zIndex:600,background:"rgba(4,6,15,.9)",
+            backdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:360,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.25)",borderRadius:18,
+              padding:"24px 22px 22px",position:"relative",
+              boxShadow:"0 0 40px rgba(232,197,71,.1)",
+              animation:"g-fadeUp .3s ease both"}}>
+            <button onClick={()=>setShowLangModal(false)}
+              style={{position:"absolute",top:10,right:10,width:32,height:32,
+                borderRadius:"50%",background:"rgba(255,255,255,.06)",
+                border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
+                fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <div style={{fontSize:11,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:14,textAlign:"center"}}>
+              Language
+            </div>
+            <LangPicker lang={lang} onChange={(l)=>{changeLang(l);setShowLangModal(false);}}/>
+          </div>
+        </div>
+      )}
 
       {showShop && (
         <div style={{position:"fixed",inset:0,zIndex:500,
@@ -2951,6 +2991,7 @@ export default function BluffGame() {
       <GameStyles/>
     </div>
   );
+  }
 
   // ─── PLAY ──────────────────────────────────────────────────
   if(screen==="play") return (
