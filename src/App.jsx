@@ -1789,6 +1789,20 @@ export default function BluffGame() {
   const [showWheelTeaser, setShowWheelTeaser] = useState(false);
   const [earlyAdopterSlotsRemaining, setEarlyAdopterSlotsRemaining] = useState(null);
 
+  // ── SWEAR currency / Rab Card ────────────────────────────────
+  const [swearProfile, setSwearProfile] = useState(null);
+  const swearProfileRef = useRef(null);
+  const [swearBalance, setSwearBalance] = useState(0);
+  const [showRabCard, setShowRabCard] = useState(false);
+  const [showHandleModal, setShowHandleModal] = useState(false);
+  const [handleInput, setHandleInput] = useState("");
+  const [handleError, setHandleError] = useState("");
+  const [handleSaving, setHandleSaving] = useState(false);
+  const [swearAward, setSwearAward] = useState(null); // { amount, label }
+  const swearAwardTimerRef = useRef(null);
+  // Fired streak milestones in current game — prevents re-paying on re-renders.
+  const firedStreakSwearRef = useRef(new Set());
+
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
   const [duelMode, setDuelMode] = useState("regular"); // "regular" | "blitz"
@@ -1996,6 +2010,109 @@ export default function BluffGame() {
     localStorage.setItem("bluff_lang", code);
   }
 
+  // ── SWEAR helpers ───────────────────────────────────────────
+  // Apply a fresh profile object from the server to local state.
+  function applyProfile(p) {
+    if (!p) return;
+    swearProfileRef.current = p;
+    setSwearProfile(p);
+    setSwearBalance(p.swearBalance | 0);
+  }
+
+  // Show the gold "+N SWEAR" toast overlay for ~1.8s.
+  function flashSwearAward(amount, label) {
+    if (!amount || amount <= 0) return;
+    if (swearAwardTimerRef.current) clearTimeout(swearAwardTimerRef.current);
+    setSwearAward({ amount, label: label || "" });
+    swearAwardTimerRef.current = setTimeout(() => setSwearAward(null), 1800);
+  }
+
+  // Award SWEAR for a validated event. Server enforces the rate + dedup.
+  // Safe to call from idempotent result screens (same gameId → no double pay).
+  async function awardSwear(event, gameId, { label, meta } = {}) {
+    const uid = userIdRef.current;
+    if (!uid || !event || !gameId) return null;
+    try {
+      const r = await fetch("/api/swear-earn", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ userId: uid, event, gameId, meta: meta || null }),
+      });
+      const data = await r.json();
+      if (!r.ok) return null;
+      if (data.awarded > 0 && !data.duplicate) {
+        setSwearBalance(data.newBalance);
+        if (swearProfileRef.current) {
+          const next = { ...swearProfileRef.current, swearBalance: data.newBalance };
+          swearProfileRef.current = next;
+          setSwearProfile(next);
+        }
+        flashSwearAward(data.awarded, label || event);
+      }
+      return data;
+    } catch (e) {
+      console.warn("[swear] award failed:", e.message);
+      return null;
+    }
+  }
+
+  // Gold "+N SWEAR" toast overlay. Returns JSX for inlining in each screen.
+  function renderSwearToast() {
+    if (!swearAward) return null;
+    return (
+      <div style={{
+        position:"fixed",top:"22%",left:"50%",transform:"translateX(-50%)",
+        zIndex:1000,pointerEvents:"none",
+        animation:"swear-award-in .4s cubic-bezier(0.34,1.56,0.64,1) both, swear-award-out .5s 1.3s both",
+      }}>
+        <div style={{
+          display:"flex",alignItems:"center",gap:10,
+          padding:"12px 20px",borderRadius:999,
+          background:"linear-gradient(135deg,rgba(240,216,120,.95),rgba(212,168,48,.95))",
+          border:"1px solid rgba(255,255,255,.35)",
+          boxShadow:"0 0 40px rgba(232,197,71,.5), inset 0 1px 0 rgba(255,255,255,.4)",
+          color:"#04060f",fontWeight:900,fontSize:16,letterSpacing:1,
+          fontFamily:"Georgia,serif",
+        }}>
+          <span style={{
+            display:"inline-flex",alignItems:"center",justifyContent:"center",
+            width:26,height:26,borderRadius:"50%",
+            background:"#04060f",color:"#e8c547",fontSize:16,fontWeight:900,
+            animation:"swear-coin-spin 1s linear",
+          }}>Ⓢ</span>
+          <span>+{swearAward.amount}</span>
+          {swearAward.label && (
+            <span style={{fontSize:11,fontWeight:600,opacity:.7,letterSpacing:".5px",textTransform:"uppercase",fontFamily:"inherit"}}>
+              {swearAward.label}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Save a handle. Returns { ok, error? } so the modal can render errors.
+  async function saveHandle(raw) {
+    const uid = userIdRef.current;
+    if (!uid) return { ok: false, error: "no_user" };
+    const handle = String(raw || "").trim();
+    if (!/^[a-zA-Z0-9_]{3,16}$/.test(handle)) return { ok: false, error: "invalid" };
+    try {
+      const r = await fetch("/api/swear-set-handle", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ userId: uid, handle }),
+      });
+      const data = await r.json();
+      if (r.status === 409 || data.error === "taken") return { ok: false, error: "taken" };
+      if (!r.ok) return { ok: false, error: "save_failed" };
+      applyProfile(data.profile);
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "save_failed" };
+    }
+  }
+
   // ── DAILY CHALLENGE ─────────────────────────────────────────
   async function loadDailyChallenge() {
     console.log("[daily] loading...");
@@ -2045,6 +2162,20 @@ export default function BluffGame() {
         alreadyPlayed: true,
         myResult: { score: finalScore, total: finalTotal, results: [...dailyResultsRef.current] },
       } : null);
+
+      // SWEAR: award daily completion. Perfect = all rounds correct.
+      const perfect = dailyResultsRef.current.length > 0 &&
+        dailyResultsRef.current.every(x => x?.correct);
+      const dayKey = new Date().toISOString().slice(0, 10);
+      const gid = `daily_${dayKey}`;
+      awardSwear(
+        perfect ? "daily_challenge_perfect" : "daily_challenge_complete",
+        gid,
+        {
+          label: t(perfect ? "swear.daily_perfect" : "swear.daily_complete", lang),
+          meta: { score: finalScore, total: finalTotal },
+        }
+      );
     } catch {}
   }
 
@@ -2065,6 +2196,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    firedStreakSwearRef.current = new Set();
     setLastRoundResult(null);
     setCorrectCount(0);
     correctCountRef.current = 0;
@@ -2339,6 +2471,14 @@ export default function BluffGame() {
         if(next>=5) axiomSpeak("streak_5","shocked");
         else if(next>=3) axiomSpeak("streak_3","shocked");
         else axiomSpeak("correct","shocked");
+        // SWEAR: streak milestones — fire once per game per milestone.
+        for (const m of [5, 10, 15]) {
+          if (next >= m && !firedStreakSwearRef.current.has(m)) {
+            firedStreakSwearRef.current.add(m);
+            const gid = `streak_${gameStartTimeRef.current || Date.now()}_${m}`;
+            awardSwear(`streak_milestone_${m}`, gid, { label: t("swear.streak_milestone", lang, { n: m }) });
+          }
+        }
         return next;
       });
     } else {
@@ -2387,6 +2527,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    firedStreakSwearRef.current = new Set();
     setLastRoundResult(null);
     setCorrectCount(0);
     correctCountRef.current = 0;
@@ -2427,6 +2568,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    firedStreakSwearRef.current = new Set();
     setLastRoundResult(null);
     setCorrectCount(0);
     correctCountRef.current = 0;
@@ -2673,6 +2815,7 @@ export default function BluffGame() {
     multiplierRef.current = 1.0;
     setMultiplierLocked(null);
     milestonesFiredRef.current = new Set();
+    firedStreakSwearRef.current = new Set();
     setLastRoundResult(null);
     setCorrectCount(0);
     correctCountRef.current = 0;
@@ -2830,6 +2973,25 @@ export default function BluffGame() {
     const won = finalCorrect >= Math.ceil(finalTotal * 0.67);
 
     if (dailyModeRef.current) submitDailyResult(finalScore, finalTotal);
+
+    // SWEAR: award end-of-game SWEAR for solo/blitz. Daily is awarded in
+    // submitDailyResult; duel is awarded in its own result handler (skipped
+    // for Part A MVP). gameStartTimeRef gives us a stable dedup key.
+    if (!dailyModeRef.current) {
+      const gid = `${blitzModeRef.current ? "blitz" : "solo"}_${gameStartTimeRef.current || Date.now()}`;
+      if (blitzModeRef.current) {
+        awardSwear(won ? "blitz_win" : "blitz_loss", gid, {
+          label: t(won ? "swear.blitz_win" : "swear.blitz_loss", lang),
+          meta: { score: finalScore, correct: finalCorrect, total: finalTotal },
+        });
+      } else {
+        const soloWon = finalScore > axiomScoreRef.current;
+        awardSwear(soloWon ? "solo_win" : "solo_loss", gid, {
+          label: t(soloWon ? "swear.solo_win" : "swear.solo_loss", lang),
+          meta: { score: finalScore, axiom: axiomScoreRef.current, correct: finalCorrect },
+        });
+      }
+    }
 
     axiomSpeak(won ? "final_win" : "final_lose", won ? "defeated" : "taunting");
     if (won) { setConfetti(true); haptic.victory(); }
@@ -3071,6 +3233,54 @@ export default function BluffGame() {
       }
     } catch {}
   }, []);
+
+  // SWEAR profile: load or create on mount, then sync tier (early adopter /
+  // pro) once so the server awards the Early Adopter bonus exactly once.
+  useEffect(() => {
+    const uid = userIdRef.current;
+    if (!uid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch("/api/swear-profile", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({ userId: uid }),
+        });
+        const data = await r.json();
+        if (cancelled || !data.profile) return;
+        applyProfile(data.profile);
+        if (data.created && data.awarded > 0) {
+          flashSwearAward(data.awarded, t("swear.first_bonus", lang));
+        }
+        // Tier sync (early adopter bonus + pro flag).
+        try {
+          const tierR = await fetch("/api/swear-sync-tier", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              userId: uid,
+              isPro:  localStorage.getItem("bluff_pro") === "1",
+              proPlan: localStorage.getItem("bluff_pro_plan") || null,
+              isEarlyAdopter: localStorage.getItem("bluff_early_adopter") === "1",
+              earlyAdopterRank: parseInt(localStorage.getItem("bluff_early_adopter_rank") || "0", 10) || null,
+            }),
+          });
+          const tierData = await tierR.json();
+          if (cancelled) return;
+          if (tierData.profile) applyProfile(tierData.profile);
+          if (tierData.awarded > 0) {
+            flashSwearAward(tierData.awarded, t("swear.early_adopter_bonus", lang));
+          }
+        } catch { /* non-fatal */ }
+      } catch (e) {
+        console.warn("[swear] profile init failed:", e.message);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (screen === "home") loadDailyChallenge();
   }, [screen]);
@@ -3929,6 +4139,29 @@ export default function BluffGame() {
         background:"radial-gradient(ellipse 80% 50% at 50% 0%, rgba(232,197,71,0.05), transparent 70%), radial-gradient(ellipse 60% 40% at 50% 100%, rgba(34,211,238,0.03), transparent 70%)"
       }}/>
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
+      {/* SWEAR balance chip — opens Rab Card */}
+      <button
+        onClick={() => setShowRabCard(true)}
+        style={{
+          position:"fixed",top:"max(10px,env(safe-area-inset-top))",left:12,zIndex:11,
+          display:"flex",alignItems:"center",gap:6,
+          padding:"5px 11px",borderRadius:999,
+          background:"linear-gradient(135deg,rgba(232,197,71,.18),rgba(232,197,71,.06))",
+          border:"1px solid rgba(232,197,71,.38)",
+          color:"#e8c547",fontSize:11,letterSpacing:"1.5px",fontWeight:700,
+          textTransform:"uppercase",fontFamily:"inherit",cursor:"pointer",
+          boxShadow:"0 2px 12px rgba(232,197,71,.1)",
+        }}
+        aria-label="Open Rab Card"
+      >
+        <span style={{
+          display:"inline-flex",alignItems:"center",justifyContent:"center",
+          width:16,height:16,borderRadius:999,
+          background:"linear-gradient(135deg,#f0d878,#d4a830)",
+          color:"#04060f",fontSize:10,fontWeight:900,
+        }}>Ⓢ</span>
+        <span>{swearBalance.toLocaleString("en-US")}</span>
+      </button>
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)",paddingTop:"max(52px,env(safe-area-inset-top))"}}>
         {/* 1. LOGO */}
         <div style={{textAlign:"center",marginBottom:18,animation:"g-fadeUp .5s ease both"}}>
@@ -4208,6 +4441,186 @@ export default function BluffGame() {
         </div>
       )}
 
+      {showRabCard && (
+        <div onClick={()=>setShowRabCard(false)}
+          style={{position:"fixed",inset:0,zIndex:650,background:"rgba(4,6,15,.92)",
+            backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:360,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.3)",borderRadius:20,
+              padding:"22px 20px 20px",position:"relative",
+              boxShadow:"0 0 60px rgba(232,197,71,.12)",
+              animation:"g-fadeUp .3s ease both"}}>
+            <button onClick={()=>setShowRabCard(false)}
+              style={{position:"absolute",top:10,right:10,width:32,height:32,
+                borderRadius:"50%",background:"rgba(255,255,255,.06)",
+                border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
+                fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            <div style={{fontSize:10,color:T.dim,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:4,textAlign:"center"}}>
+              {t("rab_card.subtitle", lang)}
+            </div>
+            <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:900,color:"#e8c547",textAlign:"center",marginBottom:14,letterSpacing:1}}>
+              {t("rab_card.title", lang)}
+            </div>
+
+            <div style={{
+              background:"linear-gradient(135deg,rgba(232,197,71,.14),rgba(232,197,71,.04))",
+              border:"1px solid rgba(232,197,71,.32)",borderRadius:14,padding:"14px 16px",marginBottom:14,
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
+            }}>
+              <div>
+                <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:2}}>
+                  {t("rab_card.balance_label", lang)}
+                </div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:"#e8c547",lineHeight:1}}>
+                  {swearBalance.toLocaleString("en-US")}
+                </div>
+              </div>
+              <div style={{
+                width:44,height:44,borderRadius:"50%",
+                background:"linear-gradient(135deg,#f0d878,#d4a830)",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                color:"#04060f",fontSize:22,fontWeight:900,
+                boxShadow:"0 2px 18px rgba(232,197,71,.3)",
+              }}>Ⓢ</div>
+            </div>
+
+            <div style={{
+              background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.06)",
+              borderRadius:12,padding:"12px 14px",marginBottom:14,
+            }}>
+              <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:6}}>
+                {t("rab_card.handle_label", lang)}
+              </div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+                <div style={{fontFamily:"Georgia,serif",fontSize:18,color: swearProfile?.handle ? "#e8e6e1" : "rgba(232,230,225,.35)",fontWeight:700}}>
+                  {swearProfile?.handle ? `@${swearProfile.handle}` : "—"}
+                </div>
+                <button onClick={()=>{
+                    setHandleInput(swearProfile?.handle || "");
+                    setHandleError("");
+                    setShowHandleModal(true);
+                  }}
+                  style={{background:"transparent",border:"1px solid rgba(232,197,71,.4)",
+                    color:"#e8c547",fontSize:10,letterSpacing:"1.5px",fontWeight:700,
+                    padding:"6px 12px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",textTransform:"uppercase"}}>
+                  {swearProfile?.handle ? t("rab_card.change_handle", lang) : t("rab_card.set_handle", lang)}
+                </button>
+              </div>
+            </div>
+
+            {(isEarlyAdopter || isPro) && (
+              <div style={{
+                display:"flex",gap:6,marginBottom:14,flexWrap:"wrap",
+              }}>
+                {isEarlyAdopter && (
+                  <div style={{
+                    padding:"5px 10px",borderRadius:999,
+                    background:"rgba(232,197,71,.1)",border:"1px solid rgba(232,197,71,.35)",
+                    color:"#e8c547",fontSize:10,letterSpacing:"1.5px",fontWeight:700,textTransform:"uppercase",
+                  }}>
+                    {t("rab_card.early_adopter", lang, { n: swearProfile?.earlyAdopterRank || "—" })}
+                  </div>
+                )}
+                {isPro && !isEarlyAdopter && (
+                  <div style={{
+                    padding:"5px 10px",borderRadius:999,
+                    background:"rgba(45,212,160,.1)",border:"1px solid rgba(45,212,160,.3)",
+                    color:"#2dd4a0",fontSize:10,letterSpacing:"1.5px",fontWeight:700,textTransform:"uppercase",
+                  }}>
+                    {t("rab_card.pro", lang)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{fontSize:10,color:T.dim,letterSpacing:"2px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>
+              {t("rab_card.stats_title", lang)}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:4}}>
+              {[
+                [t("rab_card.stat_solo", lang),    swearProfile?.stats?.soloWins || 0],
+                [t("rab_card.stat_blitz", lang),   swearProfile?.stats?.blitzWins || 0],
+                [t("rab_card.stat_duel", lang),    swearProfile?.stats?.duelWins || 0],
+                [t("rab_card.stat_daily", lang),   swearProfile?.stats?.dailyCompletes || 0],
+                [t("rab_card.stat_grand", lang),   swearProfile?.stats?.grandBluffs || 0],
+                [t("rab_card.stat_best_streak", lang), swearProfile?.stats?.bestStreak || best || 0],
+              ].map(([label, val]) => (
+                <div key={label} style={{
+                  background:"rgba(255,255,255,.02)",border:"1px solid rgba(255,255,255,.05)",
+                  borderRadius:10,padding:"10px 10px",
+                }}>
+                  <div style={{fontFamily:"Georgia,serif",fontSize:18,fontWeight:800,color:"#e8e6e1",lineHeight:1.1}}>{val}</div>
+                  <div style={{fontSize:9,color:T.dim,letterSpacing:"1px",textTransform:"uppercase",marginTop:3}}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHandleModal && (
+        <div onClick={()=>{ if (!handleSaving) setShowHandleModal(false); }}
+          style={{position:"fixed",inset:0,zIndex:700,background:"rgba(4,6,15,.94)",
+            backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}>
+          <div onClick={e=>e.stopPropagation()}
+            style={{maxWidth:340,width:"100%",background:"#0c0c14",
+              border:"1px solid rgba(232,197,71,.3)",borderRadius:18,
+              padding:"22px 20px 20px",position:"relative",
+              boxShadow:"0 0 40px rgba(232,197,71,.12)",
+              animation:"g-fadeUp .3s ease both"}}>
+            <div style={{fontSize:10,color:"#e8c547",letterSpacing:"3px",textTransform:"uppercase",fontWeight:700,marginBottom:6,textAlign:"center"}}>
+              {t("handle.title", lang)}
+            </div>
+            <div style={{fontSize:12,color:T.dim,textAlign:"center",marginBottom:14,lineHeight:1.4}}>
+              {t("handle.subtitle", lang)}
+            </div>
+            <input
+              type="text"
+              value={handleInput}
+              onChange={e=>{ setHandleInput(e.target.value); if (handleError) setHandleError(""); }}
+              placeholder={t("handle.placeholder", lang)}
+              maxLength={16}
+              autoFocus
+              style={{
+                width:"100%",padding:"12px 14px",fontSize:15,fontFamily:"Georgia,serif",
+                background:"rgba(255,255,255,.04)",color:"#e8e6e1",
+                border:`1px solid ${handleError ? "rgba(244,63,94,.5)" : "rgba(232,197,71,.25)"}`,
+                borderRadius:10,outline:"none",marginBottom:handleError?8:14,boxSizing:"border-box",
+              }}
+            />
+            {handleError && (
+              <div style={{color:"#f43f5e",fontSize:11,marginBottom:12,lineHeight:1.3}}>
+                {t(`handle.${handleError}`, lang)}
+              </div>
+            )}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:8}}>
+              <button
+                onClick={()=>setShowHandleModal(false)}
+                disabled={handleSaving}
+                style={{padding:"12px",fontSize:12,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+                  background:"transparent",color:"#5a5a68",
+                  border:"1px solid rgba(255,255,255,.08)",borderRadius:10,cursor:"pointer",fontFamily:"inherit"}}
+              >{t("handle.cancel", lang)}</button>
+              <button
+                onClick={async()=>{
+                  setHandleSaving(true);
+                  const result = await saveHandle(handleInput);
+                  setHandleSaving(false);
+                  if (result.ok) setShowHandleModal(false);
+                  else setHandleError(result.error);
+                }}
+                disabled={handleSaving || handleInput.trim().length < 3}
+                style={{padding:"12px",fontSize:12,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",
+                  background: (handleSaving || handleInput.trim().length < 3) ? "rgba(232,197,71,.3)" : "linear-gradient(135deg,#e8c547,#d4a830)",
+                  color:"#04060f",border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+                  opacity: (handleSaving || handleInput.trim().length < 3) ? .6 : 1}}
+              >{handleSaving ? "…" : t("handle.save", lang)}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showLangModal && (
         <div onClick={()=>setShowLangModal(false)}
           style={{position:"fixed",inset:0,zIndex:600,background:"rgba(4,6,15,.9)",
@@ -4367,6 +4780,7 @@ export default function BluffGame() {
         </div>
       )}
 
+      {renderSwearToast()}
       <GameStyles/>
     </div>
   );
@@ -4447,6 +4861,15 @@ export default function BluffGame() {
             } else if (zone === "black") {
               setScore(s => Math.floor(s * 0.5));
               setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
+            }
+            // SWEAR: "Grand Bluff victory" = landing on GOLD (3x) on the
+            // mandatory final phase. High-effort outcome, high reward.
+            if (wheelPhaseNum === 3 && zone === "gold") {
+              const gid = `grand_${gameStartTimeRef.current || Date.now()}`;
+              awardSwear("grand_bluff_victory", gid, {
+                label: t("swear.grand_bluff_victory", lang),
+                meta: { stake },
+              });
             }
             setPhaseScore(0);
             phaseScoreRef.current = 0;
@@ -4553,6 +4976,7 @@ export default function BluffGame() {
               multiplierRef.current = 1.0;
               setMultiplierLocked(null);
               milestonesFiredRef.current = new Set();
+    firedStreakSwearRef.current = new Set();
               setLastRoundResult(null);
               setCorrectCount(0);
               correctCountRef.current = 0;
@@ -4849,6 +5273,7 @@ export default function BluffGame() {
           </div>
         </>)}
       </div>
+      {renderSwearToast()}
       <GameStyles/>
     </div>
   );
@@ -5147,6 +5572,7 @@ export default function BluffGame() {
           </button>
         </div>
       </div>
+      {renderSwearToast()}
       <GameStyles/>
     </div>
   );
@@ -5184,6 +5610,9 @@ function GameStyles(){
     }
     @keyframes scanDown{0%{transform:translateY(-50px)}100%{transform:translateY(220px)}}
     @keyframes moodIn{from{opacity:0;transform:translateX(6px)}to{opacity:1;transform:none}}
+    @keyframes swear-award-in{from{opacity:0;transform:translateX(-50%) translateY(14px) scale(.85)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}}
+    @keyframes swear-award-out{0%{opacity:1;transform:translateX(-50%) translateY(0) scale(1)}100%{opacity:0;transform:translateX(-50%) translateY(-12px) scale(.95)}}
+    @keyframes swear-coin-spin{from{transform:rotateY(0deg)}to{transform:rotateY(720deg)}}
     @keyframes axiomPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
     @keyframes ic-blink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(0.05)}}
     @keyframes ax-browTwitch{0%,100%{transform:translateY(0)}50%{transform:translateY(-0.6px)}}

@@ -252,5 +252,49 @@ export default {
     "checkout_verify_failed": "Ne mogu da potvrdim kupovinu. Kontaktiraj podršku ako je naplaćeno.",
     "checkout_verify_network": "Greška na mreži pri potvrđivanju kupovine. Osveži stranicu.",
     "restore_failed": "Obnavljanje neuspešno. Pokušaj ponovo."
+  },
+  "swear": {
+    "balance": "SWEAR",
+    "earned": "+{n} SWEAR",
+    "first_bonus": "Dobrodošli bonus",
+    "early_adopter_bonus": "Early Adopter bonus",
+    "grand_bluff_victory": "Grand Bluff pobeda",
+    "solo_win": "Solo pobeda",
+    "solo_loss": "Solo pokušaj",
+    "blitz_win": "Blitz pobeda",
+    "blitz_loss": "Blitz pokušaj",
+    "duel_win": "Pobeda u dvoboju",
+    "duel_loss": "Dvoboj pokušaj",
+    "daily_complete": "Dnevni izazov",
+    "daily_perfect": "Savršen dnevni",
+    "streak_milestone": "Niz × {n}"
+  },
+  "rab_card": {
+    "title": "Rab Card",
+    "subtitle": "Tvoj BLUFF identitet",
+    "balance_label": "SWEAR balans",
+    "handle_label": "Ime",
+    "set_handle": "Postavi ime",
+    "change_handle": "Promeni",
+    "stats_title": "Statistika",
+    "stat_solo": "Solo pobede",
+    "stat_blitz": "Blitz pobede",
+    "stat_duel": "Pobede u dvoboju",
+    "stat_daily": "Dnevni završeni",
+    "stat_grand": "Grand Bluffs",
+    "stat_best_streak": "Najbolji niz",
+    "early_adopter": "Early Adopter · Rang {n}",
+    "pro": "BLUFF Pro",
+    "close": "Zatvori"
+  },
+  "handle": {
+    "title": "Izaberi ime",
+    "subtitle": "Prikazuje se na top-listama. 3–16 znakova, slova/brojevi/donja crta.",
+    "placeholder": "npr. bluff_master",
+    "save": "Sačuvaj",
+    "cancel": "Otkaži",
+    "invalid": "Nevažeće. Koristi 3–16 slova/brojeva/donjih crta.",
+    "taken": "Ime je zauzeto. Probaj drugo.",
+    "save_failed": "Neuspešno čuvanje. Probaj ponovo."
   }
 };
