@@ -1966,6 +1966,8 @@ export default function BluffGame() {
   const [loadingDaily, setLoadingDaily] = useState(false);
   const dailyModeRef = useRef(false);
   const blitzModeRef = useRef(false);
+  const langRef = useRef(lang);
+  useEffect(() => { langRef.current = lang; }, [lang]);
   const dailyResultsRef = useRef([]);
   const dailyRoundsRef = useRef(null);
   const dailyStartTimeRef = useRef(null);
@@ -2207,8 +2209,9 @@ export default function BluffGame() {
       return;
     }
 
-    // Solo mode: use pre-fetched Firestore rounds if available
-    if (!blitzModeRef.current && preloadedRoundsRef.current?.[idx]) {
+    // Solo mode: use pre-fetched Firestore rounds if available.
+    // Skip for non-English — the cache is EN-only; live generate-round honors lang.
+    if (!blitzModeRef.current && langRef.current === "en" && preloadedRoundsRef.current?.[idx]) {
       const round = preloadedRoundsRef.current[idx];
       const cat = round.category || (roundCategoriesRef.current || CATEGORIES)[idx % CATEGORIES.length];
       setCategory(cat);
@@ -2719,16 +2722,20 @@ export default function BluffGame() {
     preloadedRoundsRef.current = [];
     secondBatchPendingRef.current = false;
 
-    // Hybrid batch: await batch 1 (rounds 1-6), fire-and-forget batch 2 (rounds 7-12)
+    // Hybrid batch: await batch 1 (rounds 1-6), fire-and-forget batch 2 (rounds 7-12).
+    // For non-English the cache is EN-only, so skip preloading and let fetchRound
+    // fall through to /api/generate-round which honors the requested language.
     (async () => {
-      const firstBatch = await fetchSoloBatch("first");
-      preloadedRoundsRef.current = firstBatch;
+      if (langRef.current === "en") {
+        const firstBatch = await fetchSoloBatch("first");
+        preloadedRoundsRef.current = firstBatch;
 
-      secondBatchPendingRef.current = true;
-      fetchSoloBatch("second").then(batch => {
-        preloadedRoundsRef.current = [...preloadedRoundsRef.current, ...batch];
-        secondBatchPendingRef.current = false;
-      });
+        secondBatchPendingRef.current = true;
+        fetchSoloBatch("second").then(batch => {
+          preloadedRoundsRef.current = [...preloadedRoundsRef.current, ...batch];
+          secondBatchPendingRef.current = false;
+        });
+      }
 
       fetchRound(0);
     })();
