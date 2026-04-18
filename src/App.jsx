@@ -61,9 +61,23 @@ const LANGUAGES = [
   { code: "es", flag: "🇪🇸", label: "ES" },
 ];
 
+// 12 rounds total (matching ROUND_DIFFICULTY length).
+// Mix across 11 categories from pre-generate.js SUBTOPICS_PRE.
+// Max 1 sports round per match. Diverse across history, science,
+// medicine, showbiz, culture, geography, animals, food, technology, life, sports.
 const CATEGORIES = [
-  "premier_league","nba","bundesliga","premier_league","nba",
-  "sports","popculture","science","bundesliga","sports",
+  "history",    // Q1 warm-up
+  "science",    // Q2 warm-up
+  "culture",    // Q3 rising
+  "showbiz",    // Q4 rising
+  "animals",    // Q5 rising
+  "geography",  // Q6 rising
+  "medicine",   // Q7 devious
+  "technology", // Q8 devious
+  "food",       // Q9 devious
+  "life",       // Q10 diabolical
+  "sports",     // Q11 diabolical (only 1 sports in entire match)
+  "showbiz",    // Q12 diabolical finale
 ];
 const CATEGORY_EMOJIS = {
   history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍",
@@ -950,6 +964,7 @@ export default function BluffGame() {
   const roundsPlayedRef = useRef([]); // [{statements, category}] — duel replay data
   const resultsHistoryRef = useRef([]); // boolean per round — duel results
   const gameStartTimeRef = useRef(null); // ms timestamp — duel total time
+  const roundCategoriesRef = useRef(null); // shuffled CATEGORIES for current match
 
   // ── Blitz Mode ───────────────────────────────────────────────
   const [blitzMode, setBlitzMode] = useState(false);
@@ -1170,7 +1185,7 @@ export default function BluffGame() {
     // Daily mode: use pre-generated rounds instead of fetching
     if (dailyModeRef.current && dailyRoundsRef.current?.[idx]) {
       const round = dailyRoundsRef.current[idx];
-      const cat = round.category || CATEGORIES[idx % CATEGORIES.length];
+      const cat = round.category || (roundCategoriesRef.current || CATEGORIES)[idx % CATEGORIES.length];
       setCategory(cat);
       const normalized = (round.statements || []).map(s => ({
         text: String(s.text || ""),
@@ -1188,7 +1203,7 @@ export default function BluffGame() {
     }
 
     const diff = blitzModeRef.current ? (BLITZ_DIFFICULTY[idx] || 4) : (ROUND_DIFFICULTY[idx]||3);
-    const cat = CATEGORIES[idx % CATEGORIES.length];
+    const cat = (roundCategoriesRef.current || CATEGORIES)[idx % CATEGORIES.length];
     setCategory(cat);
     const controller = new AbortController();
     const fetchTimeout = setTimeout(() => controller.abort(), 9000);
@@ -1621,6 +1636,7 @@ export default function BluffGame() {
     setShowWaveIntro(true);
     setTimeout(() => setShowWaveIntro(false), 1800);
     setFetchError(false);
+    roundCategoriesRef.current = [...CATEGORIES].sort(() => Math.random() - 0.5);
     fetchRound(0);
     axiomSpeak("intro","idle");
   }
