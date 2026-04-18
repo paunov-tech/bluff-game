@@ -459,13 +459,26 @@ function TimerRing({time,max=45,size=48}) {
   const r=(size-6)/2,circ=2*Math.PI*r;
   const color=time<=10?"#f43f5e":time<=20?"#fb923c":"#e8c547";
   const pct=Math.max(0,time/max);
+  const strokeW = time<=10 ? 5 : 3;
+  const [glitchKey,setGlitchKey]=useState(0);
+  useEffect(()=>{
+    if(time<=0) return;
+    const delay=7000+Math.random()*6000;
+    const to=setTimeout(()=>setGlitchKey(k=>k+1),delay);
+    return ()=>clearTimeout(to);
+  },[glitchKey,time]);
   return (
-    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
+    <div
+      key={`timer-${glitchKey}`}
+      style={{
+        position:"relative",width:size,height:size,flexShrink:0,color,
+        animation: glitchKey>0 ? "timer-glitch 400ms ease-out" : "none",
+      }}>
       <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={3}/>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={3}
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth={strokeW}/>
+        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={strokeW}
           strokeDasharray={circ} strokeDashoffset={circ*(1-pct)}
-          strokeLinecap="round" style={{transition:"stroke-dashoffset 1s linear,stroke .3s"}}/>
+          strokeLinecap="round" style={{transition:"stroke-dashoffset 1s linear,stroke .3s,stroke-width .3s"}}/>
       </svg>
       <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontWeight:700,color,animation:time<=5?"g-pulse .5s infinite":"none"}}>{time}</div>
     </div>
@@ -3091,7 +3104,18 @@ export default function BluffGame() {
 
   // ─── PLAY ──────────────────────────────────────────────────
   if(screen==="play") return (
-    <div style={wrap}>
+    <div style={{
+      ...wrap,
+      background:
+        "radial-gradient(ellipse at 50% 0%,rgba(232,197,71,.08) 0%,rgba(8,8,15,0) 55%),"
+        + "radial-gradient(ellipse at 50% 115%,rgba(20,83,45,.28) 0%,rgba(8,8,15,0) 60%),"
+        + `${T.bg}`,
+    }}>
+      <div aria-hidden="true" style={{
+        position:"absolute",inset:0,pointerEvents:"none",zIndex:0,
+        background:"radial-gradient(ellipse at 50% 50%,rgba(232,197,71,.05) 0%,rgba(8,8,15,0) 70%)",
+        animation:"ambient-breath 8s ease-in-out infinite",
+      }}/>
       <Particles count={10}/>
       {confetti&&<Confetti/>}
       {showWaveIntro&&(
@@ -3111,14 +3135,14 @@ export default function BluffGame() {
           </div>
         </div>
       )}
-      {!revealed&&time<=3&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:50,background:"rgba(244,63,94," + (0.08 + (3-time)*0.07) + ")",animation:"g-pulse .4s ease-in-out infinite",transition:"background .5s"}}/>}
+      {!revealed&&time<=3&&<div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:50,animation:"vignette-pulse .9s ease-in-out infinite"}}/>}
       <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:460,padding:"clamp(14px,4vw,22px)"}}>
         {/* Header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <CategoryIcon category={category} size={22}/>
             <div>
-              <div style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600}}>{category}</div>
+              <div key={`cat-${roundIdx}-${category}`} style={{fontSize:10,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,animation:"category-entrance .55s ease-out both"}}>{category}</div>
               <div style={{display:"flex",alignItems:"center",gap:5}}>
                 <div style={{fontSize:9,color:T.dim}}>Q{(roundIdx%qpw)+1}/{qpw}{blitzMode?" ⚡":""}</div>
                 <div style={{fontSize:9,color:diff===0?"#2dd4a0":DIFF_COLOR[diff],letterSpacing:"1px"}}>· {DIFF_LABEL[diff]||"Baby"}</div>
@@ -3135,9 +3159,40 @@ export default function BluffGame() {
         </div>
 
         {loadingRound?(
-          <div style={{textAlign:"center",padding:"40px 0",color:T.dim,fontSize:14}}>
-            <div style={{animation:"g-pulse 1s infinite",marginBottom:8,fontSize:22}}>🤖</div>
-            AXIOM is preparing your deception...
+          <div style={{padding:"6px 0 0"}}>
+            <div style={{textAlign:"center",marginBottom:14}}>
+              <div style={{fontFamily:"Georgia,serif",fontSize:"clamp(16px,4.2vw,20px)",fontWeight:700,color:"#fff",marginBottom:4,letterSpacing:-.3}}>AXIOM is shuffling…</div>
+              <div style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,letterSpacing:".5px"}}>Preparing your next deception</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {[0,1,2,3].map(i=>(
+                <div key={i} style={{
+                  display:"flex",alignItems:"flex-start",gap:10,
+                  background:T.card,border:`1.5px solid ${T.gb}`,borderRadius:16,
+                  padding:"clamp(11px,3vw,14px)",minHeight:52,
+                  animation:`g-cardIn .3s ${i*.06}s both`,
+                }}>
+                  <div style={{
+                    width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",
+                    flexShrink:0,border:`2px solid ${T.gb}`,marginTop:2,
+                    background:"linear-gradient(90deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.04) 100%)",
+                    backgroundSize:"200% 100%",animation:"skeleton-shimmer 1.6s linear infinite",
+                  }}/>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:6,paddingTop:4}}>
+                    <div style={{
+                      height:10,borderRadius:4,width:"92%",
+                      background:"linear-gradient(90deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.12) 50%,rgba(255,255,255,.04) 100%)",
+                      backgroundSize:"200% 100%",animation:`skeleton-shimmer 1.6s linear infinite ${i*.12}s`,
+                    }}/>
+                    <div style={{
+                      height:10,borderRadius:4,width:`${65+((i*13)%25)}%`,
+                      background:"linear-gradient(90deg,rgba(255,255,255,.04) 0%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.04) 100%)",
+                      backgroundSize:"200% 100%",animation:`skeleton-shimmer 1.6s linear infinite ${(i*.12)+.2}s`,
+                    }}/>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         ):fetchError?(
           <div style={{textAlign:"center",padding:"40px 20px"}}>
@@ -3185,7 +3240,7 @@ export default function BluffGame() {
               if(revealed&&isB){bg="rgba(244,63,94,.07)";border="rgba(244,63,94,.4)";anim="g-glow .8s";}
               if(revealed&&isS&&correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";anim="g-correctGlow .8s";}
               return (
-                <button key={i} onClick={()=>handleCardSelect(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed?"default":"pointer",transition:"all .22s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,animation:`g-cardIn .3s ${i*.055}s both, ${anim}`}}>
+                <button key={i} onClick={()=>handleCardSelect(i)} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed?"default":"pointer",transition:"all .22s ease, transform .25s ease, box-shadow .25s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,boxShadow:revealed&&isB?"0 6px 22px rgba(244,63,94,.22), inset 0 1px 0 rgba(255,255,255,.04)":revealed&&isS&&correct?"0 6px 22px rgba(45,212,160,.22), inset 0 1px 0 rgba(255,255,255,.04)":"0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)",animation:`g-cardIn .3s ${i*.055}s both${revealed&&isB?`, card-kick .5s ${.05+i*.04}s ease-out both`:""}${anim?`, ${anim}`:""}`}}>
                   <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
                     {revealed&&isB?"!":String.fromCharCode(65+i)}
                   </div>
@@ -3702,5 +3757,39 @@ function GameStyles(){
     @keyframes lobby-tick{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
     @keyframes home-shimmer{0%,100%{transform:translateX(-100%)}50%{transform:translateX(100%)}}
     @keyframes result-heroIn{0%{opacity:0;transform:translateY(40px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}
+    @keyframes skeleton-shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
+    @keyframes timer-glitch{
+      0%{transform:translate(0,0);filter:brightness(1)}
+      15%{transform:translate(-2px,1px) scale(1.06);filter:brightness(1.35)}
+      30%{transform:translate(2px,-1px) scale(1.02);filter:brightness(1.2)}
+      55%{transform:translate(-1px,0) scale(1.04);filter:brightness(1.25)}
+      100%{transform:translate(0,0) scale(1);filter:brightness(1)}
+    }
+    @keyframes vignette-pulse{
+      0%,100%{box-shadow:inset 0 0 80px 10px rgba(244,63,94,.32), inset 0 0 160px 30px rgba(244,63,94,.18)}
+      50%{box-shadow:inset 0 0 120px 20px rgba(244,63,94,.5), inset 0 0 220px 60px rgba(244,63,94,.28)}
+    }
+    @keyframes ambient-breath{
+      0%,100%{opacity:.35}
+      50%{opacity:.7}
+    }
+    @keyframes category-entrance{
+      0%{opacity:0;letter-spacing:14px;transform:translateY(-2px)}
+      60%{opacity:1;letter-spacing:5px}
+      100%{opacity:1;letter-spacing:3px;transform:translateY(0)}
+    }
+    @keyframes card-kick{
+      0%{transform:translateX(0)}
+      30%{transform:translateX(-6px) rotate(-0.5deg)}
+      60%{transform:translateX(4px) rotate(0.3deg)}
+      100%{transform:translateX(0)}
+    }
+    @media (prefers-reduced-motion: reduce){
+      *,*::before,*::after{
+        animation-duration:.001ms!important;
+        animation-iteration-count:1!important;
+        transition-duration:.001ms!important;
+      }
+    }
   `}</style>;
 }
