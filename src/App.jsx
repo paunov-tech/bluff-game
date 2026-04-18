@@ -2463,15 +2463,12 @@ export default function BluffGame() {
 
   // ── DAILY CHALLENGE ─────────────────────────────────────────
   async function loadDailyChallenge() {
-    console.log("[daily] loading...");
     setLoadingDaily(true);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       const r = await fetch(`/api/daily-challenge?userId=${encodeURIComponent(userIdRef.current)}`, { signal: controller.signal });
-      console.log("[daily] response status:", r.status);
       const data = await r.json();
-      console.log("[daily] data:", data);
       setDailyData(data);
       setDailyAlreadyPlayed(!!data.alreadyPlayed);
       if (data.myRank) setDailyRank(data.myRank);
@@ -2729,7 +2726,6 @@ export default function BluffGame() {
         real: s.real===true||s.real==="true",
       }));
       const lies = normalized.filter(s=>!s.real);
-      console.log(`[fetchRound] idx=${idx} cat=${cat} diff=${diff} lang=${lang} lies=${lies.length}`);
       if(lies.length!==1) throw new Error("Bad lie count");
       const shuffled = shuffle(normalized);
       setStmts(shuffled);
@@ -2981,7 +2977,6 @@ export default function BluffGame() {
       const existingUrl = existing.url || "";
       if (existingUrl.includes(`/parties/main/${roomId}`) &&
           (existing.readyState === 0 || existing.readyState === 1)) {
-        console.log(`[duel] already connecting/connected to ${roomId}, skipping duplicate`);
         return;
       }
       try { existing.close(); } catch {}
@@ -2990,7 +2985,6 @@ export default function BluffGame() {
 
     setDuelConnectionState("connecting");
     setDuelRetryAttempt(attempt);
-    console.log(`[duel] connect attempt ${attempt}/${MAX_ATTEMPTS} to room ${roomId}`);
 
     const ws = new PartySocket({
       host: PARTYKIT_HOST,
@@ -3033,7 +3027,6 @@ export default function BluffGame() {
       setDuelConnectionState("connected");
       setDuelRetryAttempt(0);
       setMyDuelId(ws.id);
-      console.log(`[duel] connected on attempt ${attempt}`);
     });
 
     ws.addEventListener("error", (e) => {
@@ -3469,7 +3462,6 @@ export default function BluffGame() {
     window.history.replaceState({}, "", window.location.pathname);
 
     const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
-    console.log(`[shop] Verifying ${skinPurchased} session=${sessionId} user=${currentUserId}`);
 
     fetch("/api/shop", {
       method: "POST",
@@ -3478,7 +3470,6 @@ export default function BluffGame() {
     })
     .then(r => r.json())
     .then(data => {
-      console.log("[shop] Verify result:", data);
       if (data.success) {
         const toUnlock = data.skinsUnlocked || [skinPurchased];
         setOwnedSkins(prev => {
@@ -5517,7 +5508,6 @@ export default function BluffGame() {
                         <button
                           onClick={() => {
                             const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
-                            console.log(`[shop] Checkout ${skin.id} user=${currentUserId}`);
                             fetch("/api/shop", {
                               method: "POST",
                               headers: { "Content-Type": "application/json" },
