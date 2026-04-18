@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { PartySocket } from "partysocket";
 import { SCHEMA, QUESTIONS_PER_WAVE } from "./config/schema";
 import { getFallback } from "./config/fallbacks";
+import { t as translate } from "./i18n/index.js";
 
 // ── Haptic feedback ──────────────────────
 function useHaptic() {
@@ -51,14 +52,14 @@ function safeLSSet(key, value) {
 const BETA_MODE = true;
 
 const LANGUAGES = [
-  { code: "en", flag: "🇬🇧", label: "EN" },
-  { code: "de", flag: "🇩🇪", label: "DE" },
-  { code: "sr", flag: "🇷🇸", label: "SR" },
-  { code: "hr", flag: "🇭🇷", label: "HR" },
-  { code: "sl", flag: "🇸🇮", label: "SL" },
-  { code: "bs", flag: "🇧🇦", label: "BS" },
-  { code: "fr", flag: "🇫🇷", label: "FR" },
-  { code: "es", flag: "🇪🇸", label: "ES" },
+  { code: "en", flag: "🇬🇧", label: "EN", ready: true },
+  { code: "sr", flag: "🇷🇸", label: "SR", ready: true },
+  { code: "hr", flag: "🇭🇷", label: "HR", ready: true },
+  { code: "de", flag: "🇩🇪", label: "DE", ready: false },
+  { code: "sl", flag: "🇸🇮", label: "SL", ready: false },
+  { code: "bs", flag: "🇧🇦", label: "BS", ready: false },
+  { code: "fr", flag: "🇫🇷", label: "FR", ready: false },
+  { code: "es", flag: "🇪🇸", label: "ES", ready: false },
 ];
 
 // 12 rounds total (matching ROUND_DIFFICULTY length).
@@ -336,16 +337,30 @@ function LangPicker({ lang, onChange }) {
   return (
     <div style={{display:"flex",gap:6,justifyContent:"center",marginBottom:16,flexWrap:"wrap"}}>
       {LANGUAGES.map(l => (
-        <button key={l.code} onClick={()=>onChange(l.code)} style={{
-          display:"flex",alignItems:"center",gap:5,
-          padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:600,
-          fontFamily:"inherit",cursor:"pointer",transition:"all .2s",
-          background: lang===l.code ? "rgba(232,197,71,.12)" : "rgba(255,255,255,.03)",
-          border: lang===l.code ? "1px solid rgba(232,197,71,.45)" : "1px solid rgba(255,255,255,.07)",
-          color: lang===l.code ? "#e8c547" : "#5a5a68",
-        }}>
+        <button
+          key={l.code}
+          disabled={!l.ready}
+          onClick={() => l.ready && onChange(l.code)}
+          title={l.ready ? l.label : `${l.label} — coming soon`}
+          style={{
+            position:"relative",
+            display:"flex",alignItems:"center",gap:5,
+            padding:"6px 12px",borderRadius:20,fontSize:12,fontWeight:600,
+            fontFamily:"inherit",cursor:l.ready?"pointer":"not-allowed",transition:"all .2s",
+            background: lang===l.code ? "rgba(232,197,71,.12)" : "rgba(255,255,255,.03)",
+            border: lang===l.code ? "1px solid rgba(232,197,71,.45)" : "1px solid rgba(255,255,255,.07)",
+            color: !l.ready ? "rgba(255,255,255,.25)" : (lang===l.code ? "#e8c547" : "#5a5a68"),
+            opacity: l.ready ? 1 : .55,
+          }}
+        >
           <span style={{fontSize:16}}>{l.flag}</span>
           <span>{l.label}</span>
+          {!l.ready && (
+            <span style={{
+              position:"absolute",top:-6,right:-6,fontSize:8,letterSpacing:"0.5px",
+              background:"#e8c547",color:"#1a0f00",borderRadius:4,padding:"1px 4px",fontWeight:700,
+            }}>SOON</span>
+          )}
         </button>
       ))}
     </div>
@@ -1023,7 +1038,8 @@ const FIELD_COLORS = [
 // ═══════════════════════════════════════════════════════════════
 // WHEEL OF FORTUNE — Double-or-Nothing phase resolver
 // ═══════════════════════════════════════════════════════════════
-function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut, onSpinResult }) {
+function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut, onSpinResult, lang = "en" }) {
+  const t = (key, params) => translate(key, lang, params);
   const [spinning, setSpinning] = useState(false);
   const [resultZone, setResultZone] = useState(null);
   const [finalAngle, setFinalAngle] = useState(0);
@@ -1261,10 +1277,10 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
       {!spinning && !showOutcome && (
         <>
           <div style={{fontSize:10,letterSpacing:6,color:"rgba(232,197,71,.6)",textTransform:"uppercase",fontWeight:700,marginBottom:6}}>
-            Phase {phaseNum} complete
+            {t("wheel.phase_complete", { n: phaseNum })}
           </div>
           <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,color:"#e8c547",marginBottom:32,textAlign:"center",textShadow:"0 0 30px rgba(232,197,71,.4)"}}>
-            {mandatory ? "Grand Bluff · The Spin" : "Cash or Spin?"}
+            {mandatory ? t("wheel.grand_bluff") : t("wheel.cash_or_spin")}
           </div>
         </>
       )}
@@ -1279,7 +1295,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
 
       {!showOutcome && (
         <div style={{fontSize:11,letterSpacing:3,color:"rgba(255,255,255,.4)",textTransform:"uppercase",marginBottom:20}}>
-          Phase stake: <span style={{color:"#e8c547",fontWeight:700,fontSize:18,fontFamily:"Georgia,serif"}}>
+          {t("wheel.phase_stake")} <span style={{color:"#e8c547",fontWeight:700,fontSize:18,fontFamily:"Georgia,serif"}}>
             {phaseScore.toLocaleString('en-US')}
           </span>
         </div>
@@ -1415,9 +1431,9 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
               background:"rgba(255,255,255,.03)",color:"#e8e6e1",
               border:"1.5px solid rgba(255,255,255,.15)",borderRadius:14,cursor:"pointer",
             }}>
-              🪙 Cash Out
+              {t("wheel.cash_out")}
               <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:1,marginTop:4}}>
-                Keep {phaseScore.toLocaleString('en-US')}
+                {t("wheel.keep_n", { n: phaseScore.toLocaleString('en-US') })}
               </div>
             </button>
           )}
@@ -1435,7 +1451,7 @@ function WheelOfFortune({ phaseNum, phaseScore, totalScore, mandatory, onCashOut
               animation:"stake-shimmer 2s infinite",
             }}/>
             <div style={{position:"relative"}}>
-              🎰 {mandatory ? "Spin the Wheel" : "Spin"}
+              {mandatory ? t("wheel.spin_the_wheel") : `🎰 ${t("wheel.spin")}`}
               <div style={{fontSize:10,opacity:.7,letterSpacing:1,marginTop:4}}>×2 · ×3 · or bust</div>
             </div>
           </button>
@@ -1533,19 +1549,20 @@ const AudioTension = (() => {
 // ═══════════════════════════════════════════════════════════════
 // PAYWALL SCREEN
 // ═══════════════════════════════════════════════════════════════
-function PaywallScreen({ reason, onClose, slotsRemaining }) {
+function PaywallScreen({ reason, onClose, slotsRemaining, lang = "en" }) {
   const [loading, setLoading] = useState(null);
+  const t = (key, params) => translate(key, lang, params);
 
   const headline = reason === "blitz"
-    ? "BLITZ mode is Pro"
+    ? t("paywall.headline_blitz")
     : reason === "wheel"
-    ? "Wheel of Fortune is Pro"
-    : "Daily limit reached";
+    ? t("paywall.headline_wheel")
+    : t("paywall.headline_daily");
   const subline = reason === "blitz"
-    ? "Unlock 20-round sprint runs with bonus multipliers."
+    ? t("paywall.sub_blitz")
     : reason === "wheel"
-    ? "Unlock the Wheel of Fortune — up to 3x phase multipliers."
-    : "You've used your 3 free games today. Unlock unlimited play.";
+    ? t("paywall.sub_wheel")
+    : t("paywall.sub_daily");
 
   async function checkout(plan) {
     setLoading(plan);
@@ -1563,10 +1580,10 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
         return;
       }
       setLoading(null);
-      alert(data?.error || "Checkout failed. Please try again.");
+      alert(data?.error || t("paywall.checkout_failed"));
     } catch {
       setLoading(null);
-      alert("Checkout failed. Please check your connection.");
+      alert(t("paywall.checkout_failed_network"));
     }
   }
 
@@ -1589,7 +1606,7 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
 
       <div style={{textAlign:"center",marginBottom:24}}>
         <div style={{fontSize:11,letterSpacing:"2px",color:"rgba(232,197,71,.7)",marginBottom:8,textTransform:"uppercase",fontWeight:700}}>
-          BLUFF™ Pro
+          {t("paywall.brand")}
         </div>
         <div style={{
           fontSize:"clamp(22px,6vw,30px)",fontWeight:900,fontFamily:"Georgia,serif",
@@ -1610,11 +1627,11 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
           maxWidth:380,width:"100%",margin:"0 auto 20px",
         }}>
           <div style={{fontSize:11,letterSpacing:"1.5px",color:"#e8c547",fontWeight:700,marginBottom:4,textTransform:"uppercase"}}>
-            🏆 Early Adopter Window
+            {t("paywall.early_adopter_title")}
           </div>
-          <div style={{fontSize:13,color:"rgba(255,255,255,.85)"}}>
-            Only <b style={{color:"#e8c547"}}>{slotsRemaining}</b> lifetime free slots left. First 100 users play Pro forever.
-          </div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.85)"}}
+            dangerouslySetInnerHTML={{__html: t("paywall.early_adopter_body", { n: `<b style="color:#e8c547">${slotsRemaining}</b>` })}}
+          />
         </div>
       )}
 
@@ -1631,15 +1648,15 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
             position:"absolute",top:-8,right:12,background:"#04060f",color:"#e8c547",
             fontSize:10,fontWeight:700,padding:"3px 10px",borderRadius:99,
             letterSpacing:"1px",border:"1px solid rgba(232,197,71,.5)",
-          }}>BEST VALUE · SAVE 42%</div>
+          }}>{t("paywall.best_value")}</div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{fontWeight:900,fontSize:15,letterSpacing:"1.5px",textTransform:"uppercase"}}>Yearly</div>
-              <div style={{fontSize:12,opacity:.75,marginTop:2}}>Unlimited play · all modes</div>
+              <div style={{fontWeight:900,fontSize:15,letterSpacing:"1.5px",textTransform:"uppercase"}}>{t("paywall.yearly")}</div>
+              <div style={{fontSize:12,opacity:.75,marginTop:2}}>{t("paywall.yearly_sub")}</div>
             </div>
             <div style={{textAlign:"right"}}>
               <div style={{fontWeight:900,fontSize:22,fontFamily:"Georgia,serif"}}>€34.99</div>
-              <div style={{fontSize:10,opacity:.7}}>€2.92/mo</div>
+              <div style={{fontSize:10,opacity:.7}}>{t("paywall.yearly_per_mo")}</div>
             </div>
           </div>
         </button>
@@ -1653,8 +1670,8 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
         }}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase"}}>Monthly</div>
-              <div style={{fontSize:11,opacity:.6,marginTop:2}}>Cancel anytime</div>
+              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase"}}>{t("paywall.monthly")}</div>
+              <div style={{fontSize:11,opacity:.6,marginTop:2}}>{t("paywall.monthly_sub")}</div>
             </div>
             <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",color:"#e8c547"}}>€4.99</div>
           </div>
@@ -1669,8 +1686,8 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
         }}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <div>
-              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase",color:"#f43f5e"}}>Lifetime</div>
-              <div style={{fontSize:11,opacity:.6,marginTop:2}}>One-time · forever</div>
+              <div style={{fontWeight:700,fontSize:14,letterSpacing:"1.5px",textTransform:"uppercase",color:"#f43f5e"}}>{t("paywall.lifetime")}</div>
+              <div style={{fontSize:11,opacity:.6,marginTop:2}}>{t("paywall.lifetime_sub")}</div>
             </div>
             <div style={{fontWeight:700,fontSize:18,fontFamily:"Georgia,serif",color:"#f43f5e"}}>€69.99</div>
           </div>
@@ -1678,8 +1695,8 @@ function PaywallScreen({ reason, onClose, slotsRemaining }) {
       </div>
 
       <div style={{marginTop:"auto",paddingTop:20,textAlign:"center",fontSize:11,color:"rgba(255,255,255,.4)",maxWidth:380,width:"100%",margin:"auto auto 0"}}>
-        <div style={{marginBottom:6}}>Duels & Daily Challenge stay free forever.</div>
-        <div>Secured by Stripe · Cancel anytime</div>
+        <div style={{marginBottom:6}}>{t("paywall.footer_free_modes")}</div>
+        <div>{t("paywall.footer_secured")}</div>
       </div>
     </div>
   );
@@ -1693,7 +1710,18 @@ export default function BluffGame() {
   const tg = useTelegram();
   const [showIntro, setShowIntro] = useState(true);
   const [screen, setScreen] = useState("home");
-  const [lang, setLang] = useState(()=>safeLSGet("bluff_lang","en"));
+  const [lang, setLang] = useState(() => {
+    const saved = safeLSGet("bluff_lang", null);
+    if (saved) return saved;
+    try {
+      const browser = (navigator.language || "en").slice(0, 2).toLowerCase();
+      if (browser === "sr") return "sr";
+      if (browser === "hr") return "hr";
+      if (browser === "bs" || browser === "sl" || browser === "me") return "sr";
+    } catch {}
+    return "en";
+  });
+  const t = useCallback((key, params) => translate(key, lang, params), [lang]);
   const [stmts, setStmts] = useState([]);
   const [roundIdx, setRoundIdx] = useState(0);
   const [category, setCategory] = useState("history");
@@ -2770,13 +2798,13 @@ export default function BluffGame() {
           }).catch(() => {});
         } else {
           navigator.clipboard?.writeText(url)
-            .then(() => alert("Duel link copied! 📋"))
+            .then(() => alert(t("result.duel_link_copied")))
             .catch(() => alert(url));
         }
       }
     } catch (e) {
       console.error("[duel create]", e);
-      alert("Could not create duel. Please try again.");
+      alert(t("result.could_not_create_duel"));
     } finally {
       setDuelCreating(false);
     }
@@ -2937,12 +2965,12 @@ export default function BluffGame() {
         }, 300);
       } else {
         console.warn("[shop] Not verified:", data);
-        alert("⚠️ Could not verify purchase. Contact support if charged.");
+        alert(`⚠️ ${t("common.checkout_verify_failed")}`);
       }
     })
     .catch(err => {
       console.error("[shop] Verify fetch error:", err);
-      alert("⚠️ Network error verifying purchase. Refresh the page.");
+      alert(`⚠️ ${t("common.checkout_verify_network")}`);
     });
   }, []);
 
@@ -3242,10 +3270,10 @@ export default function BluffGame() {
       <div style={{width:"100%",maxWidth:420}}>
         <div style={{textAlign:"center",marginBottom:28}}>
           <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
-            DUEL MODE
+            {t("duel_mode.title")}
           </div>
           <div style={{fontFamily:"Georgia,serif",fontSize:26,fontWeight:900,color:"#e8c547"}}>
-            1v1 vs a friend
+            {t("duel_mode.subtitle")}
           </div>
         </div>
 
@@ -3253,10 +3281,10 @@ export default function BluffGame() {
         <div style={{marginBottom:20,padding:"20px",background:"rgba(232,197,71,.05)",
           border:"1px solid rgba(232,197,71,.2)",borderRadius:14}}>
           <div style={{fontSize:13,color:"#e8c547",fontWeight:700,marginBottom:10,letterSpacing:"2px"}}>
-            CREATE
+            {t("duel_mode.create")}
           </div>
           <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:14,lineHeight:1.5}}>
-            Start a room. Share the link with a friend.
+            {t("duel_mode.create_sub")}
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={() => openDuel("regular")}
@@ -3264,14 +3292,14 @@ export default function BluffGame() {
                 background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
                 border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
                 letterSpacing:"1px",textTransform:"uppercase"}}>
-              ⚔️ Regular
+              {t("duel_mode.create_regular")}
             </button>
             <button onClick={() => openDuel("blitz")}
               style={{flex:1,padding:"12px",fontSize:12,fontWeight:700,
                 background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",
                 border:"none",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
                 letterSpacing:"1px",textTransform:"uppercase"}}>
-              ⚡ Blitz
+              {t("duel_mode.create_blitz")}
             </button>
           </div>
         </div>
@@ -3280,13 +3308,13 @@ export default function BluffGame() {
         <div style={{padding:"20px",background:"rgba(255,255,255,.03)",
           border:"1px solid rgba(255,255,255,.1)",borderRadius:14}}>
           <div style={{fontSize:13,color:"rgba(255,255,255,.9)",fontWeight:700,marginBottom:10,letterSpacing:"2px"}}>
-            JOIN
+            {t("duel_mode.join")}
           </div>
           <div style={{fontSize:12,color:"rgba(255,255,255,.5)",marginBottom:14,lineHeight:1.5}}>
-            Got a code? Enter it here.
+            {t("duel_mode.join_sub")}
           </div>
           <input
-            placeholder="CODE"
+            placeholder={t("duel_mode.code")}
             maxLength={6}
             autoCapitalize="characters"
             autoFocus
@@ -3313,7 +3341,7 @@ export default function BluffGame() {
                 background:"rgba(232,197,71,.12)",color:"#e8c547",
                 border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
                 fontFamily:"inherit",letterSpacing:"1px",textTransform:"uppercase"}}>
-              Join Regular
+              {t("duel_mode.join_regular")}
             </button>
             <button onClick={() => {
               const el = document.getElementById("home-join-input");
@@ -3324,7 +3352,7 @@ export default function BluffGame() {
                 background:"rgba(232,197,71,.12)",color:"#e8c547",
                 border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
                 fontFamily:"inherit",letterSpacing:"1px",textTransform:"uppercase"}}>
-              Join Blitz
+              {t("duel_mode.join_blitz")}
             </button>
           </div>
         </div>
@@ -3334,7 +3362,7 @@ export default function BluffGame() {
             background:"transparent",color:"rgba(255,255,255,.4)",
             border:"1px solid rgba(255,255,255,.1)",borderRadius:10,cursor:"pointer",
             fontFamily:"inherit"}}>
-          ← Back
+          {t("duel_mode.back")}
         </button>
       </div>
       <GameStyles/>
@@ -3350,13 +3378,13 @@ export default function BluffGame() {
         {duelConnectionState === "connecting" && (
           <div style={{textAlign:"center",padding:"48px 20px",color:"rgba(255,255,255,.5)"}}>
             <div style={{fontSize:32,marginBottom:12,animation:"g-pulse 1s infinite"}}>🛰️</div>
-            <div style={{fontSize:15,fontWeight:600}}>Connecting to duel server...</div>
+            <div style={{fontSize:15,fontWeight:600}}>{t("duel_lobby.connecting")}</div>
             {duelRetryAttempt > 1 ? (
               <div style={{fontSize:11,marginTop:6,color:"#fb923c"}}>
-                Attempt {duelRetryAttempt} of 3
+                {t("duel_lobby.attempt_n", { n: duelRetryAttempt })}
               </div>
             ) : (
-              <div style={{fontSize:11,marginTop:8,opacity:.6}}>This may take a few seconds</div>
+              <div style={{fontSize:11,marginTop:8,opacity:.6}}>{t("duel_lobby.may_take_seconds")}</div>
             )}
           </div>
         )}
@@ -3364,10 +3392,9 @@ export default function BluffGame() {
         {duelConnectionState === "failed" && (
           <div style={{textAlign:"center",padding:"24px"}}>
             <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
-            <div style={{color:"#f43f5e",fontWeight:600,marginBottom:12}}>Connection failed</div>
+            <div style={{color:"#f43f5e",fontWeight:600,marginBottom:12}}>{t("duel_lobby.connection_failed")}</div>
             <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:20,lineHeight:1.5}}>
-              Couldn't reach duel server after 3 attempts.
-              The server may be starting up — wait 10 seconds and try again.
+              {t("duel_lobby.server_unreachable")}
             </div>
             <button
               onClick={()=>{
@@ -3379,7 +3406,7 @@ export default function BluffGame() {
               style={{padding:"12px 24px",background:"rgba(232,197,71,.1)",color:"#e8c547",
                 border:"1px solid rgba(232,197,71,.3)",borderRadius:10,cursor:"pointer",
                 fontFamily:"inherit",fontSize:14,fontWeight:600}}>
-              Back to home
+              {t("duel_lobby.back_home")}
             </button>
           </div>
         )}
@@ -3390,10 +3417,10 @@ export default function BluffGame() {
             <div style={{fontSize:12,letterSpacing:"5px",color:"#e8c547",
                          textTransform:"uppercase",marginBottom:12,fontWeight:700,
                          textShadow:"0 0 20px rgba(232,197,71,0.3)"}}>
-              {duelMode==="blitz"?"⚡ Blitz Duel":"⚔️ Regular Duel"}
+              {duelMode==="blitz"?t("duel_lobby.blitz_duel"):t("duel_lobby.regular_duel")}
             </div>
             <div style={{fontSize:16,color:"#e8e6e1",opacity:1,fontWeight:500,letterSpacing:0.3}}>
-              Waiting for opponent
+              {t("duel_lobby.waiting_for_opponent")}
               <span style={{
                 display:"inline-block",animation:"lobby-dotwave 1.4s ease-in-out infinite"
               }}>…</span>
@@ -3423,7 +3450,7 @@ export default function BluffGame() {
               background:"linear-gradient(90deg,transparent,rgba(232,197,71,0.8),transparent)"}}/>
             <div style={{fontSize:11,color:"#e8c547",letterSpacing:3,
                          textTransform:"uppercase",fontWeight:600,marginBottom:10}}>
-              Room Code
+              {t("duel_lobby.room_code")}
             </div>
             <div style={{fontSize:42,fontWeight:900,letterSpacing:8,
                          fontFamily:"Georgia,serif",color:"#e8c547",
@@ -3449,7 +3476,7 @@ export default function BluffGame() {
                 color:"#08080f",border:"none",borderRadius:12,cursor:"pointer",
                 fontFamily:"inherit"}}
             >
-              📤 Share Link
+              {t("duel_lobby.share_link")}
             </button>
             <button onClick={() => {
               navigator.clipboard?.writeText(duelRoomId || "").catch(() => {});
@@ -3460,7 +3487,7 @@ export default function BluffGame() {
                 border:"1.5px solid rgba(232,197,71,0.35)",borderRadius:12,
                 cursor:"pointer",fontFamily:"inherit"}}
             >
-              📋 Copy Code
+              {t("duel_lobby.copy_code")}
             </button>
           </div>
 
@@ -3478,7 +3505,7 @@ export default function BluffGame() {
                 background:"currentColor",
                 animation:"lobby-tick 1s ease-in-out infinite"
               }}/>
-              Waiting {Math.floor(lobbyElapsed / 60)}:{String(lobbyElapsed % 60).padStart(2,"0")}
+              {t("duel_lobby.waiting")} {Math.floor(lobbyElapsed / 60)}:{String(lobbyElapsed % 60).padStart(2,"0")}
             </div>
 
             {lobbyElapsed >= 120 && (
@@ -3488,7 +3515,7 @@ export default function BluffGame() {
                 animation:"lobby-timeout-fadeIn 0.5s ease"
               }}>
                 <div style={{fontSize:13,color:"#e8e6e1",marginBottom:10,opacity:0.8}}>
-                  Your friend isn't coming. Cancel and try later?
+                  {t("duel_lobby.friend_not_coming")}
                 </div>
                 <button onClick={() => {
                   if (duelSocketRef.current) duelSocketRef.current.close();
@@ -3503,7 +3530,7 @@ export default function BluffGame() {
                     cursor:"pointer",letterSpacing:1,textTransform:"uppercase",
                     fontFamily:"inherit"}}
                 >
-                  Cancel Duel
+                  {t("duel_lobby.cancel_duel")}
                 </button>
               </div>
             )}
@@ -3511,13 +3538,13 @@ export default function BluffGame() {
         </>) : (<>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:11,letterSpacing:"4px",color:"rgba(232,197,71,.5)",marginBottom:8}}>
-            {duelMode==="blitz"?"⚡ DUEL BLITZ":"⚔️ DUEL REGULAR"}
+            {duelMode==="blitz"?t("duel_lobby.blitz_duel"):t("duel_lobby.regular_duel")}
           </div>
           <div style={{fontFamily:"Georgia,serif",fontSize:36,fontWeight:900,color:"#e8c547"}}>
             {duelRoomId}
           </div>
           <div style={{fontSize:12,color:"rgba(255,255,255,.3)",marginTop:6,letterSpacing:"2px"}}>
-            ROOM CODE
+            {t("duel_lobby.room_code").toUpperCase()}
           </div>
         </div>
 
@@ -3537,10 +3564,10 @@ export default function BluffGame() {
             <div>
               <div style={{fontWeight:700,fontSize:15}}>{p.name}</div>
               <div style={{fontSize:11,color:"rgba(255,255,255,.3)"}}>
-                {p.id === myDuelId ? "YOU" : "OPPONENT"}
+                {p.id === myDuelId ? t("duel_lobby.you") : t("duel_lobby.opponent")}
               </div>
             </div>
-            <div style={{marginLeft:"auto",fontSize:11,color:"#2dd4a0"}}>✓ READY</div>
+            <div style={{marginLeft:"auto",fontSize:11,color:"#2dd4a0"}}>{t("duel_lobby.ready")}</div>
           </div>
         ))}
         </>)}
@@ -3562,7 +3589,7 @@ export default function BluffGame() {
             background:"transparent",color:"rgba(255,255,255,.2)",
             border:"1px solid rgba(255,255,255,.07)",borderRadius:10,
             cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
+          {t("duel_lobby.cancel")}
         </button>
         </>)}
       </div>
@@ -3613,14 +3640,14 @@ export default function BluffGame() {
           <div style={{textAlign:"center",padding:"10px",marginBottom:12,
             background:"rgba(232,197,71,.15)",border:"1px solid rgba(232,197,71,.4)",
             borderRadius:10,fontSize:13,color:"#e8c547",fontWeight:700}}>
-            ⚡ OPPONENT'S FLAG FELL — Answer for 2× points!
+            {t("duel_play.opponent_flag_fell")}
           </div>
         )}
 
         <div style={{textAlign:"center",marginBottom:16}}>
           <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(17px,4.5vw,22px)",fontWeight:800,
             margin:"0 0 4px",color:duelPhase==="round_result"?"rgba(255,255,255,.4)":"#fff"}}>
-            {duelPhase==="round_result"?"Round over":"Which one is the BLUFF?"}
+            {duelPhase==="round_result"?t("duel_play.round_over"):t("duel_play.which_is_bluff")}
           </h2>
         </div>
 
@@ -3656,7 +3683,7 @@ export default function BluffGame() {
                   {revealed && (
                     <div style={{marginTop:5,fontSize:10,fontWeight:700,letterSpacing:"1px",
                       color:isBluff?"#f43f5e":i===myAnswer?.sel?"rgba(244,63,94,.6)":"rgba(45,212,160,.5)"}}>
-                      {isBluff?"🎭 BLUFF":i===myAnswer?.sel?"✗ Real":"✓ Real"}
+                      {isBluff?t("duel_play.bluff"):i===myAnswer?.sel?t("duel_play.real_wrong"):t("duel_play.real_right")}
                     </div>
                   )}
                 </div>
@@ -3672,13 +3699,13 @@ export default function BluffGame() {
 
         {duelAnswers[myDuelId] && duelPhase==="playing" && (
           <div style={{textAlign:"center",color:"rgba(255,255,255,.3)",fontSize:13}}>
-            Waiting for opponent...
+            {t("duel_play.waiting_for_opponent")}
           </div>
         )}
 
         {duelPhase==="abandoned" && (
           <div style={{textAlign:"center",padding:20,color:"#f43f5e",fontSize:14}}>
-            Opponent disconnected. Returning to home...
+            {t("duel_play.opponent_disconnected")}
           </div>
         )}
       </div>
@@ -3691,8 +3718,8 @@ export default function BluffGame() {
     const iWon = duelWinner === myDuelId;
     const myScore = duelScores[myDuelId] || 0;
     const duelGlyph = duelIsTie ? "🤝" : iWon ? "👑" : "💀";
-    const duelVerdict = duelIsTie ? "TIE" : iWon ? "VICTORY" : "DEFEATED";
-    const duelHeroText = duelIsTie ? "Equally matched" : iWon ? "You beat them" : "They beat you";
+    const duelVerdict = duelIsTie ? t("duel_result.tie") : iWon ? t("duel_result.victory") : t("duel_result.defeated");
+    const duelHeroText = duelIsTie ? t("duel_result.equally_matched") : iWon ? t("duel_result.you_beat_them") : t("duel_result.they_beat_you");
     const duelShareURL = duelRoomId ? `${window.location.origin}/duel/${duelRoomId}` : null;
     return (
     <div style={{
@@ -3742,7 +3769,7 @@ export default function BluffGame() {
             {myScore}
           </div>
           <div style={{fontSize:11,letterSpacing:4,color:"rgba(255,255,255,0.3)",textTransform:"uppercase"}}>
-            Your points
+            {t("duel_result.your_points")}
           </div>
         </div>
 
@@ -3756,7 +3783,7 @@ export default function BluffGame() {
               border: p.id===duelWinner?"1px solid rgba(232,197,71,.3)":"1px solid rgba(255,255,255,.07)",
               borderRadius:12,
             }}>
-              <div style={{fontWeight:700,fontSize:15}}>{p.id===myDuelId?"You":p.name}</div>
+              <div style={{fontWeight:700,fontSize:15}}>{p.id===myDuelId?t("duel_lobby.you"):p.name}</div>
               <div style={{fontFamily:"Georgia,serif",fontSize:28,fontWeight:900,
                 color:p.id===duelWinner?"#e8c547":"rgba(255,255,255,.5)"}}>
                 {duelScores[p.id]||0}
@@ -3793,7 +3820,7 @@ export default function BluffGame() {
           animation:"g-fadeUp 0.5s 0.4s both"
         }}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-          <span style={{position:"relative"}}>⚔️ Play again</span>
+          <span style={{position:"relative"}}>{t("result.play_again")}</span>
         </button>
 
         {/* SECONDARY */}
@@ -3810,18 +3837,18 @@ export default function BluffGame() {
                   url: duelShareURL,
                 }).catch(()=>{
                   navigator.clipboard?.writeText(duelShareURL);
-                  alert("Duel link copied!");
+                  alert(t("duel_lobby.link_copied"));
                 });
               } else {
                 navigator.clipboard?.writeText(duelShareURL);
-                alert("Duel link copied!");
+                alert(t("duel_lobby.link_copied"));
               }
             }}
             disabled={!duelShareURL}
             style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
               background:"rgba(34,211,238,0.08)",color:"#22d3ee",border:"1px solid rgba(34,211,238,0.3)",
               borderRadius:12,cursor:duelShareURL?"pointer":"not-allowed",opacity:duelShareURL?1:0.5,fontFamily:"inherit"}}>
-            ⚔️ Invite another
+            {t("duel_result.invite_another")}
           </button>
           <button
             onClick={()=>{
@@ -3835,7 +3862,7 @@ export default function BluffGame() {
               background:"linear-gradient(135deg,rgba(131,58,180,0.2),rgba(253,29,29,0.15),rgba(252,176,69,0.2))",
               color:"#fff",border:"1px solid rgba(255,255,255,0.15)",
               borderRadius:12,cursor:"pointer",fontFamily:"inherit"}}>
-            📸 Share result
+            {t("duel_result.share_result")}
           </button>
         </div>
 
@@ -3852,7 +3879,7 @@ export default function BluffGame() {
           }} style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.3)",
             fontSize:12,letterSpacing:2,textTransform:"uppercase",
             cursor:"pointer",fontFamily:"inherit",padding:"8px 16px"}}>
-            ← Home
+            {t("duel_result.home")}
           </button>
         </div>
       </div>
@@ -3881,6 +3908,7 @@ export default function BluffGame() {
       <PaywallScreen
         reason={paywallReason}
         slotsRemaining={earlyAdopterSlotsRemaining}
+        lang={lang}
         onClose={()=>setShowPaywall(false)}
       />
     );
@@ -3901,7 +3929,7 @@ export default function BluffGame() {
           <h1 style={{fontFamily:"Georgia,serif",fontSize:"clamp(44px,11vw,64px)",fontWeight:900,letterSpacing:-2,margin:"0 0 4px",lineHeight:1,background:"linear-gradient(135deg,#e8c547,#f0d878,rgba(255,255,255,.5),#e8c547)",backgroundSize:"200% auto",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",animation:"g-shimmer 4s linear infinite",filter:"drop-shadow(0 0 22px rgba(232,197,71,.18))"}}>
             BLUFF<sup style={{fontSize:"clamp(10px,2vw,12px)",WebkitTextFillColor:"rgba(232,197,71,.5)",position:"relative",top:"clamp(-18px,-4vw,-24px)",marginLeft:2,fontFamily:"system-ui",fontWeight:400}}>™</sup>
           </h1>
-          <p style={{fontSize:11,letterSpacing:"3px",color:T.dim,textTransform:"uppercase",margin:0,fontWeight:500}}>The AI Deception Game</p>
+          <p style={{fontSize:11,letterSpacing:"3px",color:T.dim,textTransform:"uppercase",margin:0,fontWeight:500}}>{t("home.tagline")}</p>
         </div>
 
         {/* 2. EVENT BANNERS — urgent items stay high */}
@@ -3911,7 +3939,7 @@ export default function BluffGame() {
             borderRadius:14,padding:"14px 16px",marginBottom:12,animation:"g-fadeUp .4s ease both",
           }}>
             <div style={{fontSize:10,letterSpacing:"3px",color:"#e8c547",fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
-              ⚔️ Challenge received
+              ⚔️ {t("home.challenge_received")}
             </div>
             <div style={{fontSize:"clamp(13px,3.5vw,15px)",color:"#e8e6e1",marginBottom:8}}>
               Your friend scored{" "}
@@ -3926,11 +3954,11 @@ export default function BluffGame() {
               <button onClick={()=>{setChallenge(null);tryStartSoloGame();}}
                 style={{flex:2,minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:"#04060f",borderRadius:10,fontFamily:"inherit",cursor:"pointer",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>Accept challenge</span>
+                <span style={{position:"relative"}}>{t("home.accept_challenge")}</span>
               </button>
               <button onClick={()=>setChallenge(null)}
                 style={{flex:1,minHeight:44,padding:"10px",fontSize:13,fontWeight:600,background:"transparent",color:"#5a5a68",border:"1px solid rgba(255,255,255,.07)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-                Dismiss
+                {t("home.dismiss")}
               </button>
             </div>
           </div>
@@ -4011,7 +4039,7 @@ export default function BluffGame() {
             color:isEarlyAdopter?"#e8c547":"#2dd4a0",textTransform:"uppercase",
             animation:"g-fadeUp .5s .18s both",
           }}>
-            {isEarlyAdopter ? "🏆 Early Adopter · Pro Forever" : "✓ BLUFF Pro"}
+            {isEarlyAdopter ? t("home.early_adopter_badge") : t("home.pro_badge")}
           </div>
         ) : (
           <div style={{
@@ -4024,12 +4052,12 @@ export default function BluffGame() {
             textTransform:"uppercase",fontWeight:600,
             animation:"g-fadeUp .5s .18s both",
           }}>
-            <span>{freeGamesRemaining>0 ? `${freeGamesRemaining}/3 free games today` : "Daily limit reached"}</span>
+            <span>{freeGamesRemaining>0 ? t("home.free_games_today", { n: freeGamesRemaining }) : t("home.daily_limit_reached")}</span>
             <button onClick={()=>{setPaywallReason(freeGamesRemaining>0?"daily_limit":"daily_limit");setShowPaywall(true);}} style={{
               background:"transparent",border:"none",color:"#e8c547",
               fontSize:11,letterSpacing:"1.5px",fontWeight:700,
               cursor:"pointer",fontFamily:"inherit",padding:0,textTransform:"uppercase",
-            }}>Go Pro →</button>
+            }}>{t("home.go_pro")}</button>
           </div>
         )}
 
@@ -4044,7 +4072,7 @@ export default function BluffGame() {
           onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
           onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
-          <span style={{position:"relative"}}>{total>0?"⚔️ Challenge AXIOM again":"⚔️ Challenge AXIOM"}</span>
+          <span style={{position:"relative"}}>{total>0?t("home.cta_challenge_again"):t("home.cta_challenge")}</span>
         </button>
 
         {/* 5. SECONDARY MODES — Blitz + Duel side-by-side */}
@@ -4055,7 +4083,7 @@ export default function BluffGame() {
             color:"#f43f5e",border:"1px solid rgba(244,63,94,.3)",
             borderRadius:12,cursor:"pointer",fontFamily:"inherit"
           }}>
-            ⚡ Blitz
+            {t("home.cta_blitz")}
           </button>
           <button onClick={()=>setDuelScreen("mode-select")} style={{
             minHeight:48,padding:12,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
@@ -4063,7 +4091,7 @@ export default function BluffGame() {
             border:"1px solid rgba(232,197,71,.3)",borderRadius:12,
             cursor:"pointer",fontFamily:"inherit"
           }}>
-            ⚔️ Duel
+            {t("home.cta_duel")}
           </button>
         </div>
 
@@ -4087,7 +4115,7 @@ export default function BluffGame() {
           }}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{fontSize:9,letterSpacing:"2px",color:"rgba(34,211,238,.6)",fontWeight:700}}>
-                AXIOM POWER
+                {t("home.axiom_power")}
               </div>
               <div style={{fontSize:11,fontWeight:700,
                 color:axiomPower<200?"#f43f5e":axiomPower<500?"#fb923c":"#22d3ee"}}>
@@ -4125,20 +4153,20 @@ export default function BluffGame() {
               audioQueueRef.current=[];
             }
           }} style={settingButtonStyle}>
-            {voiceEnabled?"🔊":"🔇"} Voice
+            {voiceEnabled?t("home.voice_on"):t("home.voice_off")}
           </button>
           <button onClick={()=>setShowShop(true)} style={settingButtonStyle}>
-            🎭 Skins
+            {t("home.skins")}
             {ownedSkins.length<=1 && <span style={newBadgeStyle}/>}
           </button>
           <button onClick={()=>setShowHowToPlay(true)} style={settingButtonStyle}>
-            ? Help
+            {t("home.help")}
           </button>
         </div>
 
         {tg.isInsideTelegram && (
           <div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"center",marginTop:10,fontSize:10,color:"rgba(41,182,246,.4)",letterSpacing:"1px"}}>
-            <span>✈️</span><span>Running inside Telegram</span>
+            <span>✈️</span><span>{t("home.running_in_telegram")}</span>
           </div>
         )}
 
@@ -4161,12 +4189,12 @@ export default function BluffGame() {
                 border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
                 fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
             <div style={{fontSize:11,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:16,textAlign:"center"}}>
-              How to play
+              {t("home.how_to_play")}
             </div>
-            {["🧠 AI generates 4 surprising statements","🎭 One is a masterfully crafted LIE","⏱️ Find the BLUFF before AXIOM wins","🔥 Build streaks — beat the machine"].map((t,i)=>(
+            {[t("home.how_to_1"),t("home.how_to_2"),t("home.how_to_3"),t("home.how_to_4")].map((line,i)=>(
               <div key={i} style={{display:"flex",gap:10,marginBottom:i<3?12:0,fontSize:14,lineHeight:1.5}}>
-                <span style={{fontSize:18,flexShrink:0}}>{t.slice(0,2)}</span>
-                <span style={{opacity:.85,color:"#e8e6e1"}}>{t.slice(3)}</span>
+                <span style={{fontSize:18,flexShrink:0}}>{line.slice(0,2)}</span>
+                <span style={{opacity:.85,color:"#e8e6e1"}}>{line.slice(3)}</span>
               </div>
             ))}
           </div>
@@ -4189,7 +4217,7 @@ export default function BluffGame() {
                 border:"1px solid rgba(255,255,255,.1)",color:"#e8e6e1",
                 fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
             <div style={{fontSize:11,color:T.gold,letterSpacing:"3px",textTransform:"uppercase",fontWeight:600,marginBottom:14,textAlign:"center"}}>
-              Language
+              {t("home.language")}
             </div>
             <LangPicker lang={lang} onChange={(l)=>{changeLang(l);setShowLangModal(false);}}/>
           </div>
@@ -4204,8 +4232,8 @@ export default function BluffGame() {
             <div style={{display:"flex",justifyContent:"space-between",
               alignItems:"center",marginBottom:20,paddingTop:"max(12px,env(safe-area-inset-top))"}}>
               <div>
-                <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:900,color:"#e8c547"}}>AXIOM Skins</div>
-                <div style={{fontSize:11,color:"#5a5a68",letterSpacing:"2px"}}>Choose your villain's voice</div>
+                <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:900,color:"#e8c547"}}>{t("home.axiom_skins")}</div>
+                <div style={{fontSize:11,color:"#5a5a68",letterSpacing:"2px"}}>{t("home.choose_villain")}</div>
               </div>
               <button onClick={()=>setShowShop(false)}
                 style={{width:36,height:36,borderRadius:"50%",background:"rgba(255,255,255,.06)",
@@ -4270,12 +4298,12 @@ export default function BluffGame() {
                                 window.location.href = data.url;
                               } else {
                                 console.error("[shop] No URL:", data);
-                                alert(`❌ ${data.error || "Shop unavailable. Try again."}`);
+                                alert(`❌ ${data.error || t("home.shop_unavailable")}`);
                               }
                             })
                             .catch(err => {
                               console.error("[shop] Checkout error:", err);
-                              alert("❌ Network error. Check connection and try again.");
+                              alert(`❌ ${t("home.network_error")}`);
                             });
                           }}
                           style={{padding:"8px 14px",fontSize:12,fontWeight:700,
@@ -4295,7 +4323,7 @@ export default function BluffGame() {
               style={{display:"block",textAlign:"center",marginTop:16,
                 fontSize:12,color:"rgba(244,63,94,.5)",textDecoration:"none",
                 letterSpacing:"2px"}}>
-              💀 Hall of Shame →
+              {t("home.hall_of_shame")}
             </a>
 
             <button
@@ -4319,14 +4347,14 @@ export default function BluffGame() {
                     alert("No purchases found for this account.");
                   }
                 } catch {
-                  alert("❌ Restore failed. Try again.");
+                  alert(`❌ ${t("common.restore_failed")}`);
                 }
               }}
               style={{display:"block",width:"100%",textAlign:"center",marginTop:10,
                 padding:"10px",fontSize:12,color:"rgba(255,255,255,.2)",
                 background:"transparent",border:"1px solid rgba(255,255,255,.06)",
                 borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-              Restore purchases
+              {t("home.restore_purchases")}
             </button>
           </div>
         </div>
@@ -4377,13 +4405,13 @@ export default function BluffGame() {
           }}>
             <div style={{fontSize:40,marginBottom:8}}>🎰</div>
             <div style={{fontSize:11,letterSpacing:"2px",color:"rgba(232,197,71,.7)",fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
-              Pro Feature
+              {t("wheel.teaser_pro_label")}
             </div>
             <div style={{fontSize:18,fontWeight:900,fontFamily:"Georgia,serif",color:"#e8c547",marginBottom:6,lineHeight:1.2}}>
-              Wheel of Fortune
+              {t("wheel.teaser_title")}
             </div>
             <div style={{fontSize:13,color:"rgba(232,230,225,.8)",lineHeight:1.5}}>
-              Up to 3x phase multiplier. Unlock with Pro.
+              {t("wheel.teaser_sub")}
             </div>
           </div>
         </div>
@@ -4393,6 +4421,7 @@ export default function BluffGame() {
           phaseNum={wheelPhaseNum}
           phaseScore={phaseScore}
           totalScore={score}
+          lang={lang}
           mandatory={wheelPhaseNum === 3}
           onCashOut={() => {
             setScore(s => s + phaseScore);
@@ -4474,7 +4503,7 @@ export default function BluffGame() {
         {loadingRound?(
           <div style={{padding:"6px 0 0"}}>
             <div style={{textAlign:"center",marginBottom:14}}>
-              <div style={{fontFamily:"Georgia,serif",fontSize:"clamp(16px,4.2vw,20px)",fontWeight:700,color:"#fff",marginBottom:4,letterSpacing:-.3}}>AXIOM is shuffling…</div>
+              <div style={{fontFamily:"Georgia,serif",fontSize:"clamp(16px,4.2vw,20px)",fontWeight:700,color:"#fff",marginBottom:4,letterSpacing:-.3}}>{t("play.axiom_shuffling")}</div>
               <div style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,letterSpacing:".5px"}}>Preparing your next deception</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:7}}>
@@ -4510,7 +4539,7 @@ export default function BluffGame() {
         ):fetchError?(
           <div style={{textAlign:"center",padding:"40px 20px"}}>
             <div style={{fontSize:32,marginBottom:12}}>⚠️</div>
-            <div style={{color:"rgba(255,255,255,.5)",marginBottom:16,fontSize:14}}>AXIOM is unreachable.</div>
+            <div style={{color:"rgba(255,255,255,.5)",marginBottom:16,fontSize:14}}>{t("play.axiom_unreachable")}</div>
             <button onClick={()=>{
               const d = blitzMode ? (BLITZ_DIFFICULTY[roundIdx] || 4) : (ROUND_DIFFICULTY[roundIdx] || 3);
               setMultiplier(1.0);
@@ -4538,10 +4567,10 @@ export default function BluffGame() {
 
           <div style={{textAlign:"center",marginBottom:12}}>
             <h2 style={{fontFamily:"Georgia,serif",fontSize:"clamp(17px,4.5vw,22px)",fontWeight:800,margin:"0 0 4px",color:revealed?(correct?T.ok:T.bad):"#fff",transition:"color .4s"}}>
-              {revealed?(correct?"You found it! 🎯":"AXIOM won this one 🎭"):"Which one is the BLUFF?"}
+              {revealed?(correct?t("play.you_found_it"):t("play.axiom_won_round")):t("play.which_is_bluff")}
             </h2>
             <p style={{fontSize:"clamp(10px,2.5vw,12px)",color:T.dim,margin:0}}>
-              {revealed?(correct?"Your instincts beat the machine":"The fabricated lie is highlighted below"):"One statement was invented by AI."}
+              {revealed?(correct?t("play.instincts_beat_machine"):t("play.fabricated_below")):t("play.one_was_invented")}
             </p>
           </div>
 
@@ -4560,7 +4589,7 @@ export default function BluffGame() {
                   <div style={{flex:1}}>
                     {s.text}
                     {revealed&&<div style={{marginTop:6,fontSize:10,fontWeight:700,letterSpacing:"1.5px",color:isB?T.bad:isS?T.bad:T.ok,opacity:isB||isS?1:.4}}>
-                      {isB?"🎭 AI FABRICATION":isS?"✗ This is actually real":"✓ Verified fact"}
+                      {isB?t("play.ai_fabrication"):isS?t("play.actually_real"):t("play.verified_fact")}
                     </div>}
                   </div>
                 </button>
@@ -4640,7 +4669,7 @@ export default function BluffGame() {
                     borderRadius:16,fontFamily:"inherit",cursor:"not-allowed",
                   }}
                 >
-                  Pick your bluff
+                  {t("play.pick_your_bluff")}
                 </button>
               : <button
                   onClick={() => {
@@ -4695,7 +4724,7 @@ export default function BluffGame() {
                     color:"#04060f",fontWeight:900,
                     textShadow:"0 1px 0 rgba(255,255,255,.1)",
                   }}>
-                    <span style={{fontSize:14,letterSpacing:3,textTransform:"uppercase"}}>Lock in</span>
+                    <span style={{fontSize:14,letterSpacing:3,textTransform:"uppercase"}}>{t("play.lock_in")}</span>
                     <span style={{
                       fontSize:26,fontFamily:"Georgia,serif",fontWeight:900,
                       transform:stakeAnim==="bang"?"scale(1.25)":"scale(1)",
@@ -4706,10 +4735,10 @@ export default function BluffGame() {
                   </div>
                 </button>
             :<div style={{display:"flex",gap:10}}>
-              <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>Home</button>
+              <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>{t("play.home")}</button>
               <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);advanceAfterRound();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?`Next in ${autoAdvanceCount}...`:`Results in ${autoAdvanceCount}...`):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?"Next round →":"See results →")}</span>
+                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_in",{n:autoAdvanceCount}):t("play.results_in",{n:autoAdvanceCount})):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_round"):t("play.see_results"))}</span>
               </button>
             </div>
           }
@@ -4838,7 +4867,7 @@ export default function BluffGame() {
             {won ? "👑" : respectable ? "🎭" : "💀"}
           </div>
           <div style={{fontSize:11,letterSpacing:6,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>
-            {won ? "CHAMPION" : respectable ? "RESPECTABLE" : "AXIOM WINS"}
+            {won ? t("result.champion") : respectable ? t("result.respectable") : t("result.axiom_wins")}
           </div>
           <div style={{
             fontFamily:"Georgia,serif",
@@ -4852,7 +4881,7 @@ export default function BluffGame() {
             animation:"g-shimmer 3s linear infinite",
             marginBottom:14
           }}>
-            {won ? "You beat AXIOM" : respectable ? "Close, but not enough" : "AXIOM fooled you"}
+            {won ? t("result.you_beat_axiom") : respectable ? t("result.close_but_not_enough") : t("result.axiom_fooled_you")}
           </div>
           <div style={{
             fontFamily:"Georgia,serif",
@@ -4877,7 +4906,7 @@ export default function BluffGame() {
           </div>
           <div style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
             <div style={{fontFamily:"Georgia,serif",fontSize:22,fontWeight:700,color:"#a78bfa"}}>{best}🔥</div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>Best streak</div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",letterSpacing:1,textTransform:"uppercase",marginTop:2}}>{t("result.best_streak")}</div>
           </div>
         </div>
 
@@ -4892,7 +4921,7 @@ export default function BluffGame() {
           animation:"g-fadeUp 0.5s 0.4s both"
         }}>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-          <span style={{position:"relative"}}>⚔️ Play again</span>
+          <span style={{position:"relative"}}>{t("result.play_again")}</span>
         </button>
 
         {/* SECONDARY ROW — Duel + Share Card */}
@@ -4909,18 +4938,18 @@ export default function BluffGame() {
                   url: challengeURL,
                 }).catch(()=>{
                   navigator.clipboard?.writeText(challengeURL);
-                  alert("Link copied!");
+                  alert(t("common.link_copied"));
                 });
               } else {
                 navigator.clipboard?.writeText(challengeURL);
-                alert("Challenge link copied!");
+                alert(t("result.challenge_link_copied"));
               }
             }}
             disabled={!challengeURL}
             style={{minHeight:52,padding:14,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
               background:"rgba(34,211,238,0.08)",color:"#22d3ee",border:"1px solid rgba(34,211,238,0.3)",
               borderRadius:12,cursor:challengeURL?"pointer":"not-allowed",opacity:challengeURL?1:0.5,fontFamily:"inherit"}}>
-            ⚔️ Duel a Friend
+            {t("result.duel_friend")}
           </button>
           <button
             onClick={()=>document.getElementById("share-card-link")?.click()}
@@ -4929,7 +4958,7 @@ export default function BluffGame() {
               background:"linear-gradient(135deg,rgba(131,58,180,0.2),rgba(253,29,29,0.15),rgba(252,176,69,0.2))",
               color:"#fff",border:"1px solid rgba(255,255,255,0.15)",
               borderRadius:12,cursor:storiesImg?"pointer":"not-allowed",opacity:storiesImg?1:0.5,fontFamily:"inherit"}}>
-            📸 Share Card
+            {t("result.share_card")}
           </button>
         </div>
         {storiesImg && <a id="share-card-link" href={storiesImg} download="bluff-score.png" style={{display:"none"}}/>}
@@ -4937,19 +4966,19 @@ export default function BluffGame() {
         {dailyMode && (
           <div style={{background:"rgba(45,212,160,.06)",border:"1px solid rgba(45,212,160,.25)",borderRadius:14,padding:"14px 16px",marginBottom:16,animation:"g-fadeUp .5s .35s both"}}>
             <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(45,212,160,.7)",fontWeight:700,marginBottom:10,textTransform:"uppercase"}}>
-              📅 Daily Challenge Complete
+              {t("result.daily_complete")}
             </div>
             <div style={{fontSize:24,letterSpacing:3,textAlign:"center",marginBottom:10}}>
               {dailyResultsRef.current.map(r => r ? "🟩" : "🟥").join("")}
             </div>
             {dailyRank ? (
               <div style={{textAlign:"center",fontSize:14,color:"rgba(255,255,255,.55)",marginBottom:10}}>
-                You ranked{" "}
+                {t("result.you_ranked")}{" "}
                 <span style={{color:"#e8c547",fontWeight:800,fontSize:20,fontFamily:"Georgia,serif"}}>#{dailyRank}</span>
-                {dailyPlayers > 0 && <span style={{color:"rgba(255,255,255,.35)"}}> of {dailyPlayers} players</span>}
+                {dailyPlayers > 0 && <span style={{color:"rgba(255,255,255,.35)"}}> {t("result.of_n_players", { n: dailyPlayers })}</span>}
               </div>
             ) : (
-              <div style={{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.3)",marginBottom:10}}>Submitting score...</div>
+              <div style={{textAlign:"center",fontSize:12,color:"rgba(255,255,255,.3)",marginBottom:10}}>{t("result.submitting_score")}</div>
             )}
             <button
               onClick={() => {
@@ -4958,10 +4987,10 @@ export default function BluffGame() {
                 const scoreFmt = score.toLocaleString('en-US');
                 const text = `BLUFF™ Daily #${dailyData?.dayNum ?? ""}\n${grid}\n${scoreFmt} pts · ${correctCount}/${total}${rankStr}\nplaybluff.games`;
                 if (navigator.share) navigator.share({ text }).catch(() => navigator.clipboard?.writeText(text));
-                else navigator.clipboard?.writeText(text).then(() => alert("Copied! 📋")).catch(() => alert(text));
+                else navigator.clipboard?.writeText(text).then(() => alert(t("common.link_copied"))).catch(() => alert(text));
               }}
               style={{width:"100%",minHeight:44,padding:"10px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",background:"rgba(45,212,160,.1)",color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",borderRadius:10,fontFamily:"inherit",cursor:"pointer"}}>
-              📤 Share daily result
+              {t("result.share_daily")}
             </button>
           </div>
         )}
@@ -4971,11 +5000,11 @@ export default function BluffGame() {
           <div style={{textAlign:"center",marginBottom:16,padding:"12px",
             background:"rgba(244,63,94,.08)",border:"1px solid rgba(244,63,94,.2)",
             borderRadius:12,animation:"g-fadeUp .5s .35s both"}}>
-            <div style={{fontSize:11,letterSpacing:"3px",color:"#f43f5e",marginBottom:4}}>⚡ BLITZ RESULT</div>
+            <div style={{fontSize:11,letterSpacing:"3px",color:"#f43f5e",marginBottom:4}}>{t("result.blitz_result")}</div>
             <div style={{fontFamily:"Georgia,serif",fontSize:48,fontWeight:900,color:"#f43f5e"}}>{correctCount}/4</div>
             <div style={{fontSize:13,color:"rgba(255,255,255,.55)",marginTop:2,fontFamily:"Georgia,serif"}}>{score.toLocaleString('en-US')} pts</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.4)",marginTop:4}}>
-              {correctCount===4?"AXIOM demolished. 🔥":correctCount>=3?"Sharp. Very sharp.":correctCount>=2?"Decent.":"AXIOM wins."}
+              {correctCount===4?t("result.demolished"):correctCount>=3?t("result.sharp"):correctCount>=2?t("result.decent"):t("result.axiom_wins_caption")}
             </div>
           </div>
         )}
@@ -4987,13 +5016,13 @@ export default function BluffGame() {
           {!dailyMode && roundsPlayedRef.current.filter(Boolean).length >= ROUND_DIFFICULTY.length && (
             <>
               <div style={{ fontSize: 10, letterSpacing: "3px", color: "rgba(255,255,255,.2)", textTransform: "uppercase", marginTop: 14, marginBottom: 10 }}>
-                ⚔️ Duel — same rounds, head to head
+                {t("result.duel_head_to_head")}
               </div>
               {!duelId && (
                 <input
                   value={duelName}
                   onChange={e => setDuelName(e.target.value)}
-                  placeholder="Your name for the duel..."
+                  placeholder={t("result.duel_name_placeholder")}
                   style={{ width: "100%", padding: "11px 14px", fontSize: 14, background: T.card, border: `1.5px solid ${T.gb}`, borderRadius: 10, color: "#e8e6e1", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8, outline: "none" }}
                 />
               )}
@@ -5009,19 +5038,19 @@ export default function BluffGame() {
                       }).catch(() => navigator.clipboard?.writeText(url));
                     } else {
                       navigator.clipboard?.writeText(url)
-                        .then(() => alert("Duel link copied! 📋"))
+                        .then(() => alert(t("result.duel_link_copied")))
                         .catch(() => alert(url));
                     }
                   }}
                   style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: "rgba(232,197,71,.1)", color: "#e8c547", border: "1px solid rgba(232,197,71,.3)", borderRadius: 12, fontFamily: "inherit", cursor: "pointer" }}>
-                  📋 Share duel link
+                  {t("result.share_duel_link")}
                 </button>
               ) : (
                 <button
                   onClick={handleCreateDuel}
                   disabled={duelCreating}
                   style={{ width: "100%", minHeight: 48, padding: 14, fontSize: "clamp(13px,3.5vw,14px)", fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", background: duelCreating ? T.glass : "rgba(232,197,71,.08)", color: duelCreating ? T.dim : "#e8c547", border: `1px solid ${duelCreating ? T.gb : "rgba(232,197,71,.3)"}`, borderRadius: 12, fontFamily: "inherit", cursor: duelCreating ? "not-allowed" : "pointer" }}>
-                  {duelCreating ? "Creating duel..." : "⚔️ Challenge to a Duel"}
+                  {duelCreating ? t("result.creating_duel") : t("result.challenge_to_duel")}
                 </button>
               )}
             </>
@@ -5039,7 +5068,7 @@ export default function BluffGame() {
                 });
               }}
               style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"linear-gradient(135deg,rgba(34,171,238,.25),rgba(34,171,238,.12))", color:"#29b6f6", border:"1px solid rgba(34,171,238,.4)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
-              ✈️ Share in Telegram chat
+              {t("result.share_telegram")}
             </button>
           )}
           <button
@@ -5051,7 +5080,7 @@ export default function BluffGame() {
               tg.shareToChat(text, "https://playbluff.games");
             }}
             style={{ width:"100%", minHeight:48, padding:14, fontSize:"clamp(13px,3.5vw,14px)", fontWeight:700, letterSpacing:"1px", textTransform:"uppercase", marginTop:10, background:"rgba(255,255,255,.03)", color:"#5a5a68", border:"1px solid rgba(255,255,255,.07)", borderRadius:12, fontFamily:"inherit", cursor:"pointer" }}>
-            ✈️ Send to Telegram
+            {t("result.send_telegram")}
           </button>
         </div>
         {lastWrongStmt && !shameSent && (
@@ -5063,10 +5092,10 @@ export default function BluffGame() {
           }}>
             <div style={{fontSize:10,letterSpacing:"3px",color:"rgba(244,63,94,.6)",
               fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>
-              💀 Submit to Hall of Shame?
+              {t("result.submit_shame_title")}
             </div>
             <div style={{fontSize:13,color:"rgba(255,255,255,.5)",marginBottom:10,lineHeight:1.5}}>
-              AXIOM will write an anonymous funny entry about your mistake.
+              {t("result.submit_shame_body")}
             </div>
             <div style={{display:"flex",gap:8}}>
               <button
@@ -5082,7 +5111,7 @@ export default function BluffGame() {
                   background:"rgba(244,63,94,.15)",color:"#f43f5e",
                   border:"1px solid rgba(244,63,94,.3)",borderRadius:10,
                   fontFamily:"inherit",cursor:"pointer"}}>
-                💀 Submit
+                {t("result.submit_shame_btn")}
               </button>
               <button
                 onClick={() => setLastWrongStmt(null)}
@@ -5090,7 +5119,7 @@ export default function BluffGame() {
                   background:"transparent",color:"#5a5a68",
                   border:"1px solid rgba(255,255,255,.07)",borderRadius:10,
                   fontFamily:"inherit",cursor:"pointer"}}>
-                Nope
+                {t("result.nope")}
               </button>
             </div>
           </div>
@@ -5098,7 +5127,7 @@ export default function BluffGame() {
         {shameSent && (
           <div style={{textAlign:"center",fontSize:13,color:"rgba(244,63,94,.5)",
             marginBottom:16,padding:"12px",animation:"g-fadeUp .3s ease both"}}>
-            💀 Submitted. playbluff.games/shame
+            {t("result.shame_submitted")}
           </div>
         )}
 
@@ -5107,7 +5136,7 @@ export default function BluffGame() {
             style={{background:"transparent",border:"none",color:"rgba(255,255,255,0.3)",
               fontSize:12,letterSpacing:2,textTransform:"uppercase",
               cursor:"pointer",fontFamily:"inherit",padding:"8px 16px"}}>
-            ← Home
+            {t("result.back_home")}
           </button>
         </div>
       </div>
