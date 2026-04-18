@@ -1323,6 +1323,8 @@ export default function BluffGame() {
   const resultsHistoryRef = useRef([]); // boolean per round — duel results
   const gameStartTimeRef = useRef(null); // ms timestamp — duel total time
   const roundCategoriesRef = useRef(null); // shuffled CATEGORIES for current match
+  const preloadedRoundsRef = useRef([]); // pre-fetched solo rounds from Firestore cache
+  const secondBatchPendingRef = useRef(false); // true while rounds 7-12 are in-flight
 
   // ── Stake mechanic sync + scheduler ──────────────────────────
   useEffect(() => {
@@ -1542,6 +1544,8 @@ export default function BluffGame() {
     setCurrentWave(0);
     setShowWaveIntro(false);
     setStoriesImg(null);
+    preloadedRoundsRef.current = [];
+    secondBatchPendingRef.current = false;
     fetchRound(0);
     axiomSpeak("intro", "idle");
   }
@@ -1622,6 +1626,23 @@ export default function BluffGame() {
   }
 
   // ── FETCH ROUND ─────────────────────────────────────────────
+  async function fetchSoloBatch(phase) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`/api/solo-rounds?phase=${phase}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (!res.ok && res.status !== 206) return [];
+      const data = await res.json();
+      return data.rounds || [];
+    } catch (e) {
+      console.warn(`[fetchSoloBatch ${phase}] fail:`, e.message);
+      return [];
+    }
+  }
+
   async function fetchRound(idx) {
     setLoadingRound(true);
     setFetchError(false);
@@ -1644,6 +1665,27 @@ export default function BluffGame() {
       }
       setLoadingRound(false);
       return;
+    }
+
+    // Solo mode: use pre-fetched Firestore rounds if available
+    if (!blitzModeRef.current && preloadedRoundsRef.current?.[idx]) {
+      const round = preloadedRoundsRef.current[idx];
+      const cat = round.category || (roundCategoriesRef.current || CATEGORIES)[idx % CATEGORIES.length];
+      setCategory(cat);
+      const normalized = (round.statements || []).map(s => ({
+        text: String(s.text || ""),
+        real: s.real === true || s.real === "true",
+      }));
+      const lies = normalized.filter(s => !s.real);
+      if (lies.length === 1) {
+        const shuffled = shuffle(normalized);
+        setStmts(shuffled);
+        currentStmtsRef.current = shuffled;
+        roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
+        setLoadingRound(false);
+        return;
+      }
+      // bad data — fall through to live fetch
     }
 
     const diff = blitzModeRef.current ? (BLITZ_DIFFICULTY[idx] || 4) : (ROUND_DIFFICULTY[idx]||3);
@@ -1672,7 +1714,7 @@ export default function BluffGame() {
       roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
     } catch(e) {
       console.warn("[fetchRound] fallback:", e.name === "AbortError" ? "timeout 9s" : e.message);
-      setFetchError(true);
+      // Silent fallback — game continues seamlessly
       const fb = shuffle(getFallback(blitzModeRef.current ? "blitz" : "regular"));
       setStmts(fb);
       currentStmtsRef.current = fb;
@@ -1875,6 +1917,8 @@ export default function BluffGame() {
     setShowWaveIntro(true);
     setTimeout(() => setShowWaveIntro(false), 1800);
     setFetchError(false);
+    preloadedRoundsRef.current = [];
+    secondBatchPendingRef.current = false;
     fetchRound(0);
     axiomSpeak("intro", "idle");
   }
@@ -2104,7 +2148,23 @@ export default function BluffGame() {
     setWheelOpen(false);
     setChipFlying(false);
     roundCategoriesRef.current = [...CATEGORIES].sort(() => Math.random() - 0.5);
-    fetchRound(0);
+    preloadedRoundsRef.current = [];
+    secondBatchPendingRef.current = false;
+
+    // Hybrid batch: await batch 1 (rounds 1-6), fire-and-forget batch 2 (rounds 7-12)
+    (async () => {
+      const firstBatch = await fetchSoloBatch("first");
+      preloadedRoundsRef.current = firstBatch;
+
+      secondBatchPendingRef.current = true;
+      fetchSoloBatch("second").then(batch => {
+        preloadedRoundsRef.current = [...preloadedRoundsRef.current, ...batch];
+        secondBatchPendingRef.current = false;
+      });
+
+      fetchRound(0);
+    })();
+
     axiomSpeak("intro","idle");
   }
 
