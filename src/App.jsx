@@ -2133,6 +2133,7 @@ export default function BluffGame() {
   const [duelBonusOpportunity, setDuelBonusOpportunity] = useState(false);
   const [myDuelId, setMyDuelId] = useState(null);
   const duelSocketRef = useRef(null);
+  const duelCountdownIntervalRef = useRef(null);
   const duelAnswerSentRef = useRef(false);
   const [duelConnectionState, setDuelConnectionState] = useState("idle");
   const [duelRetryAttempt, setDuelRetryAttempt] = useState(0);
@@ -3075,12 +3076,17 @@ export default function BluffGame() {
       setDuelPhase(msg.state.phase);
     }
     if (msg.type === "countdown") {
+      if (duelCountdownIntervalRef.current) clearInterval(duelCountdownIntervalRef.current);
       setDuelCountdown(msg.seconds);
       let c = msg.seconds;
-      const t = setInterval(() => {
+      duelCountdownIntervalRef.current = setInterval(() => {
         c--;
         setDuelCountdown(c);
-        if (c <= 0) { clearInterval(t); setDuelCountdown(null); }
+        if (c <= 0) {
+          clearInterval(duelCountdownIntervalRef.current);
+          duelCountdownIntervalRef.current = null;
+          setDuelCountdown(null);
+        }
       }, 1000);
     }
     if (msg.type === "round_start") {
@@ -3833,6 +3839,10 @@ export default function BluffGame() {
       if (duelSocketRef.current) {
         duelSocketRef.current.close();
         duelSocketRef.current = null;
+      }
+      if (duelCountdownIntervalRef.current) {
+        clearInterval(duelCountdownIntervalRef.current);
+        duelCountdownIntervalRef.current = null;
       }
     };
   }, []);
