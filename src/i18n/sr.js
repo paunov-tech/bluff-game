@@ -311,6 +311,7 @@ export default {
     "sign_out_confirm": "Odjaviti se iz BLUFF-a?",
     "sign_out_cancel": "Otkaži",
     "sign_in_failed": "Prijava nije uspela. Pokušaj ponovo.",
+    "signing_in": "Prijavljujemo te…",
     "cap_hit_banner": "Dostigao si anonimni limit. Prijavi se da nastaviš.",
     "migrating": "Sinhronizacija napretka…",
     "migrated_ok": "Dobrodošao! Napredak je sačuvan.",

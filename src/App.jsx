@@ -9,6 +9,7 @@ import {
   signInGoogle,
   signOutUser,
   getCurrentIdToken,
+  consumeRedirectResult,
 } from "./auth.js";
 
 // ── SWEAR Card helpers ───────────────────
@@ -2110,6 +2111,9 @@ export default function BluffGame() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authLoadingFromRedirect, setAuthLoadingFromRedirect] = useState(
+    () => { try { return sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch { return false; } }
+  );
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [anonCapBannerOpen, setAnonCapBannerOpen] = useState(false);
   const migrationInFlightRef = useRef(false);
@@ -3753,6 +3757,21 @@ export default function BluffGame() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authUser?.uid]);
 
+  // iOS / mobile Safari uses signInWithRedirect; Firebase hands the result
+  // back via getRedirectResult on the next page load. onAuthStateChanged
+  // will also fire with the user, so we don't use the return value — we
+  // just need to drain it so the SDK settles state, then clear the flag.
+  useEffect(() => {
+    if (!isAuthReady()) return;
+    let pending = false;
+    try { pending = sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch {}
+    if (!pending) { setAuthLoadingFromRedirect(false); return; }
+    consumeRedirectResult().finally(() => {
+      try { sessionStorage.removeItem("bluff_auth_redirect_pending"); } catch {}
+      setAuthLoadingFromRedirect(false);
+    });
+  }, []);
+
   // Firebase auth subscription: flip userIdRef to the uid on sign-in and
   // kick off anon → uid migration. On sign-out, restore prior anonymous id.
   useEffect(() => {
@@ -5337,6 +5356,22 @@ export default function BluffGame() {
         </div>
       )}
 
+      {authLoadingFromRedirect && (
+        <div style={{position:"fixed",inset:0,zIndex:9998,background:"rgba(4,6,15,.95)",
+          backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",
+          display:"flex",alignItems:"center",justifyContent:"center",
+          flexDirection:"column",gap:16}}>
+          <div style={{width:48,height:48,border:"3px solid rgba(232,197,71,.2)",
+            borderTopColor:"#e8c547",borderRadius:"50%",
+            animation:"bluff-auth-spin 1s linear infinite"}}/>
+          <div style={{fontFamily:"Georgia, serif",fontSize:14,
+            color:"rgba(255,255,255,.6)",letterSpacing:1}}>
+            {t("auth.signing_in", lang)}
+          </div>
+          <style>{`@keyframes bluff-auth-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
       {authModalOpen && (
         <div onClick={()=>{ if (!authBusy) setAuthModalOpen(false); }}
           style={{position:"fixed",inset:0,zIndex:720,background:"rgba(4,6,15,.94)",
@@ -5368,11 +5403,22 @@ export default function BluffGame() {
                 setAuthError("");
                 setAuthBusy(true);
                 try {
-                  await signInGoogle();
-                  setAuthModalOpen(false);
-                  setAnonCapBannerOpen(false);
+                  const user = await signInGoogle();
+                  if (user) {
+                    setAuthModalOpen(false);
+                    setAnonCapBannerOpen(false);
+                  }
                 } catch (e) {
-                  setAuthError(e?.message || "sign_in_failed");
+                  const code = e?.code || "";
+                  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+                    setAuthError("sign_in_cancelled");
+                  } else if (code === "auth/network-request-failed") {
+                    setAuthError("network_error");
+                  } else if (code === "auth/unauthorized-domain") {
+                    setAuthError("unauthorized_domain");
+                  } else {
+                    setAuthError(e?.message || "sign_in_failed");
+                  }
                 } finally {
                   setAuthBusy(false);
                 }

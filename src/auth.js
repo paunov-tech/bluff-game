@@ -3,6 +3,8 @@ import {
   getAuth,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -41,13 +43,59 @@ export function onAuthChange(callback) {
   });
 }
 
+// iOS Safari blocks signInWithPopup reliably (ITP + cross-site cookie
+// restrictions break the OAuth callback). Detect and switch to redirect.
+function shouldUseRedirect() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent || "";
+  const isIOS = /iPad|iPhone|iPod/.test(ua);
+  const isMobileSafari = isIOS || (/Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua));
+  const isStandalone =
+    (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches) ||
+    window.navigator.standalone === true;
+  return isIOS || isMobileSafari || isStandalone;
+}
+
 export async function signInGoogle() {
   const a = ensureInit();
   if (!a) throw new Error("auth_not_configured");
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: "select_account" });
-  const result = await signInWithPopup(a, provider);
-  return result.user;
+
+  if (shouldUseRedirect()) {
+    try { sessionStorage.setItem("bluff_auth_redirect_pending", "1"); } catch {}
+    await signInWithRedirect(a, provider);
+    return null;
+  }
+
+  try {
+    const result = await signInWithPopup(a, provider);
+    return result.user;
+  } catch (err) {
+    if (
+      err?.code === "auth/popup-blocked" ||
+      err?.code === "auth/popup-closed-by-user" ||
+      err?.code === "auth/cancelled-popup-request"
+    ) {
+      console.warn("[auth] popup failed, falling back to redirect:", err.code);
+      try { sessionStorage.setItem("bluff_auth_redirect_pending", "1"); } catch {}
+      await signInWithRedirect(a, provider);
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function consumeRedirectResult() {
+  const a = ensureInit();
+  if (!a) return null;
+  try {
+    const result = await getRedirectResult(a);
+    return result?.user || null;
+  } catch (err) {
+    console.error("[auth] redirect result error:", err);
+    return null;
+  }
 }
 
 export async function signInApple() {

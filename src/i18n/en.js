@@ -312,6 +312,7 @@ export default {
     sign_out_confirm: "Sign out of BLUFF?",
     sign_out_cancel: "Cancel",
     sign_in_failed: "Sign-in failed. Try again.",
+    signing_in: "Signing you in…",
     cap_hit_banner: "You've hit the anonymous cap. Sign in to keep earning.",
     migrating: "Syncing your progress…",
     migrated_ok: "Welcome! Your progress is now saved.",
