@@ -10,6 +10,7 @@ import {
   signOutUser,
   getCurrentIdToken,
   consumeRedirectResult,
+  authStorageSnapshot,
 } from "./auth.js";
 
 // ── SWEAR Card helpers ───────────────────
@@ -2117,6 +2118,13 @@ export default function BluffGame() {
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [anonCapBannerOpen, setAnonCapBannerOpen] = useState(false);
   const migrationInFlightRef = useRef(false);
+  // Auth debug panel: visible when URL has ?authDebug=1. Captures the storage
+  // state at mount, after the redirect result is drained, and after auth
+  // state transitions. Lets the user diagnose iOS ITP behavior without a Mac.
+  const [authDebugOpen, setAuthDebugOpen] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("authDebug") === "1"; } catch { return false; }
+  });
+  const [authDebugLines, setAuthDebugLines] = useState([]);
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -3766,13 +3774,19 @@ export default function BluffGame() {
     let pending = false;
     try { pending = sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch {}
     console.log("[auth] redirect effect mounted", { pending });
+    const pushDebug = (label, obj) => {
+      setAuthDebugLines((lines) => [...lines, { t: Date.now(), label, obj }]);
+    };
+    authStorageSnapshot().then((s) => pushDebug("mount", s)).catch(() => {});
     if (!pending) { setAuthLoadingFromRedirect(false); return; }
     consumeRedirectResult().then((user) => {
       console.log("[auth] consumeRedirectResult resolved", user ? { uid: user.uid, email: user.email } : null);
+      pushDebug("redirect_result", { user: user ? { uid: user.uid, email: user.email } : null });
     }).finally(() => {
       try { sessionStorage.removeItem("bluff_auth_redirect_pending"); } catch {}
       setAuthLoadingFromRedirect(false);
       console.log("[auth] redirect pending flag cleared, overlay dismissed");
+      authStorageSnapshot().then((s) => pushDebug("post_redirect", s)).catch(() => {});
     });
   }, []);
 
@@ -3782,6 +3796,7 @@ export default function BluffGame() {
     if (!isAuthReady()) return;
     const unsub = onAuthChange(async (user) => {
       console.log("[auth] App onAuthChange", { user: user ? { uid: user.uid, email: user.email } : null, prevUserId: userIdRef.current });
+      setAuthDebugLines((lines) => [...lines, { t: Date.now(), label: "onAuthChange", obj: { user: user ? { uid: user.uid, email: user.email } : null } }]);
       if (!user) {
         // Sign-out: restore anon id (fresh random if none stored).
         let anon = null;
@@ -4679,6 +4694,31 @@ export default function BluffGame() {
         position:"fixed",inset:0,pointerEvents:"none",zIndex:0,
         background:"radial-gradient(ellipse 80% 50% at 50% 0%, rgba(232,197,71,0.05), transparent 70%), radial-gradient(ellipse 60% 40% at 50% 100%, rgba(34,211,238,0.03), transparent 70%)"
       }}/>
+      {authDebugOpen && (
+        <div style={{
+          position:"fixed",top:"max(56px,env(safe-area-inset-top))",left:8,right:8,zIndex:9999,
+          maxHeight:"60vh",overflow:"auto",
+          background:"rgba(4,6,15,0.96)",border:"1px solid rgba(45,212,160,0.4)",borderRadius:10,
+          padding:"10px 12px",fontFamily:"ui-monospace,monospace",fontSize:10,color:"#d7e3ec",
+          boxShadow:"0 8px 24px rgba(0,0,0,0.5)"
+        }}>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+            <span style={{color:"#2dd4a0",fontWeight:700,letterSpacing:"1px"}}>AUTH DEBUG</span>
+            <button onClick={() => setAuthDebugOpen(false)} style={{background:"none",border:"1px solid rgba(215,227,236,0.3)",color:"#d7e3ec",fontFamily:"inherit",fontSize:10,padding:"2px 8px",borderRadius:4,cursor:"pointer"}}>close</button>
+          </div>
+          {authDebugLines.length === 0 && <div style={{opacity:.6}}>no events yet</div>}
+          {authDebugLines.map((ln, i) => (
+            <div key={i} style={{marginBottom:8,paddingBottom:6,borderBottom:"1px dashed rgba(215,227,236,0.1)"}}>
+              <div style={{color:"#e8c547",fontWeight:700}}>[{ln.label}] +{i === 0 ? 0 : (ln.t - authDebugLines[0].t)}ms</div>
+              <pre style={{margin:"4px 0 0 0",whiteSpace:"pre-wrap",wordBreak:"break-all",color:"#a9b8c2"}}>{JSON.stringify(ln.obj, null, 2)}</pre>
+            </div>
+          ))}
+          <button
+            onClick={() => authStorageSnapshot().then((s) => setAuthDebugLines((lines) => [...lines, { t: Date.now(), label: "manual", obj: s }]))}
+            style={{marginTop:6,background:"rgba(45,212,160,0.15)",border:"1px solid rgba(45,212,160,0.4)",color:"#2dd4a0",fontFamily:"inherit",fontSize:10,padding:"4px 10px",borderRadius:4,cursor:"pointer"}}
+          >refresh snapshot</button>
+        </div>
+      )}
       {BETA_MODE&&<div style={{position:"fixed",top:"max(12px,env(safe-area-inset-top))",right:16,fontSize:10,letterSpacing:"2px",color:"rgba(45,212,160,.75)",background:"rgba(45,212,160,.09)",border:"1px solid rgba(45,212,160,.22)",padding:"4px 10px",borderRadius:20,fontWeight:600,zIndex:10}}>β BETA</div>}
       {/* SWEAR balance chip — opens SWEAR Card */}
       <button
