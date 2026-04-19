@@ -15,7 +15,11 @@ import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
 
 const PLAYERS = "bluff_players";
 const LOGS    = "bluff_earn_log";
-const ANON_CAP = 100;
+// Anonymous users can accumulate this much SWEAR before further awards are
+// no-ops. The cap exists to push anon users toward sign-in, but it must be
+// well above `first_time_bonus` (100) so new users still feel the reward
+// loop fire on their first few games before hitting the wall.
+const ANON_CAP = 500;
 
 // Map earn event → stats counter path to increment (nested under `stats.*`).
 const STAT_MAP = {
