@@ -2021,11 +2021,14 @@ export default function BluffGame() {
   const [revealed, setRevealed] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const [score, setScore] = useState(0);
+  const scoreRef = useRef(0);
   const [axiomScore, setAxiomScore] = useState(0);
   const axiomScoreRef = useRef(0);
   const [total, setTotal] = useState(0);
+  const totalRef = useRef(0);
   const [streak, setStreak] = useState(0);
   const [best, setBest] = useState(0);
+  const bestRef = useRef(0);
   const [time, setTime] = useState(45);
   const [multiplier, setMultiplier] = useState(1.0);
   const multiplierRef = useRef(1.0);
@@ -2191,6 +2194,10 @@ export default function BluffGame() {
   const roundCategoriesRef = useRef(null); // shuffled CATEGORIES for current match
   const preloadedRoundsRef = useRef([]); // pre-fetched solo rounds from Firestore cache
   const secondBatchPendingRef = useRef(false); // true while rounds 7-12 are in-flight
+  // Round IDs + short topic summaries collected during a game. Flushed to
+  // /api/mark-seen at end-of-game so (a) the user stops seeing cached rounds
+  // they've already played and (b) live-gen has topics to avoid next time.
+  const playedRoundIdsRef = useRef([]);
 
   // ── Stake mechanic sync + scheduler ──────────────────────────
   useEffect(() => {
@@ -2204,6 +2211,9 @@ export default function BluffGame() {
 
   useEffect(() => { phaseScoreRef.current = phaseScore; }, [phaseScore]);
   useEffect(() => { axiomScoreRef.current = axiomScore; }, [axiomScore]);
+  useEffect(() => { scoreRef.current = score; }, [score]);
+  useEffect(() => { totalRef.current = total; }, [total]);
+  useEffect(() => { bestRef.current = best; }, [best]);
 
   function clearStakeTimers() {
     stakeTimersRef.current.forEach(clearTimeout);
@@ -2655,7 +2665,8 @@ export default function BluffGame() {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(`/api/solo-rounds?phase=${phase}`, {
+      const uid = userIdRef.current ? `&userId=${encodeURIComponent(userIdRef.current)}` : "";
+      const res = await fetch(`/api/solo-rounds?phase=${phase}${uid}`, {
         signal: controller.signal,
       });
       clearTimeout(timeout);
@@ -2708,6 +2719,13 @@ export default function BluffGame() {
         setStmts(shuffled);
         currentStmtsRef.current = shuffled;
         roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
+        if (round.id) {
+          const firstTruth = normalized.find(s => s.real) || normalized[0];
+          playedRoundIdsRef.current.push({
+            id: round.id,
+            summary: (firstTruth?.text || "").slice(0, 80),
+          });
+        }
         setLoadingRound(false);
         return;
       }
@@ -2730,7 +2748,13 @@ export default function BluffGame() {
         const res = await fetch("/api/generate-round",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ category:cat, difficulty:diff, lang, mode: blitzModeRef.current ? "blitz" : "regular" }),
+          body: JSON.stringify({
+            category: cat,
+            difficulty: diff,
+            lang,
+            mode: blitzModeRef.current ? "blitz" : "regular",
+            userId: userIdRef.current,
+          }),
           signal: controller.signal,
         });
         const data = await res.json();
@@ -2740,26 +2764,34 @@ export default function BluffGame() {
         }));
         const lies = normalized.filter(s=>!s.real);
         if(lies.length!==1) throw new Error("Bad lie count");
-        return normalized;
+        return { normalized, id: data.id, summary: data.summary };
       } finally {
         clearTimeout(fetchTimeout);
       }
     }
 
     try {
-      let normalized;
+      let result;
       try {
-        normalized = await attempt();
+        result = await attempt();
       } catch (err1) {
         console.warn("[fetchRound] attempt 1 failed:",
           err1.name === "AbortError" ? `timeout ${attemptTimeoutMs}ms` : err1.message,
           "— retrying");
-        normalized = await attempt();
+        result = await attempt();
       }
+      const { normalized, id: roundId, summary: roundSummary } = result;
       const shuffled = shuffle(normalized);
       setStmts(shuffled);
       currentStmtsRef.current = shuffled;
       roundsPlayedRef.current[idx] = { statements: shuffled, category: cat };
+      if (roundId) {
+        const firstTruth = normalized.find(s => s.real) || normalized[0];
+        playedRoundIdsRef.current.push({
+          id: roundId,
+          summary: roundSummary || (firstTruth?.text || "").slice(0, 80),
+        });
+      }
     } catch(e) {
       // Both attempts failed. Last-resort hardcoded fallback is EN-only and
       // category-agnostic — a known visual mismatch we accept over a frozen UI.
@@ -2971,6 +3003,7 @@ export default function BluffGame() {
     setDuelCreating(false);
     roundsPlayedRef.current = [];
     resultsHistoryRef.current = [];
+    playedRoundIdsRef.current = [];
     gameStartTimeRef.current = Date.now();
     setCurrentWave(0);
     setShowWaveIntro(true);
@@ -3235,6 +3268,7 @@ export default function BluffGame() {
     setDuelCreating(false);
     roundsPlayedRef.current = [];
     resultsHistoryRef.current = [];
+    playedRoundIdsRef.current = [];
     gameStartTimeRef.current = Date.now();
     setCurrentWave(0);
     setShowWaveIntro(true);
@@ -3276,8 +3310,13 @@ export default function BluffGame() {
   // Wheel-aware advance: rounds 4/8 (solo) trigger Wheel of Fortune; round 12 triggers Gambit
   function advanceAfterRound() {
     const justCompleted = roundIdx + 1; // 1-indexed
-    const totalRounds = blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length;
-    const isPhaseEnd = !blitzMode && (justCompleted === 4 || justCompleted === 8 || justCompleted === 12);
+    // Daily uses exactly the server-issued round set (typically 10). Blitz has
+    // its own fixed count. Regular solo has 12 with phase-end wheels.
+    const totalRounds = dailyModeRef.current
+      ? (dailyRoundsRef.current?.length || ROUND_DIFFICULTY.length)
+      : (blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length);
+    // Phase-end wheel/gambit only applies to regular solo mode.
+    const isPhaseEnd = !blitzMode && !dailyModeRef.current && (justCompleted === 4 || justCompleted === 8 || justCompleted === 12);
     if (isPhaseEnd) {
       setWheelPhaseNum(justCompleted === 4 ? 1 : justCompleted === 8 ? 2 : 3);
       clearStakeTimers();
@@ -3296,9 +3335,10 @@ export default function BluffGame() {
       if (justCompleted === 12) {
         // Gambit flow: commit accumulated phase-3 bank to total first, then pick risk
         const curPhaseScore = phaseScoreRef.current;
-        const curPlayer = score + curPhaseScore;
+        const curPlayer = scoreRef.current + curPhaseScore;
         const curAxiom = axiomScoreRef.current;
         setScore(curPlayer);
+        scoreRef.current = curPlayer;
         setPhaseScore(0);
         phaseScoreRef.current = 0;
         // Offer Sudden Death if player is trailing 2×+
@@ -3370,14 +3410,36 @@ export default function BluffGame() {
     clearInterval(timerRef.current);
     setScreen("result");
 
-    // Snapshot committed state once — avoids nested-updater race conditions
-    const finalScore = score;
-    const finalTotal = total;
-    const finalBest  = best;
+    // Snapshot from refs — React state reads here are stale when showResultScreen
+    // is called synchronously right after setScore/setTotal in the wheel/gambit
+    // paths. Refs mirror the latest committed value.
+    const finalScore = scoreRef.current;
+    const finalTotal = totalRef.current;
+    const finalBest  = bestRef.current;
     const finalCorrect = correctCountRef.current;
     const won = finalCorrect >= Math.ceil(finalTotal * 0.67);
 
     if (dailyModeRef.current) submitDailyResult(finalScore, finalTotal);
+
+    // Mark rounds as seen for this user (solo/blitz only — daily uses its
+    // own shared-leaderboard pool). Fire-and-forget: mark-seen failures must
+    // never bubble to the user or block the result screen.
+    if (!dailyModeRef.current && userIdRef.current && playedRoundIdsRef.current.length > 0) {
+      const seenMode = blitzModeRef.current ? "blitz" : "solo";
+      const seenRounds = playedRoundIdsRef.current.filter(r => r && r.id);
+      if (seenRounds.length > 0) {
+        fetch("/api/mark-seen", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: userIdRef.current,
+            mode: seenMode,
+            rounds: seenRounds,
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    }
 
     // SWEAR: award end-of-game SWEAR for solo/blitz. Daily is awarded in
     // submitDailyResult; duel is awarded in its own result handler (skipped
@@ -5699,7 +5761,7 @@ export default function BluffGame() {
           gambitRisk={gambitRisk}
           gambitPot={gambitPot}
           onCashOut={() => {
-            setScore(s => s + phaseScore);
+            setScore(s => { const next = s + phaseScore; scoreRef.current = next; return next; });
             setPhaseScore(0);
             phaseScoreRef.current = 0;
             setWheelOpen(false);
@@ -5711,11 +5773,11 @@ export default function BluffGame() {
             if (isGambit) {
               const pot = gambitPot;
               if (zone === "green") {
-                setScore(s => s + pot);
+                setScore(s => { const next = s + pot; scoreRef.current = next; return next; });
                 setAxiomScore(a => { const next = Math.max(0, a - pot); axiomScoreRef.current = next; return next; });
                 axiomSpeak("gambit_win_green", "shocked");
               } else if (zone === "gold") {
-                setScore(s => s + pot * 2);
+                setScore(s => { const next = s + pot * 2; scoreRef.current = next; return next; });
                 setAxiomScore(a => { const next = Math.max(0, a - pot * 2); axiomScoreRef.current = next; return next; });
                 axiomSpeak("gambit_win_gold", "defeated");
                 const gid = `grand_${gameStartTimeRef.current || Date.now()}`;
@@ -5724,11 +5786,11 @@ export default function BluffGame() {
                   meta: { pot, risk: gambitRisk },
                 });
               } else if (zone === "red") {
-                setScore(s => Math.max(0, s - pot));
+                setScore(s => { const next = Math.max(0, s - pot); scoreRef.current = next; return next; });
                 setAxiomScore(a => { const next = a + pot; axiomScoreRef.current = next; return next; });
                 axiomSpeak("gambit_loss_red", "amused");
               } else if (zone === "black") {
-                setScore(s => Math.max(0, s - pot * 2));
+                setScore(s => { const next = Math.max(0, s - pot * 2); scoreRef.current = next; return next; });
                 setAxiomScore(a => { const next = a + pot * 2; axiomScoreRef.current = next; return next; });
                 axiomSpeak("gambit_loss_black", "taunting");
               }
@@ -5739,12 +5801,12 @@ export default function BluffGame() {
               return;
             }
             const stake = phaseScoreRef.current;
-            if (zone === "green") setScore(s => s + stake * 2);
-            else if (zone === "gold") setScore(s => s + stake * 3);
+            if (zone === "green") setScore(s => { const next = s + stake * 2; scoreRef.current = next; return next; });
+            else if (zone === "gold") setScore(s => { const next = s + stake * 3; scoreRef.current = next; return next; });
             else if (zone === "red") {
               setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
             } else if (zone === "black") {
-              setScore(s => Math.floor(s * 0.5));
+              setScore(s => { const next = Math.floor(s * 0.5); scoreRef.current = next; return next; });
               setAxiomScore(a => { const next = a + stake; axiomScoreRef.current = next; return next; });
             }
             if (wheelPhaseNum === 3 && zone === "gold") {

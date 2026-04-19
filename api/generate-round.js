@@ -8,6 +8,10 @@ const client = new Anthropic();
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);
 
+const FB_KEY     = process.env.FIREBASE_API_KEY;
+const FB_PROJECT = "molty-portal";
+const FB_URL     = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+
 const LANG_NAMES = {
   en:"English", de:"German", sr:"Serbian", fr:"French",
   es:"Spanish", hr:"Croatian", sl:"Slovenian", bs:"Bosnian",
@@ -390,6 +394,28 @@ async function rateLimitOk(ip) {
   } catch { return true; }
 }
 
+// Fetch the user's last ~20 seenSummaries for the current mode. Feeds into
+// Claude as an "avoid these topics" hint so live-gen produces genuinely fresh
+// content rather than quietly cycling through the same topic space.
+async function fetchAvoidSummaries(userId, modeKey) {
+  if (!userId || !FB_KEY) return [];
+  try {
+    const r = await fetch(
+      `${FB_URL}/bluff_seen/${encodeURIComponent(userId)}?key=${FB_KEY}&mask.fieldPaths=seenSummaries`,
+      { signal: AbortSignal.timeout(3500) }
+    );
+    if (!r.ok) return [];
+    const doc = await r.json();
+    const modeMap = doc?.fields?.seenSummaries?.mapValue?.fields?.[modeKey]?.mapValue?.fields;
+    if (!modeMap) return [];
+    const values = [];
+    for (const v of Object.values(modeMap)) {
+      if (v?.stringValue) values.push(v.stringValue);
+    }
+    return values.slice(-20);
+  } catch { return []; }
+}
+
 export default async function handler(req, res) {
   const origin = req.headers.origin || "";
   res.setHeader("Access-Control-Allow-Origin",  CORS.includes(origin) ? origin : (CORS[0] || "*"));
@@ -404,9 +430,12 @@ export default async function handler(req, res) {
   if (!(await rateLimitOk(clientIp)))
     return res.status(429).json({ error: "Too many rounds, slow down" });
 
-  const { category = "history", difficulty = 3, lang = "en", mode = "regular" } = req.body;
+  const { category = "history", difficulty = 3, lang = "en", mode = "regular", userId = "" } = req.body;
   const schema = SCHEMA[mode] || SCHEMA.regular;
   const isBlitz = mode === "blitz";
+  // bluff_seen tracks solo/blitz separately — blitz is always live-gen, solo
+  // usually cache-served (EN) but falls through to live for non-EN.
+  const seenModeKey = isBlitz ? "blitz" : "solo";
   const stmtCount = schema.total;
   const truthCount = schema.truths;
   const diffRules = DIFFICULTY_RULES[difficulty] ?? DIFFICULTY_RULES[3];
@@ -420,9 +449,15 @@ export default async function handler(req, res) {
     ? "Write all statements in English."
     : `Write ALL statements in ${langName}. Rephrase naturally for native speakers — do NOT translate literally. Use natural phrasing, idioms, and cultural references appropriate for ${langName} speakers. The facts must still be internationally accurate.`;
 
-  const usedHashes = await getUsedFacts(category, lang);
+  const [usedHashes, avoidSummaries] = await Promise.all([
+    getUsedFacts(category, lang),
+    fetchAvoidSummaries(userId, seenModeKey),
+  ]);
   const dedupNote = usedHashes.length > 0
     ? `\nIMPORTANT — AVOID REPETITION: You have already used ${usedHashes.length} fact combinations in this category. Generate FRESH facts and topics not recently used. Vary your subjects widely.`
+    : "";
+  const avoidHint = avoidSummaries.length > 0
+    ? `\n\nAVOID these topics the user has seen recently (generate genuinely different content):\n- ${avoidSummaries.join("\n- ")}`
     : "";
 
   const extraTruthExamples = Array(truthCount - 1)
@@ -439,7 +474,7 @@ ${diffRules}
 
 Category guidance: ${catHint}
 
-${langNote}${dedupNote}
+${langNote}${dedupNote}${avoidHint}
 
 STRICT RULES:
 - Create exactly ${stmtCount} statements
@@ -521,13 +556,24 @@ ${extraTruthExamples}
       normalized = await attempt();
     } catch (err2) {
       console.error("[round] both attempts failed:", err2.message);
-      return res.status(200).json(getFallback(category, stmtCount));
+      const fb = getFallback(category, stmtCount);
+      return res.status(200).json({
+        ...fb,
+        id: `live_fallback_${lang}_${category}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        summary: fb.statements?.[0]?.text?.slice(0, 80) || "",
+      });
     }
   }
 
   await saveUsedFacts(category, lang, normalized);
-  console.log(`[round] cat=${category} diff=${difficulty} lang=${lang} mode=${mode} used=${usedHashes.length} lies=${normalized.filter(s=>!s.real).length}`);
-  return res.status(200).json({ category, difficulty, statements: normalized });
+  console.log(`[round] cat=${category} diff=${difficulty} lang=${lang} mode=${mode} used=${usedHashes.length} avoid=${avoidSummaries.length} lies=${normalized.filter(s=>!s.real).length}`);
+  // Stable-per-response ID + short topic summary so the client can feed this
+  // round into mark-seen exactly like a cache round, and the next live-gen
+  // call can avoid regenerating the same topic.
+  const firstTruth = normalized.find(s => s.real) || normalized[0];
+  const summary = (firstTruth?.text || "").slice(0, 80);
+  const id = `live_${lang}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  return res.status(200).json({ id, summary, category, difficulty, statements: normalized });
 }
 
 function normalize(statements) {

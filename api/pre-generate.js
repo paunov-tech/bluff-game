@@ -1,9 +1,17 @@
 // api/pre-generate.js — BLUFF v2 — Pre-generate cache rounds into Firestore
-// Vercel cron: every 6h  →  1 round per (category × level) per mode
+// Vercel cron: every 6h  →  5 variants per (category × level) per mode.
 // Regular mode → bluff_cache; blitz mode → bluff_rounds_blitz
 // Invoke with ?mode=blitz for the blitz pass.
+//
+// Variants give the round selector a larger unseen pool per user (solo-rounds.js
+// filters against bluff_seen). IDs are deterministic ({cat}_{level}_{variant})
+// so staleness is trivially checkable and the subtopic cycles across runs.
 
 import { SCHEMA } from "../src/config/schema.js";
+
+// Long-running populate can exceed the default 60s when regenerating many slots.
+// Steady-state runs with staleness skipping stay well under this.
+export const config = { maxDuration: 300 };
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const FB_KEY        = process.env.FIREBASE_API_KEY;
@@ -18,6 +26,13 @@ const CATS = [
   "geography", "animals", "food", "technology", "life", "sports"
 ];
 const LEVELS = [1,2,3,4,5];
+const VARIANTS = [0,1,2,3,4];
+
+// Skip regeneration if an existing slot is younger than this.
+const STALENESS_MS = 24 * 60 * 60 * 1000;
+// Cron fires every 6h — used to cycle subtopics across runs so the same variant
+// slot picks a different subtopic each time it is refreshed.
+const CRON_BUCKET_MS = 6 * 60 * 60 * 1000;
 
 // Variable subtopic counts per category — balances pool size to fix sports dominance
 const SUBTOPICS_PRE = {
@@ -177,13 +192,12 @@ function buildLevelRules({ truths, total }) {
 }
 
 // ── Build Claude prompt ──────────────────────────────────────
-function buildPrompt(category, level, mode) {
+function buildPrompt(category, level, mode, subtopic) {
   const schema = SCHEMA[mode] || SCHEMA.regular;
   const { total, truths, lies } = schema;
   const rules = buildLevelRules(schema)[level] || buildLevelRules(schema)[3];
-  const subtopicList = SUBTOPICS_PRE[category];
-  const catDesc = subtopicList
-    ? `${category}. Sub-topic for this round: ${subtopicList[Math.floor(Math.random() * subtopicList.length)]}. Use specific names, dates, records, and surprising statistics.`
+  const catDesc = subtopic
+    ? `${category}. Sub-topic for this round: ${subtopic}. Use specific names, dates, records, and surprising statistics.`
     : category;
   const truthEntries = Array(truths).fill(`    {"text": "...", "real": true}`).join(",\n");
   return `Generate a BLUFF game round. Category: ${catDesc}.
@@ -235,11 +249,24 @@ CONTENT:
 - NEVER use profanity or explicit content`;
 }
 
-// ── Firestore PATCH ──────────────────────────────────────────
+// ── Firestore helpers ────────────────────────────────────────
+function fsDocUrl(col, id) {
+  return `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`;
+}
+
+async function fsGet(col, id) {
+  if (!FB_KEY) return null;
+  try {
+    const r = await fetch(fsDocUrl(col, id), { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
 async function fsPatch(col, id, fields) {
   if (!FB_KEY) return;
   await fetch(
-    `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents/${col}/${id}?key=${FB_KEY}`,
+    fsDocUrl(col, id),
     {
       method:  "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -249,8 +276,16 @@ async function fsPatch(col, id, fields) {
   );
 }
 
+function readIntegerField(doc, key) {
+  const v = doc?.fields?.[key];
+  if (!v) return 0;
+  if (v.integerValue !== undefined) return parseInt(v.integerValue, 10) || 0;
+  if (v.doubleValue !== undefined) return Math.floor(v.doubleValue);
+  return 0;
+}
+
 // ── Generate one round via Claude ────────────────────────────
-async function generateOne(category, level, mode) {
+async function generateOne(category, level, mode, subtopic) {
   const schema = SCHEMA[mode] || SCHEMA.regular;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method:  "POST",
@@ -262,7 +297,7 @@ async function generateOne(category, level, mode) {
     body: JSON.stringify({
       model:      "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      messages:   [{ role: "user", content: buildPrompt(category, level, mode) }],
+      messages:   [{ role: "user", content: buildPrompt(category, level, mode, subtopic) }],
     }),
     signal: AbortSignal.timeout(28000),
   });
@@ -290,14 +325,15 @@ async function generateOne(category, level, mode) {
 }
 
 // ── Store round in mode-specific Firestore collection ────────
-async function storeInCache(category, level, round, mode) {
-  const col = COLLECTION_BY_MODE[mode] || COLLECTION_BY_MODE.regular;
-  const id = `${category}_${level}_${Date.now()}_${Math.random().toString(36).slice(2,6)}`;
-  await fsPatch(col, id, {
+async function storeSlot(col, docId, category, level, variant, round) {
+  const now = Date.now();
+  await fsPatch(col, docId, {
     category:         { stringValue:  category },
     level:            { integerValue: String(level) },
+    variant:          { integerValue: String(variant) },
     used:             { booleanValue: false },
-    ts:               { stringValue:  new Date().toISOString() },
+    ts:               { stringValue:  new Date(now).toISOString() },
+    generatedAt:      { integerValue: String(now) },
     bluffExplanation: { stringValue:  round.bluffExplanation || "" },
     statements: {
       arrayValue: {
@@ -326,30 +362,63 @@ export default async function handler(req, res) {
     return res.status(503).json({ error: "Firestore not configured" });
 
   const mode = req.query.mode === "blitz" ? "blitz" : "regular";
+  const col = COLLECTION_BY_MODE[mode] || COLLECTION_BY_MODE.regular;
 
-  // Build all 40 combos
+  // Optional override — if provided, only regenerate the chosen variant slot
+  // set. Useful to split long populates across multiple invocations when
+  // hitting the 60s gateway limit before the function-level 300s kicks in.
+  const onlyVariant = req.query.variant !== undefined
+    ? Math.max(0, Math.min(4, parseInt(req.query.variant, 10) || 0))
+    : null;
+  const variantsToProcess = onlyVariant !== null ? [onlyVariant] : VARIANTS;
+
+  const cronRunIdx = Math.floor(Date.now() / CRON_BUCKET_MS);
+  const now = Date.now();
+
+  // Build combos to regenerate — filter out fresh slots up front so we know
+  // the true batch size.
   const combos = [];
+  let skipped = 0;
   for (const cat of CATS) {
     for (const lvl of LEVELS) {
-      combos.push({ category: cat, level: lvl });
+      for (const variant of variantsToProcess) {
+        const docId = `${cat}_${lvl}_${variant}`;
+        combos.push({ cat, level: lvl, variant, docId });
+      }
     }
   }
 
-  // Process in batches of 8 (Anthropic rate-limit safe)
-  const BATCH_SIZE = 8;
-  const results = { ok: 0, failed: 0, errors: [] };
+  // Staleness check — fetch existing slots in parallel, mark skips.
+  const existingChecks = await Promise.all(combos.map(async (c) => {
+    const doc = await fsGet(col, c.docId);
+    if (!doc) return { ...c, stale: true };
+    const generatedAt = readIntegerField(doc, "generatedAt");
+    const stale = !generatedAt || (now - generatedAt) >= STALENESS_MS;
+    return { ...c, stale };
+  }));
 
-  for (let i = 0; i < combos.length; i += BATCH_SIZE) {
-    const batch = combos.slice(i, i + BATCH_SIZE);
+  const pending = existingChecks.filter(c => c.stale);
+  skipped = existingChecks.length - pending.length;
+
+  // Process in batches (Anthropic rate-limit safe).
+  const BATCH_SIZE = 8;
+  const results = { ok: 0, failed: 0, skipped, errors: [] };
+
+  for (let i = 0; i < pending.length; i += BATCH_SIZE) {
+    const batch = pending.slice(i, i + BATCH_SIZE);
     await Promise.all(
-      batch.map(async ({ category, level }) => {
+      batch.map(async ({ cat, level, variant, docId }) => {
         try {
-          const round = await generateOne(category, level, mode);
-          await storeInCache(category, level, round, mode);
+          const subtopicsArr = SUBTOPICS_PRE[cat] || [];
+          const subtopic = subtopicsArr.length > 0
+            ? subtopicsArr[(variant + cronRunIdx) % subtopicsArr.length]
+            : null;
+          const round = await generateOne(cat, level, mode, subtopic);
+          await storeSlot(col, docId, cat, level, variant, round);
           results.ok++;
         } catch (e) {
           results.failed++;
-          results.errors.push(`${category}:${level}: ${e.message}`);
+          results.errors.push(`${docId}: ${e.message}`);
         }
       })
     );
@@ -357,10 +426,13 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     mode,
-    collection: COLLECTION_BY_MODE[mode],
-    generated:  results.ok,
-    failed:     results.failed,
-    errors:     results.errors,
-    timestamp:  new Date().toISOString(),
+    collection: col,
+    variantsProcessed: variantsToProcess,
+    considered: combos.length,
+    generated: results.ok,
+    skipped:   results.skipped,
+    failed:    results.failed,
+    errors:    results.errors,
+    timestamp: new Date().toISOString(),
   });
 }
