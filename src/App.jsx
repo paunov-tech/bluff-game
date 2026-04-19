@@ -11,6 +11,8 @@ import {
   getCurrentIdToken,
   consumeRedirectResult,
   authStorageSnapshot,
+  isIOSSafari,
+  renderGoogleButton,
 } from "./auth.js";
 
 // ── SWEAR Card helpers ───────────────────
@@ -2125,6 +2127,13 @@ export default function BluffGame() {
     try { return new URLSearchParams(window.location.search).get("authDebug") === "1"; } catch { return false; }
   });
   const [authDebugLines, setAuthDebugLines] = useState([]);
+  const pushAuthDebug = useCallback((label, obj) => {
+    setAuthDebugLines((lines) => [...lines, { t: Date.now(), label, obj }]);
+  }, []);
+  // iOS Safari: use GIS renderButton flow (no redirect, no ITP-partitioned
+  // storage). Ref points at the container div rendered inside the auth modal.
+  const gisButtonRef = useRef(null);
+  const [gisStatus, setGisStatus] = useState(isIOSSafari() ? "loading" : "skipped"); // loading | ready | failed | skipped
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -3774,21 +3783,57 @@ export default function BluffGame() {
     let pending = false;
     try { pending = sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch {}
     console.log("[auth] redirect effect mounted", { pending });
-    const pushDebug = (label, obj) => {
-      setAuthDebugLines((lines) => [...lines, { t: Date.now(), label, obj }]);
-    };
-    authStorageSnapshot().then((s) => pushDebug("mount", s)).catch(() => {});
+    authStorageSnapshot().then((s) => pushAuthDebug("mount", { isIOSSafari: isIOSSafari(), ...s })).catch(() => {});
     if (!pending) { setAuthLoadingFromRedirect(false); return; }
     consumeRedirectResult().then((user) => {
       console.log("[auth] consumeRedirectResult resolved", user ? { uid: user.uid, email: user.email } : null);
-      pushDebug("redirect_result", { user: user ? { uid: user.uid, email: user.email } : null });
+      pushAuthDebug("redirect_result", { user: user ? { uid: user.uid, email: user.email } : null });
     }).finally(() => {
       try { sessionStorage.removeItem("bluff_auth_redirect_pending"); } catch {}
       setAuthLoadingFromRedirect(false);
       console.log("[auth] redirect pending flag cleared, overlay dismissed");
-      authStorageSnapshot().then((s) => pushDebug("post_redirect", s)).catch(() => {});
+      authStorageSnapshot().then((s) => pushAuthDebug("post_redirect", s)).catch(() => {});
     });
-  }, []);
+  }, [pushAuthDebug]);
+
+  // GIS (google.accounts.id) renderButton lifecycle — iOS Safari only.
+  // Runs whenever the auth modal opens. Cleans up on close / unmount.
+  useEffect(() => {
+    if (!authModalOpen) return;
+    if (!isIOSSafari()) return;
+    let cancelled = false;
+    setGisStatus("loading");
+    pushAuthDebug("gis:effect_mounted", {});
+    // Defer so the modal has painted and ref is attached.
+    const id = setTimeout(() => {
+      if (cancelled) return;
+      const container = gisButtonRef.current;
+      if (!container) {
+        pushAuthDebug("gis:no_container", {});
+        setGisStatus("failed");
+        return;
+      }
+      // Clear any stale GIS iframe from a prior modal open.
+      try { container.innerHTML = ""; } catch {}
+      renderGoogleButton(container, {
+        width: 300,
+        onDebug: ({ label, obj }) => { if (!cancelled) pushAuthDebug("gis:" + label, obj); },
+      }).then((user) => {
+        if (cancelled) return;
+        pushAuthDebug("gis:user_resolved", { uid: user?.uid, email: user?.email });
+        if (user) {
+          setAuthModalOpen(false);
+          setAnonCapBannerOpen(false);
+        }
+      }).catch((e) => {
+        if (cancelled) return;
+        pushAuthDebug("gis:error", { message: e?.message });
+        setGisStatus("failed");
+      });
+      setGisStatus("ready");
+    }, 50);
+    return () => { cancelled = true; clearTimeout(id); };
+  }, [authModalOpen, pushAuthDebug]);
 
   // Firebase auth subscription: flip userIdRef to the uid on sign-in and
   // kick off anon → uid migration. On sign-out, restore prior anonymous id.
@@ -3796,7 +3841,7 @@ export default function BluffGame() {
     if (!isAuthReady()) return;
     const unsub = onAuthChange(async (user) => {
       console.log("[auth] App onAuthChange", { user: user ? { uid: user.uid, email: user.email } : null, prevUserId: userIdRef.current });
-      setAuthDebugLines((lines) => [...lines, { t: Date.now(), label: "onAuthChange", obj: { user: user ? { uid: user.uid, email: user.email } : null } }]);
+      pushAuthDebug("onAuthChange", { user: user ? { uid: user.uid, email: user.email } : null });
       if (!user) {
         // Sign-out: restore anon id (fresh random if none stored).
         let anon = null;
@@ -5443,40 +5488,77 @@ export default function BluffGame() {
                 {t("auth.sign_in_failed", lang)}
               </div>
             )}
-            <button
-              onClick={async ()=>{
-                setAuthError("");
-                setAuthBusy(true);
-                try {
-                  const user = await signInGoogle();
-                  if (user) {
-                    setAuthModalOpen(false);
-                    setAnonCapBannerOpen(false);
+            {isIOSSafari() ? (
+              <div style={{marginBottom:10}}>
+                <div
+                  ref={gisButtonRef}
+                  style={{display:"flex",justifyContent:"center",minHeight:44,
+                    visibility: gisStatus === "failed" ? "hidden" : "visible"}}
+                />
+                {gisStatus === "loading" && (
+                  <div style={{fontSize:10,color:T.dim,textAlign:"center",marginTop:6,letterSpacing:"1px"}}>
+                    {t("auth.signing_in", lang)}
+                  </div>
+                )}
+                {gisStatus === "failed" && (
+                  <button
+                    onClick={async ()=>{
+                      setAuthError("");
+                      setAuthBusy(true);
+                      try {
+                        const user = await signInGoogle();
+                        if (user) { setAuthModalOpen(false); setAnonCapBannerOpen(false); }
+                      } catch (e) {
+                        setAuthError(e?.message || "sign_in_failed");
+                      } finally { setAuthBusy(false); }
+                    }}
+                    disabled={authBusy}
+                    style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
+                      textTransform:"uppercase",background:"#ffffff",color:"#04060f",
+                      border:"none",borderRadius:10,cursor: authBusy ? "wait" : "pointer",fontFamily:"inherit",
+                      opacity: authBusy ? .6 : 1,
+                      display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                    <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
+                    {t("auth.continue_google", lang)}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={async ()=>{
+                  setAuthError("");
+                  setAuthBusy(true);
+                  try {
+                    const user = await signInGoogle();
+                    if (user) {
+                      setAuthModalOpen(false);
+                      setAnonCapBannerOpen(false);
+                    }
+                  } catch (e) {
+                    const code = e?.code || "";
+                    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+                      setAuthError("sign_in_cancelled");
+                    } else if (code === "auth/network-request-failed") {
+                      setAuthError("network_error");
+                    } else if (code === "auth/unauthorized-domain") {
+                      setAuthError("unauthorized_domain");
+                    } else {
+                      setAuthError(e?.message || "sign_in_failed");
+                    }
+                  } finally {
+                    setAuthBusy(false);
                   }
-                } catch (e) {
-                  const code = e?.code || "";
-                  if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-                    setAuthError("sign_in_cancelled");
-                  } else if (code === "auth/network-request-failed") {
-                    setAuthError("network_error");
-                  } else if (code === "auth/unauthorized-domain") {
-                    setAuthError("unauthorized_domain");
-                  } else {
-                    setAuthError(e?.message || "sign_in_failed");
-                  }
-                } finally {
-                  setAuthBusy(false);
-                }
-              }}
-              disabled={authBusy}
-              style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
-                textTransform:"uppercase",background:"#ffffff",color:"#04060f",
-                border:"none",borderRadius:10,cursor: authBusy ? "wait" : "pointer",fontFamily:"inherit",
-                marginBottom:10,opacity: authBusy ? .6 : 1,
-                display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-              <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
-              {t("auth.continue_google", lang)}
-            </button>
+                }}
+                disabled={authBusy}
+                style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
+                  textTransform:"uppercase",background:"#ffffff",color:"#04060f",
+                  border:"none",borderRadius:10,cursor: authBusy ? "wait" : "pointer",fontFamily:"inherit",
+                  marginBottom:10,opacity: authBusy ? .6 : 1,
+                  display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
+                {t("auth.continue_google", lang)}
+              </button>
+            )}
             <button
               disabled
               style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",

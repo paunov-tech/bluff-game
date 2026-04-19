@@ -66,17 +66,31 @@ export function onAuthChange(callback) {
   });
 }
 
-// iOS Safari blocks signInWithPopup reliably (ITP + cross-site cookie
-// restrictions break the OAuth callback). Detect and switch to redirect.
-function shouldUseRedirect() {
+// iOS Safari — even with a custom authDomain on the same registrable domain,
+// iOS 18+ ITP wipes Firebase's first-party storage on return from the OAuth
+// redirect. We detect this environment so the UI can route to the GIS
+// (google.accounts.id) button path, which keeps the entire flow in the
+// first-party context of the origin and never relies on redirect state.
+export function isIOSSafari() {
   if (typeof window === "undefined") return false;
   const ua = window.navigator.userAgent || "";
-  const isIOS = /iPad|iPhone|iPod/.test(ua);
-  const isMobileSafari = isIOS || (/Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua));
+  const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+    // iPadOS 13+ reports desktop UA; detect via touch + platform.
+    (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+  if (!isIOS) return false;
+  // On iOS, all browsers are WebKit/Safari under the hood for auth purposes.
+  return true;
+}
+
+function shouldUseRedirect() {
+  if (typeof window === "undefined") return false;
+  if (isIOSSafari()) return true;
+  const ua = window.navigator.userAgent || "";
+  const isMobileSafari = /Safari/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
   const isStandalone =
     (typeof window.matchMedia === "function" && window.matchMedia("(display-mode: standalone)").matches) ||
     window.navigator.standalone === true;
-  return isIOS || isMobileSafari || isStandalone;
+  return isMobileSafari || isStandalone;
 }
 
 // ── Google Identity Services (GIS) path ──────────────────────────────
@@ -86,25 +100,46 @@ function shouldUseRedirect() {
 // redirect entirely. Firebase then consumes the ID token via signInWithCredential.
 
 let gisLoadPromise = null;
-function loadGIS() {
+function loadGIS(debug) {
   if (typeof window === "undefined") return Promise.reject(new Error("no_window"));
-  if (window.google?.accounts?.id) return Promise.resolve();
-  if (gisLoadPromise) return gisLoadPromise;
+  if (window.google?.accounts?.id) {
+    debug?.("loadGIS:already_loaded", {});
+    return Promise.resolve();
+  }
+  if (gisLoadPromise) {
+    debug?.("loadGIS:reusing_inflight", {});
+    return gisLoadPromise;
+  }
   gisLoadPromise = new Promise((resolve, reject) => {
     const existing = document.querySelector('script[data-gis="1"]');
     if (existing) {
-      existing.addEventListener("load", () => resolve());
-      existing.addEventListener("error", () => reject(new Error("gis_script_error")));
+      debug?.("loadGIS:script_already_in_dom", {});
+      existing.addEventListener("load", () => { debug?.("loadGIS:existing_script_onload", {}); resolve(); });
+      existing.addEventListener("error", () => { debug?.("loadGIS:existing_script_error", {}); reject(new Error("gis_script_error")); });
       return;
     }
+    debug?.("loadGIS:appending_script", { src: "https://accounts.google.com/gsi/client" });
     const s = document.createElement("script");
     s.src = "https://accounts.google.com/gsi/client";
     s.async = true;
     s.defer = true;
     s.dataset.gis = "1";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("gis_script_error"));
+    s.onload = () => {
+      debug?.("loadGIS:script_onload", { hasGlobal: !!window.google?.accounts?.id });
+      resolve();
+    };
+    s.onerror = (ev) => {
+      debug?.("loadGIS:script_onerror", { type: ev?.type || "error" });
+      reject(new Error("gis_script_error"));
+    };
     document.head.appendChild(s);
+    // Hard timeout so the UI can fall back to Firebase redirect instead of hanging.
+    setTimeout(() => {
+      if (!window.google?.accounts?.id) {
+        debug?.("loadGIS:timeout", { ms: 8000 });
+        reject(new Error("gis_load_timeout"));
+      }
+    }, 8000);
   });
   return gisLoadPromise;
 }
@@ -112,11 +147,20 @@ function loadGIS() {
 // Render Google's branded button into a container. Resolves with the signed-in
 // Firebase user after the user clicks and the credential is exchanged.
 // This is the most reliable GIS flow for iOS Safari because Google's button
-// triggers their own popup within a user gesture — no One Tap quirks.
-export async function renderGoogleButton(container, { width } = {}) {
+// triggers their own popup within a user gesture — no One Tap prompt quirks,
+// no cross-site redirect.
+// onDebug is called with { label, obj } at every step so the UI can render a
+// live trace (iPhone users have no Mac to read console.log).
+export async function renderGoogleButton(container, { width, onDebug } = {}) {
+  const debug = (label, obj) => {
+    try { onDebug?.({ label, obj }); } catch {}
+    console.log("[auth/gis]", label, obj);
+  };
   const a = ensureInit();
   if (!a) throw new Error("auth_not_configured");
-  await loadGIS();
+  debug("renderGoogleButton:start", { hasContainer: !!container });
+  await loadGIS(debug);
+  debug("renderGoogleButton:gis_ready", { hasGlobal: !!window.google?.accounts?.id });
   return new Promise((resolve, reject) => {
     try {
       window.google.accounts.id.initialize({
@@ -125,22 +169,24 @@ export async function renderGoogleButton(container, { width } = {}) {
         auto_select: false,
         itp_support: true,
         callback: async (response) => {
+          debug("callback:fired", { hasCredential: !!response?.credential, select_by: response?.select_by });
           try {
-            console.log("[auth] GIS callback", { hasCredential: !!response?.credential });
             if (!response?.credential) {
               reject(new Error("gis_no_credential"));
               return;
             }
             const cred = GoogleAuthProvider.credential(response.credential);
+            debug("signInWithCredential:calling", {});
             const result = await signInWithCredential(a, cred);
-            console.log("[auth] GIS signInWithCredential ok", { uid: result.user?.uid, email: result.user?.email });
+            debug("signInWithCredential:ok", { uid: result.user?.uid, email: result.user?.email });
             resolve(result.user);
           } catch (e) {
-            console.error("[auth] GIS signInWithCredential failed", { code: e?.code, message: e?.message });
+            debug("signInWithCredential:error", { code: e?.code, message: e?.message });
             reject(e);
           }
         },
       });
+      debug("initialize:done", { clientIdPrefix: GOOGLE_CLIENT_ID.split("-")[0] });
       window.google.accounts.id.renderButton(container, {
         type: "standard",
         theme: "filled_black",
@@ -150,55 +196,10 @@ export async function renderGoogleButton(container, { width } = {}) {
         logo_alignment: "left",
         width: width || 300,
       });
+      debug("renderButton:done", { childCount: container?.childElementCount });
     } catch (e) {
+      debug("renderGoogleButton:threw", { message: e?.message });
       reject(e);
-    }
-  });
-}
-
-// Programmatic trigger used by our existing "Continue with Google" button.
-// Calls google.accounts.id.prompt(); if One Tap isn't displayed (common on
-// iOS without previous grant), falls through to null so the caller can fall
-// back to the redirect flow.
-export async function tryGIS() {
-  const a = ensureInit();
-  if (!a) throw new Error("auth_not_configured");
-  await loadGIS();
-  return new Promise((resolve) => {
-    let settled = false;
-    const settle = (v) => { if (!settled) { settled = true; resolve(v); } };
-    try {
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        ux_mode: "popup",
-        auto_select: false,
-        itp_support: true,
-        callback: async (response) => {
-          try {
-            if (!response?.credential) return settle(null);
-            const cred = GoogleAuthProvider.credential(response.credential);
-            const result = await signInWithCredential(a, cred);
-            console.log("[auth] GIS prompt signInWithCredential ok", { uid: result.user?.uid });
-            settle(result.user);
-          } catch (e) {
-            console.error("[auth] GIS prompt exchange failed", { code: e?.code, message: e?.message });
-            settle(null);
-          }
-        },
-      });
-      window.google.accounts.id.prompt((notification) => {
-        const notDisplayed = notification.isNotDisplayed?.();
-        const skipped = notification.isSkippedMoment?.();
-        if (notDisplayed || skipped) {
-          console.log("[auth] GIS prompt not shown", {
-            reason: notification.getNotDisplayedReason?.() || notification.getSkippedReason?.() || "unknown",
-          });
-          settle(null);
-        }
-      });
-    } catch (e) {
-      console.error("[auth] GIS init failed", { message: e?.message });
-      settle(null);
     }
   });
 }
@@ -210,15 +211,10 @@ export async function signInGoogle() {
   provider.setCustomParameters({ prompt: "select_account" });
 
   if (shouldUseRedirect()) {
-    console.log("[auth] signInGoogle: iOS path, trying GIS first", { ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : null });
-    // Try GIS One Tap first — stays in first-party context, avoids redirect.
-    try {
-      const user = await tryGIS();
-      if (user) return user;
-    } catch (e) {
-      console.warn("[auth] GIS path threw, falling through to redirect", { message: e?.message });
-    }
-    console.log("[auth] falling back to signInWithRedirect");
+    // iOS path should normally be handled by the UI via renderGoogleButton().
+    // This branch is reached only when signInGoogle() is invoked directly on
+    // a Safari-like environment — used as the redirect fallback if GIS load fails.
+    console.log("[auth] signInGoogle: using redirect (iOS/Safari fallback)", { ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : null });
     try { sessionStorage.setItem("bluff_auth_redirect_pending", "1"); } catch {}
     await signInWithRedirect(a, provider);
     return null;
