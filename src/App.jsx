@@ -10,6 +10,7 @@ import {
   signOutUser,
   getCurrentIdToken,
   consumeRedirectResult,
+  setAuthDebugLogger,
 } from "./auth.js";
 
 // ── SWEAR Card helpers ───────────────────
@@ -2114,6 +2115,14 @@ export default function BluffGame() {
   const [authLoadingFromRedirect, setAuthLoadingFromRedirect] = useState(
     () => { try { return sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch { return false; } }
   );
+  // TEMP iOS auth diagnostic — remove after root cause found
+  const [authDebugLog, setAuthDebugLog] = useState([]);
+  const debugLog = useCallback((msg, data) => {
+    const ts = new Date().toISOString().slice(11, 23);
+    const line = `${ts} ${msg}${data !== undefined ? " " + JSON.stringify(data).slice(0, 200) : ""}`;
+    console.log("[auth-debug]", line);
+    setAuthDebugLog(prev => [...prev.slice(-30), line]);
+  }, []);
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [anonCapBannerOpen, setAnonCapBannerOpen] = useState(false);
   const migrationInFlightRef = useRef(false);
@@ -3761,22 +3770,33 @@ export default function BluffGame() {
   // back via getRedirectResult on the next page load. onAuthStateChanged
   // will also fire with the user, so we don't use the return value — we
   // just need to drain it so the SDK settles state, then clear the flag.
+  // TEMP iOS diagnostic — must run before redirect-consume effect
   useEffect(() => {
-    if (!isAuthReady()) return;
+    setAuthDebugLogger((msg, data) => debugLog(`[auth] ${msg}`, data));
+    debugLog("app mounted", { origin: typeof window !== "undefined" ? window.location.origin : null, href: typeof window !== "undefined" ? window.location.href.slice(0, 120) : null });
+  }, [debugLog]);
+
+  useEffect(() => {
+    if (!isAuthReady()) { debugLog("[app] redirect effect: auth not ready"); return; }
     let pending = false;
     try { pending = sessionStorage.getItem("bluff_auth_redirect_pending") === "1"; } catch {}
+    debugLog("[app] redirect effect mounted", { pending });
     if (!pending) { setAuthLoadingFromRedirect(false); return; }
-    consumeRedirectResult().finally(() => {
+    consumeRedirectResult().then((user) => {
+      debugLog("[app] consumeRedirectResult resolved", user ? { uid: user.uid, email: user.email } : null);
+    }).finally(() => {
       try { sessionStorage.removeItem("bluff_auth_redirect_pending"); } catch {}
       setAuthLoadingFromRedirect(false);
+      debugLog("[app] redirect pending flag cleared, overlay dismissed");
     });
-  }, []);
+  }, [debugLog]);
 
   // Firebase auth subscription: flip userIdRef to the uid on sign-in and
   // kick off anon → uid migration. On sign-out, restore prior anonymous id.
   useEffect(() => {
     if (!isAuthReady()) return;
     const unsub = onAuthChange(async (user) => {
+      debugLog("[app] onAuthChange", { user: user ? { uid: user.uid, email: user.email } : null, prevUserId: userIdRef.current });
       if (!user) {
         // Sign-out: restore anon id (fresh random if none stored).
         let anon = null;
@@ -5369,6 +5389,45 @@ export default function BluffGame() {
             {t("auth.signing_in", lang)}
           </div>
           <style>{`@keyframes bluff-auth-spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
+
+      {/* TEMP iOS auth diagnostic panel — remove after root cause found */}
+      {authDebugLog.length > 0 && (
+        <div style={{
+          position: "fixed",
+          bottom: 0, left: 0, right: 0,
+          maxHeight: "40vh",
+          overflowY: "auto",
+          background: "rgba(0,0,0,0.9)",
+          color: "#0f0",
+          fontFamily: "monospace",
+          fontSize: 10,
+          padding: "8px",
+          zIndex: 99999,
+          borderTop: "2px solid #0f0",
+        }}>
+          <div style={{color:"#fff", fontSize: 11, marginBottom: 4}}>
+            AUTH DEBUG ({authDebugLog.length})
+            <button
+              onClick={() => setAuthDebugLog([])}
+              style={{float:"right", background:"#333", color:"#fff", border:"none", padding:"2px 8px", fontSize: 10}}
+            >Clear</button>
+            <button
+              onClick={() => {
+                try {
+                  navigator.clipboard?.writeText(authDebugLog.join("\n"));
+                  alert("Copied");
+                } catch { alert("Copy failed"); }
+              }}
+              style={{float:"right", marginRight: 4, background:"#333", color:"#fff", border:"none", padding:"2px 8px", fontSize: 10}}
+            >Copy</button>
+          </div>
+          {authDebugLog.map((line, i) => (
+            <div key={i} style={{whiteSpace:"pre-wrap", wordBreak:"break-all"}}>
+              {line}
+            </div>
+          ))}
         </div>
       )}
 
