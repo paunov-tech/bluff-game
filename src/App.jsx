@@ -2130,10 +2130,13 @@ export default function BluffGame() {
   const pushAuthDebug = useCallback((label, obj) => {
     setAuthDebugLines((lines) => [...lines, { t: Date.now(), label, obj }]);
   }, []);
-  // iOS Safari: use GIS renderButton flow (no redirect, no ITP-partitioned
-  // storage). Ref points at the container div rendered inside the auth modal.
+  // Google Identity Services renderButton flow — used on ALL platforms.
+  // iOS Safari: bypasses ITP storage partitioning of the Firebase redirect.
+  // Desktop: uses the same in-place popup flow, no UX divergence.
+  // signInGoogle() + signInWithRedirect remains wired as the last-resort
+  // fallback shown when GIS script fails to load (8s timeout / CSP / offline).
   const gisButtonRef = useRef(null);
-  const [gisStatus, setGisStatus] = useState(isIOSSafari() ? "loading" : "skipped"); // loading | ready | failed | skipped
+  const [gisStatus, setGisStatus] = useState("loading"); // loading | ready | failed
 
   // ── Real-time Duel (PartyKit) ────────────────────────────────
   const [duelScreen, setDuelScreen] = useState(null); // null | "lobby" | "playing" | "result"
@@ -3796,11 +3799,10 @@ export default function BluffGame() {
     });
   }, [pushAuthDebug]);
 
-  // GIS (google.accounts.id) renderButton lifecycle — iOS Safari only.
-  // Runs whenever the auth modal opens. Cleans up on close / unmount.
+  // GIS (google.accounts.id) renderButton lifecycle — runs on every platform.
+  // Fires whenever the auth modal opens; cleans up on close / unmount.
   useEffect(() => {
     if (!authModalOpen) return;
-    if (!isIOSSafari()) return;
     let cancelled = false;
     setGisStatus("loading");
     pushAuthDebug("gis:effect_mounted", {});
@@ -5488,19 +5490,21 @@ export default function BluffGame() {
                 {t("auth.sign_in_failed", lang)}
               </div>
             )}
-            {isIOSSafari() ? (
-              <div style={{marginBottom:10}}>
-                <div
-                  ref={gisButtonRef}
-                  style={{display:"flex",justifyContent:"center",minHeight:44,
-                    visibility: gisStatus === "failed" ? "hidden" : "visible"}}
-                />
-                {gisStatus === "loading" && (
-                  <div style={{fontSize:10,color:T.dim,textAlign:"center",marginTop:6,letterSpacing:"1px"}}>
-                    {t("auth.signing_in", lang)}
-                  </div>
-                )}
-                {gisStatus === "failed" && (
+            <div style={{marginBottom:10}}>
+              <div
+                ref={gisButtonRef}
+                style={{display:"flex",justifyContent:"center",minHeight:44,
+                  visibility: gisStatus === "failed" ? "hidden" : "visible",
+                  height: gisStatus === "failed" ? 0 : "auto",
+                  overflow: "hidden"}}
+              />
+              {gisStatus === "loading" && (
+                <div style={{fontSize:10,color:T.dim,textAlign:"center",marginTop:6,letterSpacing:"1px"}}>
+                  {t("auth.signing_in", lang)}
+                </div>
+              )}
+              {gisStatus === "failed" && (
+                <>
                   <button
                     onClick={async ()=>{
                       setAuthError("");
@@ -5509,7 +5513,16 @@ export default function BluffGame() {
                         const user = await signInGoogle();
                         if (user) { setAuthModalOpen(false); setAnonCapBannerOpen(false); }
                       } catch (e) {
-                        setAuthError(e?.message || "sign_in_failed");
+                        const code = e?.code || "";
+                        if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
+                          setAuthError("sign_in_cancelled");
+                        } else if (code === "auth/network-request-failed") {
+                          setAuthError("network_error");
+                        } else if (code === "auth/unauthorized-domain") {
+                          setAuthError("unauthorized_domain");
+                        } else {
+                          setAuthError(e?.message || "sign_in_failed");
+                        }
                       } finally { setAuthBusy(false); }
                     }}
                     disabled={authBusy}
@@ -5521,44 +5534,12 @@ export default function BluffGame() {
                     <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
                     {t("auth.continue_google", lang)}
                   </button>
-                )}
-              </div>
-            ) : (
-              <button
-                onClick={async ()=>{
-                  setAuthError("");
-                  setAuthBusy(true);
-                  try {
-                    const user = await signInGoogle();
-                    if (user) {
-                      setAuthModalOpen(false);
-                      setAnonCapBannerOpen(false);
-                    }
-                  } catch (e) {
-                    const code = e?.code || "";
-                    if (code === "auth/popup-closed-by-user" || code === "auth/cancelled-popup-request") {
-                      setAuthError("sign_in_cancelled");
-                    } else if (code === "auth/network-request-failed") {
-                      setAuthError("network_error");
-                    } else if (code === "auth/unauthorized-domain") {
-                      setAuthError("unauthorized_domain");
-                    } else {
-                      setAuthError(e?.message || "sign_in_failed");
-                    }
-                  } finally {
-                    setAuthBusy(false);
-                  }
-                }}
-                disabled={authBusy}
-                style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
-                  textTransform:"uppercase",background:"#ffffff",color:"#04060f",
-                  border:"none",borderRadius:10,cursor: authBusy ? "wait" : "pointer",fontFamily:"inherit",
-                  marginBottom:10,opacity: authBusy ? .6 : 1,
-                  display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                <span style={{fontSize:16,fontWeight:900,color:"#4285F4"}}>G</span>
-                {t("auth.continue_google", lang)}
-              </button>
-            )}
+                  <div style={{fontSize:9,color:T.dim,textAlign:"center",marginTop:4,letterSpacing:"1px",opacity:.7}}>
+                    (fallback mode)
+                  </div>
+                </>
+              )}
+            </div>
             <button
               disabled
               style={{width:"100%",padding:"12px 14px",fontSize:13,fontWeight:700,letterSpacing:"1.5px",
