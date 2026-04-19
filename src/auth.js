@@ -19,18 +19,10 @@ const firebaseConfig = {
 let app = null;
 let auth = null;
 
-let externalLogger = null;
-export function setAuthDebugLogger(fn) { externalLogger = fn; }
-
-function internalLog(msg, data) {
-  console.log("[auth]", msg, data !== undefined ? data : "");
-  try { if (externalLogger) externalLogger(msg, data); } catch {}
-}
-
 function ensureInit() {
   if (!firebaseConfig.apiKey) return null;
   if (!app) {
-    internalLog("init firebase", { authDomain: firebaseConfig.authDomain, projectId: firebaseConfig.projectId, origin: typeof window !== "undefined" ? window.location.origin : null });
+    console.log("[auth] init firebase", { authDomain: firebaseConfig.authDomain, projectId: firebaseConfig.projectId, origin: typeof window !== "undefined" ? window.location.origin : null });
     app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
     auth = getAuth(app);
   }
@@ -48,7 +40,7 @@ export function onAuthChange(callback) {
     return () => {};
   }
   return onAuthStateChanged(a, (user) => {
-    internalLog("onAuthStateChanged fired", user ? { uid: user.uid, email: user.email, isAnonymous: user.isAnonymous } : null);
+    console.log("[auth] onAuthStateChanged fired", user ? { uid: user.uid, email: user.email, isAnonymous: user.isAnonymous } : null);
     callback(user || null);
   });
 }
@@ -73,7 +65,7 @@ export async function signInGoogle() {
   provider.setCustomParameters({ prompt: "select_account" });
 
   if (shouldUseRedirect()) {
-    internalLog("signInGoogle: using redirect", { ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : null });
+    console.log("[auth] signInGoogle: using redirect", { ua: typeof navigator !== "undefined" ? navigator.userAgent.slice(0, 80) : null });
     try { sessionStorage.setItem("bluff_auth_redirect_pending", "1"); } catch {}
     await signInWithRedirect(a, provider);
     return null;
@@ -88,7 +80,7 @@ export async function signInGoogle() {
       err?.code === "auth/popup-closed-by-user" ||
       err?.code === "auth/cancelled-popup-request"
     ) {
-      internalLog("popup failed, falling back to redirect", { code: err.code });
+      console.warn("[auth] popup failed, falling back to redirect", { code: err.code });
       try { sessionStorage.setItem("bluff_auth_redirect_pending", "1"); } catch {}
       await signInWithRedirect(a, provider);
       return null;
@@ -100,16 +92,16 @@ export async function signInGoogle() {
 export async function consumeRedirectResult() {
   const a = ensureInit();
   if (!a) {
-    internalLog("consumeRedirectResult skipped: auth not ready");
+    console.log("[auth] consumeRedirectResult skipped: auth not ready");
     return null;
   }
-  internalLog("before getRedirectResult", { currentUser: a.currentUser ? a.currentUser.uid : null });
+  console.log("[auth] before getRedirectResult", { currentUser: a.currentUser ? a.currentUser.uid : null });
   try {
     const result = await getRedirectResult(a);
-    internalLog("getRedirectResult returned", result ? { user: result.user ? { uid: result.user.uid, email: result.user.email } : null, providerId: result.providerId, operationType: result.operationType } : null);
+    console.log("[auth] getRedirectResult returned", result ? { user: result.user ? { uid: result.user.uid, email: result.user.email } : null, providerId: result.providerId, operationType: result.operationType } : null);
     return result?.user || null;
   } catch (err) {
-    internalLog("redirect result error", { code: err?.code, message: err?.message });
+    console.error("[auth] redirect result error", { code: err?.code, message: err?.message });
     return null;
   }
 }
