@@ -14,6 +14,18 @@ import {
   isIOSSafari,
   renderGoogleButton,
 } from "./auth.js";
+import {
+  shouldTriggerSabotage,
+  pickSabotageType,
+  scrambleText,
+  logSabotageTriggered,
+  logSabotageOutcome,
+  SABOTAGE_TYPES,
+} from "./lib/sabotage.js";
+import { startCommunityPulse } from "./lib/communityPulse.js";
+import { PitFall } from "./components/PitFall.jsx";
+import { AxiomReaction } from "./components/AxiomReaction.jsx";
+import { CommunityToast } from "./components/CommunityToast.jsx";
 
 // ── SWEAR Card helpers ───────────────────
 // Format an ISO createdAt timestamp as MM/YY. Falls back to "—" on invalid input.
@@ -2182,6 +2194,24 @@ export default function BluffGame() {
   const [shameSent, setShameSent] = useState(false);
   const [lastAxiomLine, setLastAxiomLine] = useState("");
   const [voiceEnabled, setVoiceEnabled] = useState(() => safeLSGet("bluff_voice") !== "off");
+
+  // ── Phase 1 Arena drama: sabotage / pit / community / reactions ──
+  const [pitFallActive, setPitFallActive] = useState(false);
+  const pitFellToRoundRef = useRef(0);
+  const [axiomReaction, setAxiomReaction] = useState(null); // "LAUGH" | "MOCK" | null
+  const [communityToast, setCommunityToast] = useState(null);
+  const communityStopRef = useRef(null);
+  // Sabotage runtime state. `triggeredThisGame` is reset on game start
+  // (startBlitz / startClimb / startDaily). `active` is the visual sabotage
+  // currently playing this round; cleared at round end.
+  const sabotageGameRef = useRef({ triggeredThisGame: false });
+  const sabotageScheduleRef = useRef(null);
+  const [sabotageActive, setSabotageActive] = useState(null); // { type, startedAt, peekIdx? }
+  const [sabotageBanner, setSabotageBanner] = useState(null); // { text, key }
+  const sabotageBannerTimerRef = useRef(null);
+  const sabotageEndTimerRef = useRef(null);
+  const sabotagePeekTimerRef = useRef(null);
+
   const timerRef = useRef(null);
   const autoAdvanceRef = useRef(null);
   const audioRef = useRef(null);
@@ -2942,6 +2972,29 @@ export default function BluffGame() {
       isCorrect, autoReveal,
       streakMult: streakMultAtLock,
     });
+
+    // ── Phase 1 drama hooks ────────────────────────────────────
+    // Telemetry: did the player still win the sabotaged round?
+    if (sabotageGameRef.current.lastType && sabotageGameRef.current.triggeredThisGame) {
+      const sabType = sabotageGameRef.current.lastType;
+      logSabotageOutcome(sabType, isCorrect, userIdRef.current);
+      sabotageGameRef.current.lastType = null;
+    }
+    // Pit fall on a wrong answer (solo Climb only — skip blitz/duel).
+    // The 3s overlay runs in parallel with the existing reveal flow;
+    // auto-advance starts 4.3s post-reveal so the choreography finishes
+    // first. AXIOM mock emoji rides shotgun above the overlay; PitFall
+    // owns the voice line so we set playVoice=false on the reaction.
+    if (!isCorrect && !blitzMode) {
+      pitFellToRoundRef.current = roundIdx + 1;
+      setPitFallActive(true);
+      setAxiomReaction("MOCK");
+    } else if (isCorrect && !blitzMode && roundIdx >= 4) {
+      // AXIOM laughs after the player nails round 5+. Voice line plays
+      // independently of axiomSpeak (above) — it's a short reaction layered
+      // on top of the round commentary, not a replacement.
+      setAxiomReaction("LAUGH");
+    }
   }
 
   // ── NEXT ROUND ───────────────────────────────────────────────
@@ -3929,6 +3982,100 @@ export default function BluffGame() {
       }, 1000);
     }
   }, [loadingRound, fetchError, stmts.length, revealed, roundIdx, blitzMode]);
+
+  // ── SABOTAGE: schedule one optional disruption per eligible round ──
+  // Runs after a fresh round is rendered. Solo Climb only (skip blitz +
+  // daily challenge to keep deterministic-feeling modes clean). Cleans
+  // up its own timers on round/screen change.
+  useEffect(() => {
+    if (screen !== "play" || revealed || loadingRound || fetchError || !stmts.length) return;
+    if (blitzMode || dailyMode) return;
+
+    const round1 = roundIdx + 1;
+    const diff = ROUND_DIFFICULTY[roundIdx] || 3;
+    if (!shouldTriggerSabotage(round1, diff, sabotageGameRef.current.triggeredThisGame)) return;
+
+    const type = pickSabotageType();
+    const delay = 5000 + Math.random() * 10000; // 5–15s into the round
+
+    sabotageScheduleRef.current = setTimeout(() => {
+      sabotageGameRef.current.triggeredThisGame = true;
+      sabotageGameRef.current.lastType = type;
+      logSabotageTriggered(type, round1, diff, userIdRef.current);
+
+      const dur = SABOTAGE_TYPES[type]?.durationMs || 1500;
+
+      if (type === "TIME_THIEF") {
+        try { AudioTension.tick(3); } catch {}
+        haptic.timerWarning?.();
+        setSabotageActive({ type, startedAt: Date.now() });
+        setSabotageBanner({ text: "⚡ AXIOM STOLE YOUR TIME", key: Date.now() });
+        setTime(t => Math.max(5, t - 10));
+        sabotageEndTimerRef.current = setTimeout(() => setSabotageActive(null), 800);
+      } else if (type === "REALITY_GLITCH") {
+        try { AudioTension.tick(2); } catch {}
+        setSabotageActive({ type, startedAt: Date.now() });
+        setSabotageBanner({ text: "🌀 GLITCH IN THE MATRIX", key: Date.now() });
+        sabotageEndTimerRef.current = setTimeout(() => setSabotageActive(null), dur);
+      } else if (type === "PEEK_AND_HIDE") {
+        const truthIdxs = currentStmtsRef.current
+          .map((s, i) => (s?.real ? i : -1))
+          .filter(i => i >= 0);
+        if (truthIdxs.length === 0) return;
+        const peekIdx = truthIdxs[Math.floor(Math.random() * truthIdxs.length)];
+        try { AudioTension.tick(1); } catch {}
+        setSabotageActive({ type, startedAt: Date.now(), peekIdx });
+        setSabotageBanner({ text: "👁 AXIOM SHOWED YOU SOMETHING. TOO LATE.", key: Date.now() });
+        sabotagePeekTimerRef.current = setTimeout(() => {
+          // Clear the green border but keep the banner readable for the
+          // remainder of its display duration.
+          setSabotageActive(prev => (prev && prev.type === "PEEK_AND_HIDE") ? { ...prev, peekIdx: -1 } : prev);
+        }, 1000);
+      }
+
+      // Banner fades on its own via CSS, but we still null it out so a
+      // subsequent sabotage on a different game cycle can re-trigger.
+      sabotageBannerTimerRef.current = setTimeout(() => setSabotageBanner(null), 1800);
+    }, delay);
+
+    return () => {
+      if (sabotageScheduleRef.current) clearTimeout(sabotageScheduleRef.current);
+      if (sabotageEndTimerRef.current) clearTimeout(sabotageEndTimerRef.current);
+      if (sabotagePeekTimerRef.current) clearTimeout(sabotagePeekTimerRef.current);
+      if (sabotageBannerTimerRef.current) clearTimeout(sabotageBannerTimerRef.current);
+      setSabotageActive(null);
+      setSabotageBanner(null);
+    };
+  }, [screen, revealed, loadingRound, fetchError, stmts.length, roundIdx, blitzMode, dailyMode]);
+
+  // Reset per-game sabotage state on a new game start.
+  useEffect(() => {
+    if (screen === "play" && roundIdx === 0) {
+      sabotageGameRef.current = { triggeredThisGame: false };
+    }
+    if (screen !== "play") {
+      // Leaving play (home / result / etc): clear any in-flight visuals.
+      setSabotageActive(null);
+      setSabotageBanner(null);
+      setPitFallActive(false);
+      setAxiomReaction(null);
+    }
+  }, [screen, roundIdx]);
+
+  // ── COMMUNITY PULSE: ambient toasts during Solo play ──
+  useEffect(() => {
+    if (screen !== "play") return;
+    if (blitzMode) return; // keep Blitz lean — no ambient distractions
+    const stop = startCommunityPulse((toast) => {
+      // Only show if no toast currently visible. New toasts replace stale.
+      setCommunityToast(toast);
+    }, { lang });
+    communityStopRef.current = stop;
+    return () => {
+      try { stop(); } catch {}
+      setCommunityToast(null);
+    };
+  }, [screen, blitzMode, lang]);
 
   // ── TELEGRAM MAIN BUTTON sync ───────────────────────────────
   useEffect(() => {
@@ -5868,6 +6015,66 @@ export default function BluffGame() {
         background:"radial-gradient(ellipse at 50% 50%,rgba(232,197,71,.05) 0%,rgba(8,8,15,0) 70%)",
         animation:"ambient-breath 8s ease-in-out infinite",
       }}/>
+      {/* Sabotage TIME_THIEF red flash overlay */}
+      {sabotageActive?.type === "TIME_THIEF" && (
+        <div aria-hidden="true" style={{
+          position:"fixed", inset:0, zIndex:55, pointerEvents:"none",
+          background:"radial-gradient(ellipse at 50% 0%, rgba(244,63,94,0.55) 0%, rgba(244,63,94,0.0) 60%)",
+          animation:"sabotage-flash 700ms ease-out",
+          mixBlendMode:"screen",
+        }}/>
+      )}
+      {/* Sabotage banner — top-center text overlay */}
+      {sabotageBanner && (
+        <div aria-hidden="true" style={{
+          position:"fixed", top: 78, left: "50%", zIndex: 56,
+          transform: "translateX(-50%)",
+          background: "rgba(20,20,28,0.92)",
+          border: "1px solid rgba(244,63,94,0.55)",
+          color: "#f43f5e",
+          padding: "10px 18px",
+          borderRadius: 12,
+          fontSize: 12.5,
+          fontWeight: 800,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          fontFamily: "'Segoe UI',system-ui,sans-serif",
+          boxShadow: "0 8px 24px rgba(244,63,94,0.25)",
+          backdropFilter: "blur(6px)",
+          WebkitBackdropFilter: "blur(6px)",
+          animation: "sabotage-banner 1.7s ease forwards",
+          pointerEvents: "none",
+          maxWidth: "90vw",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        key={sabotageBanner.key}>
+          {sabotageBanner.text}
+        </div>
+      )}
+      {pitFallActive && (
+        <PitFall
+          fellToRound={pitFellToRoundRef.current}
+          skin={activeSkin}
+          onComplete={() => setPitFallActive(false)}
+        />
+      )}
+      {axiomReaction && (
+        <AxiomReaction
+          type={axiomReaction}
+          skin={activeSkin}
+          // PitFall plays its own MOCK voice line — don't double up here.
+          playVoice={axiomReaction !== "MOCK"}
+          onComplete={() => setAxiomReaction(null)}
+        />
+      )}
+      {communityToast && (
+        <CommunityToast
+          toast={communityToast}
+          onDismiss={() => setCommunityToast(null)}
+        />
+      )}
       {chipFlying && (
         <div style={{
           position:"fixed",zIndex:100,pointerEvents:"none",
@@ -6159,20 +6366,23 @@ export default function BluffGame() {
             </p>
           </div>
 
-          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:14,animation:revealed&&!correct?"g-shake .5s":"none"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:14,animation:revealed&&!correct?"g-shake .5s":sabotageActive?.type==="REALITY_GLITCH"?"sabotage-glitch 1.5s linear":"none"}}>
             {stmts.map((s,i)=>{
               const isB=!s.real,isS=sel===i;
+              const peek = sabotageActive?.type === "PEEK_AND_HIDE" && sabotageActive.peekIdx === i;
+              const glitching = sabotageActive?.type === "REALITY_GLITCH" && !revealed;
               let bg=T.card,border=T.gb,anim="";
               if(!revealed&&isS){bg=T.goldDim;border="rgba(232,197,71,.4)";}
               if(revealed&&isB){bg="rgba(244,63,94,.07)";border="rgba(244,63,94,.4)";anim="g-glow .8s";}
               if(revealed&&isS&&correct){bg="rgba(45,212,160,.07)";border="rgba(45,212,160,.4)";anim="g-correctGlow .8s";}
+              if(peek){border="rgba(45,212,160,0.7)"; anim=`${anim?anim+", ":""}peek-glow 1s ease-out`;}
               return (
-                <button key={i} onClick={()=>handleCardSelect(i)} disabled={flipping||revealed} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||flipping?"default":"pointer",transition:"all .22s ease, transform .25s ease, box-shadow .25s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,boxShadow:revealed&&isB?"0 6px 22px rgba(244,63,94,.22), inset 0 1px 0 rgba(255,255,255,.04)":revealed&&isS&&correct?"0 6px 22px rgba(45,212,160,.22), inset 0 1px 0 rgba(255,255,255,.04)":"0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)",animation:flipping?`card-flip 400ms ${i*.04}s ease-in-out both`:`g-cardIn .3s ${i*.055}s both${revealed&&isB?`, card-kick .5s ${.05+i*.04}s ease-out both`:""}${anim?`, ${anim}`:""}`}}>
+                <button key={i} onClick={()=>handleCardSelect(i)} disabled={flipping||revealed} style={{width:"100%",display:"flex",alignItems:"flex-start",gap:10,background:bg,border:`1.5px solid ${border}`,borderRadius:16,padding:"clamp(11px,3vw,14px)",cursor:revealed||flipping?"default":"pointer",transition:"all .22s ease, transform .25s ease, box-shadow .25s ease",textAlign:"left",color:"#e8e6e1",fontSize:"clamp(13px,3.5vw,15px)",lineHeight:1.55,fontFamily:"inherit",minHeight:52,boxShadow:revealed&&isB?"0 6px 22px rgba(244,63,94,.22), inset 0 1px 0 rgba(255,255,255,.04)":revealed&&isS&&correct?"0 6px 22px rgba(45,212,160,.22), inset 0 1px 0 rgba(255,255,255,.04)":peek?"0 0 24px rgba(45,212,160,0.55), inset 0 0 12px rgba(45,212,160,0.25)":"0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04)",animation:flipping?`card-flip 400ms ${i*.04}s ease-in-out both`:`g-cardIn .3s ${i*.055}s both${revealed&&isB?`, card-kick .5s ${.05+i*.04}s ease-out both`:""}${anim?`, ${anim}`:""}`}}>
                   <div style={{width:"clamp(24px,6vw,28px)",height:"clamp(24px,6vw,28px)",borderRadius:"50%",flexShrink:0,border:`2px solid ${isS&&!revealed?T.gold:revealed&&isB?T.bad:T.gb}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,marginTop:2,background:isS&&!revealed?T.gold:revealed&&isB?"rgba(244,63,94,.18)":"transparent",color:isS&&!revealed?T.bg:revealed&&isB?T.bad:T.dim,transition:"all .25s"}}>
                     {revealed&&isB?"!":String.fromCharCode(65+i)}
                   </div>
-                  <div style={{flex:1}}>
-                    {s.text}
+                  <div style={{flex:1, fontFamily: glitching ? "monospace" : "inherit"}}>
+                    {glitching ? scrambleText(s.text) : s.text}
                     {revealed&&<div style={{marginTop:6,fontSize:10,fontWeight:700,letterSpacing:"1.5px",color:isB?T.bad:isS?T.bad:T.ok,opacity:isB||isS?1:.4}}>
                       {isB?t("play.ai_fabrication"):isS?t("play.actually_real"):t("play.verified_fact")}
                     </div>}
@@ -6869,6 +7079,76 @@ function GameStyles(){
     @keyframes wheel-outcome-pulse{
       0%,100%{opacity:.7}
       50%{opacity:1}
+    }
+    /* === Phase 1 Arena drama === */
+    @keyframes pit-flash{
+      0%{opacity:0}30%{opacity:1}100%{opacity:0}
+    }
+    @keyframes pit-shake{
+      0%,100%{transform:translate(0,0)}
+      25%{transform:translate(-6px,4px) rotate(-0.4deg)}
+      50%{transform:translate(7px,-5px) rotate(0.4deg)}
+      75%{transform:translate(-4px,-6px) rotate(-0.2deg)}
+    }
+    @keyframes pit-streaks{
+      0%{transform:translateY(-100%);opacity:0.4}
+      100%{transform:translateY(100%);opacity:0.7}
+    }
+    @keyframes pit-fall-text{
+      0%{transform:translateY(-180px) scale(0.6);opacity:0;filter:blur(8px)}
+      30%{opacity:1;filter:blur(0)}
+      100%{transform:translateY(40vh) scale(1.4);opacity:0;filter:blur(2px)}
+    }
+    @keyframes pit-impact-bounce{
+      0%{transform:translateY(-50px) scale(1.4);opacity:0}
+      40%{transform:translateY(20px) scale(0.92);opacity:1}
+      70%{transform:translateY(-10px) scale(1.04)}
+      100%{transform:translateY(0) scale(1);opacity:1}
+    }
+    @keyframes pit-dust{
+      0%{transform:translate(0,0) scale(0.4);opacity:0}
+      30%{opacity:0.7}
+      100%{transform:translate(var(--pit-dust-x,0),-220px) scale(1.4);opacity:0}
+    }
+    @keyframes axiom-reaction-pulse{
+      0%{opacity:0;transform:scale(0.3) rotate(-12deg)}
+      30%{opacity:1;transform:scale(1.18) rotate(8deg)}
+      55%{transform:scale(0.96) rotate(-3deg)}
+      80%{opacity:1;transform:scale(1.05) rotate(0)}
+      100%{opacity:0;transform:scale(1) rotate(0)}
+    }
+    @keyframes community-toast-in{
+      from{opacity:0;transform:translateX(20px)}
+      to{opacity:1;transform:translateX(0)}
+    }
+    @keyframes community-toast-out{
+      from{opacity:1;transform:translateX(0)}
+      to{opacity:0;transform:translateX(20px)}
+    }
+    @keyframes sabotage-flash{
+      0%{opacity:0}
+      20%{opacity:0.55}
+      100%{opacity:0}
+    }
+    @keyframes sabotage-banner{
+      0%{opacity:0;transform:translate(-50%,-30px) scale(0.8)}
+      20%{opacity:1;transform:translate(-50%,0) scale(1.05)}
+      40%{transform:translate(-50%,0) scale(1)}
+      80%{opacity:1}
+      100%{opacity:0;transform:translate(-50%,-12px) scale(0.95)}
+    }
+    @keyframes sabotage-glitch{
+      0%,100%{filter:none;transform:translate(0,0)}
+      15%{filter:hue-rotate(60deg) saturate(1.4) contrast(1.2);transform:translate(-2px,1px) skewX(-1.5deg)}
+      30%{filter:hue-rotate(-30deg) saturate(1.6);transform:translate(3px,-2px) skewX(1.2deg)}
+      45%{filter:hue-rotate(120deg) contrast(1.3);transform:translate(-1px,2px) skewX(-0.6deg)}
+      60%{filter:hue-rotate(-90deg) saturate(0.6);transform:translate(2px,1px) skewX(1deg)}
+      80%{filter:hue-rotate(45deg);transform:translate(-1px,0) skewX(-0.4deg)}
+    }
+    @keyframes peek-glow{
+      0%{box-shadow:0 0 0 rgba(45,212,160,0)}
+      30%{box-shadow:0 0 24px rgba(45,212,160,0.65), inset 0 0 12px rgba(45,212,160,0.35)}
+      100%{box-shadow:0 0 0 rgba(45,212,160,0)}
     }
     @media (prefers-reduced-motion: reduce){
       *,*::before,*::after{
