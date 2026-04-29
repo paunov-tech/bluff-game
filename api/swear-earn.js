@@ -32,6 +32,12 @@ const STAT_MAP = {
   daily_challenge_complete:  "dailyCompletes",
   daily_challenge_perfect:   "dailyPerfects",
   grand_bluff_victory:       "grandBluffs",
+  shifter_match_win:         "shifterWins",
+  shifter_match_loss:        "shifterLosses",
+  shifter_clean_sweep:       "shifterCleanSweeps",
+  numbers_match_win:         "numbersWins",
+  numbers_match_loss:        "numbersLosses",
+  numbers_clean_sweep:       "numbersCleanSweeps",
 };
 
 export default async function handler(req, res) {

@@ -26,6 +26,8 @@ import { startCommunityPulse } from "./lib/communityPulse.js";
 import { PitFall } from "./components/PitFall.jsx";
 import { AxiomReaction } from "./components/AxiomReaction.jsx";
 import { CommunityToast } from "./components/CommunityToast.jsx";
+import { ShifterMode } from "./components/ShifterMode.jsx";
+import { NumbersMode } from "./components/NumbersMode.jsx";
 
 // ── SWEAR Card helpers ───────────────────
 // Format an ISO createdAt timestamp as MM/YY. Falls back to "—" on invalid input.
@@ -3304,6 +3306,33 @@ export default function BluffGame() {
     return true;
   }
 
+  // ── SHIFTER / NUMBERS — Brojke i slova / Countdown style modes ─────
+  function startShifter() {
+    userInteractedRef.current = true;
+    AudioTension.init();
+    setScreen("shifter");
+  }
+  function startNumbers() {
+    userInteractedRef.current = true;
+    AudioTension.init();
+    setScreen("numbers");
+  }
+  function handleSideModeComplete(summary) {
+    if (!summary) return;
+    const gid = `${summary.mode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const won = summary.wins > summary.rounds / 2;
+    const winEvent  = summary.mode === "shifter" ? "shifter_match_win"  : "numbers_match_win";
+    const lossEvent = summary.mode === "shifter" ? "shifter_match_loss" : "numbers_match_loss";
+    const sweepEvent = summary.mode === "shifter" ? "shifter_clean_sweep" : "numbers_clean_sweep";
+    awardSwear(won ? winEvent : lossEvent, gid, {
+      label: won ? "Match win" : "Match",
+      meta: { wins: summary.wins, total: summary.rounds, userTotal: summary.userTotal, axiomTotal: summary.axiomTotal },
+    });
+    if (summary.cleanSweep) {
+      awardSwear(sweepEvent, `${gid}_sweep`, { label: "Clean sweep" });
+    }
+  }
+
   function startGame() {
     userInteractedRef.current = true;
     AudioTension.init();
@@ -5101,7 +5130,7 @@ export default function BluffGame() {
         </button>
 
         {/* 5. SECONDARY MODES — Blitz + Duel side-by-side */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,animation:"g-fadeUp .5s .28s both"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8,animation:"g-fadeUp .5s .28s both"}}>
           <button onClick={tryStartBlitz} style={{
             minHeight:48,padding:12,fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
             background:"linear-gradient(135deg,rgba(244,63,94,.15),rgba(244,63,94,.05))",
@@ -5117,6 +5146,29 @@ export default function BluffGame() {
             cursor:"pointer",fontFamily:"inherit"
           }}>
             {t("home.cta_duel")}
+          </button>
+        </div>
+        {/* 5b. SIDE MODES — Shifter + Numbers (Brojke i slova / Countdown style) */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,animation:"g-fadeUp .5s .32s both"}}>
+          <button onClick={startShifter} style={{
+            minHeight:60,padding:"10px 12px",fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+            background:"linear-gradient(135deg,rgba(45,212,160,.14),rgba(45,212,160,.04))",
+            color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",
+            borderRadius:12,cursor:"pointer",fontFamily:"inherit",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
+          }}>
+            <span>{t("home.cta_shifter")}</span>
+            <span style={{fontSize:9,letterSpacing:1.4,color:"rgba(45,212,160,.6)",textTransform:"uppercase",fontWeight:500}}>{t("home.cta_shifter_sub")}</span>
+          </button>
+          <button onClick={startNumbers} style={{
+            minHeight:60,padding:"10px 12px",fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
+            background:"linear-gradient(135deg,rgba(34,211,238,.14),rgba(34,211,238,.04))",
+            color:"#22d3ee",border:"1px solid rgba(34,211,238,.3)",
+            borderRadius:12,cursor:"pointer",fontFamily:"inherit",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
+          }}>
+            <span>{t("home.cta_numbers")}</span>
+            <span style={{fontSize:9,letterSpacing:1.4,color:"rgba(34,211,238,.6)",textTransform:"uppercase",fontWeight:500}}>{t("home.cta_numbers_sub")}</span>
           </button>
         </div>
 
@@ -5998,6 +6050,32 @@ export default function BluffGame() {
       <GameStyles/>
     </div>
   );
+  }
+
+  // ─── SHIFTER / NUMBERS ─────────────────────────────────────
+  if (screen === "shifter") {
+    return (
+      <ShifterMode
+        lang={lang}
+        skin={activeSkin}
+        onExit={() => setScreen("home")}
+        onComplete={(summary) => {
+          handleSideModeComplete(summary);
+        }}
+      />
+    );
+  }
+  if (screen === "numbers") {
+    return (
+      <NumbersMode
+        lang={lang}
+        skin={activeSkin}
+        onExit={() => setScreen("home")}
+        onComplete={(summary) => {
+          handleSideModeComplete(summary);
+        }}
+      />
+    );
   }
 
   // ─── PLAY ──────────────────────────────────────────────────

@@ -17,6 +17,13 @@ export const EARN_RATES = {
   streak_milestone_10:        25,
   streak_milestone_15:        50,
   early_adopter_bonus:       500,
+  // Shifter / Numbers (Brojke i slova / Countdown style modes)
+  shifter_match_win:          30,
+  shifter_match_loss:         10,
+  shifter_clean_sweep:        50,
+  numbers_match_win:          30,
+  numbers_match_loss:         10,
+  numbers_clean_sweep:        50,
 };
 
 export function rateFor(event) {
