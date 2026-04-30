@@ -346,6 +346,29 @@ async function storeSlot(col, docId, category, level, variant, round) {
       },
     },
   });
+
+  // Mirror the round's statements into bluff_swipe_pool. Idempotent IDs match
+  // api/admin/build-swipe-pool.js so re-generating a slot just refreshes the
+  // pool entries with the same keys (PATCH replaces the doc). Skip statements
+  // over 200 chars (too long for the swipe card UI).
+  // Only mirror the regular cache — blitz rounds are 4-statement, used elsewhere.
+  if (col === "bluff_cache") {
+    await Promise.allSettled(round.statements.map((s, i) => {
+      if (!s || typeof s.text !== "string" || s.text.length > 200) return null;
+      if (typeof s.real !== "boolean") return null;
+      const id = `swipe_${docId}_${i}`;
+      return fsPatch("bluff_swipe_pool", id, {
+        id:          { stringValue:  id },
+        text:        { stringValue:  s.text },
+        isTrue:      { booleanValue: s.real },
+        category:    { stringValue:  category },
+        difficulty:  { integerValue: String(level) },
+        sourceRound: { stringValue:  docId },
+        lang:        { stringValue:  "en" },
+        createdAt:   { integerValue: String(now) },
+      }).catch(() => {}); // non-fatal — pool refresh is best-effort
+    }).filter(Boolean));
+  }
 }
 
 // ── Handler ──────────────────────────────────────────────────

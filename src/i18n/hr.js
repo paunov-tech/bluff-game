@@ -394,5 +394,32 @@ export default {
     "invalid": "Nevažeće. Koristi 3–16 slova/brojeva/donjih crta.",
     "taken": "Ime je zauzeto. Probaj drugo.",
     "save_failed": "Spremanje nije uspjelo. Pokušaj ponovno."
+  },
+  "swipe": {
+    "daily_warmup": "Dnevno zagrijavanje",
+    "duration": "60 sekundi · gradi niz",
+    "label_warmup": "Zagrijavanje",
+    "again": "Opet",
+    "exit": "Izlaz",
+    "starting": "Učitavam kartice…",
+    "load_failed": "Učitavanje nije uspjelo. Pokušaj ponovno.",
+    "batch_done": "Sve kartice obrađene. Pričekaj timer.",
+    "complete": "Zagrijavanje gotovo!",
+    "complete_today": "Zagrijavanje obavljeno danas",
+    "unlock_climb": "Climb otključan. Mozak zagrijan.",
+    "unlock_climb_cta": "Dovrši zagrijavanje za otključavanje",
+    "streak": "Niz od {n} dana",
+    "lie": "LAŽ",
+    "true": "TOČNO",
+    "swiped_label": "swipano",
+    "correct_label": "točno",
+    "stat_swiped": "Swipano",
+    "stat_correct": "Točno",
+    "stat_accuracy": "Točnost",
+    "feedback_correct": "Bravo",
+    "feedback_wrong": "Promašaj",
+    "feedback_combo": "Niz!",
+    "feedback_lightning": "Munja!",
+    "back_home": "Natrag"
   }
 };

@@ -28,6 +28,17 @@ import { AxiomReaction } from "./components/AxiomReaction.jsx";
 import { CommunityToast } from "./components/CommunityToast.jsx";
 import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
+import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
+
+// ── Daily warm-up gating ─────────────────────────────────────────
+// Phased rollout: ship as a SOFT gate (warning, never blocks). Flip to true
+// after the first few days once users have learned the daily ritual.
+const WARMUP_HARD_GATE = false;
+
+function todayLocalDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
 
 // ── SWEAR Card helpers ───────────────────
 // Format an ISO createdAt timestamp as MM/YY. Falls back to "—" on invalid input.
@@ -3317,6 +3328,64 @@ export default function BluffGame() {
     AudioTension.init();
     setScreen("numbers");
   }
+
+  // ── SWIPE WARM-UP ──────────────────────────────────────────────
+  function startSwipe() {
+    userInteractedRef.current = true;
+    AudioTension.init();
+    setScreen("swipe");
+  }
+  // Completion handler: post the daily warm-up record (updates streak +
+  // todayCompletedDate on the player profile), then refresh local state.
+  // SWEAR was already incremented atomically inside /api/swipe-judge per
+  // swipe — we only flash a toast here for the cumulative amount.
+  async function onSwipeComplete(stats) {
+    if (!stats) return;
+    const uid = userIdRef.current;
+    if (uid) {
+      try {
+        const headers = { "Content-Type": "application/json" };
+        const token = await getCurrentIdToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const r = await fetch("/api/swipe-complete", {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            userId: uid,
+            sessionId: stats.sessionId,
+            tzOffsetMin: new Date().getTimezoneOffset(),
+            stats: {
+              totalSwiped:  stats.totalSwiped  | 0,
+              totalCorrect: stats.totalCorrect | 0,
+              swearEarned:  stats.swearEarned  | 0,
+            },
+          }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data.dailyWarmup) {
+          // Patch the local profile so home re-renders with streak + today flag.
+          if (swearProfileRef.current) {
+            const next = { ...swearProfileRef.current, dailyWarmup: data.dailyWarmup };
+            swearProfileRef.current = next;
+            setSwearProfile(next);
+          }
+        }
+      } catch (e) {
+        console.warn("[swipe] complete failed:", e.message);
+      }
+
+      // Re-fetch SWEAR balance — judging awarded directly, profile may be stale.
+      try {
+        const r = await fetch(`/api/swear-profile?userId=${encodeURIComponent(uid)}`);
+        const data = await r.json();
+        if (data.profile) applyProfile(data.profile);
+      } catch { /* non-fatal */ }
+    }
+
+    if (stats.swearEarned > 0) {
+      flashSwearAward(stats.swearEarned, t("swipe.label_warmup"));
+    }
+  }
   function handleSideModeComplete(summary) {
     if (!summary) return;
     const gid = `${summary.mode}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
@@ -5115,19 +5184,102 @@ export default function BluffGame() {
           </div>
         )}
 
+        {/* 4a. DAILY WARM-UP — primary entry point. Pulsing if not done today. */}
+        {(() => {
+          const warmupTodayDate = swearProfile?.dailyWarmup?.todayCompletedDate || null;
+          const warmupDoneToday = warmupTodayDate === todayLocalDateStr();
+          const warmupStreak = swearProfile?.dailyWarmup?.streakDays | 0;
+          if (warmupDoneToday) {
+            return (
+              <div style={{
+                width:"100%",padding:"10px 14px",marginBottom:10,
+                background:"linear-gradient(135deg,rgba(45,212,160,.10),rgba(45,212,160,.03))",
+                border:"1px solid rgba(45,212,160,.25)",borderRadius:12,
+                display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
+                animation:"g-fadeUp .5s .15s both",
+              }}>
+                <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                  <span style={{fontSize:11,letterSpacing:1.5,fontWeight:700,color:"#2dd4a0",textTransform:"uppercase"}}>
+                    ✓ {t("swipe.complete_today")}
+                  </span>
+                  {warmupStreak > 0 && (
+                    <span style={{fontSize:10,color:"rgba(232,230,225,.55)",letterSpacing:1}}>
+                      🔥 {t("swipe.streak", { n: warmupStreak })}
+                    </span>
+                  )}
+                </div>
+                <button onClick={startSwipe} style={{
+                  background:"transparent",border:"1px solid rgba(45,212,160,.4)",
+                  color:"#2dd4a0",padding:"6px 10px",borderRadius:8,
+                  fontSize:10,letterSpacing:1.5,fontWeight:700,
+                  textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",
+                }}>{t("swipe.again")}</button>
+              </div>
+            );
+          }
+          return (
+            <button onClick={startSwipe} style={{
+              width:"100%",minHeight:62,padding:"14px 16px",
+              fontSize:"clamp(13px,3.6vw,15px)",fontWeight:800,letterSpacing:"2px",textTransform:"uppercase",
+              background:"linear-gradient(135deg,#ff6b35,#e8c547)",color:"#0a0a14",
+              border:"none",borderRadius:14,position:"relative",overflow:"hidden",
+              boxShadow:"0 0 50px rgba(255,107,53,0.3), 0 6px 18px rgba(255,107,53,0.2)",
+              cursor:"pointer",fontFamily:"inherit",
+              animation:"g-fadeUp .5s .15s both, swipe-cta-pulse 2.4s ease-in-out infinite",
+              marginBottom:10,
+              display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
+            }}>
+              <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,position:"relative"}}>
+                <span>🔥 {t("swipe.daily_warmup")}</span>
+                <span style={{fontSize:10,opacity:.75,letterSpacing:1.4,fontWeight:600}}>
+                  {t("swipe.duration")}
+                </span>
+              </span>
+              {warmupStreak > 0 && (
+                <span style={{
+                  fontSize:11,fontWeight:800,letterSpacing:1.2,
+                  background:"rgba(0,0,0,.18)",padding:"6px 10px",borderRadius:999,
+                  color:"#0a0a14",
+                }}>🔥 {warmupStreak}</span>
+              )}
+            </button>
+          );
+        })()}
+
         {/* 4. PRIMARY CTA */}
-        <button onClick={() => {
-            userInteractedRef.current = true;
-            const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARAAAAAgABAAIAZGF0YQQAAAAAAA==");
-            silent.play().catch(()=>{});
-            tryStartSoloGame();
-          }}
-          style={{width:"100%",minHeight:64,padding:"18px",fontSize:"clamp(14px,4vw,17px)",fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:16,position:"relative",overflow:"hidden",boxShadow:"0 0 60px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10}}
-          onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
-          onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
-          <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>
-          <span style={{position:"relative"}}>{total>0?t("home.cta_challenge_again"):t("home.cta_challenge")}</span>
-        </button>
+        {(() => {
+          const warmupDone = (swearProfile?.dailyWarmup?.todayCompletedDate || null) === todayLocalDateStr();
+          const gated = WARMUP_HARD_GATE && !warmupDone;
+          return (
+            <button onClick={() => {
+                userInteractedRef.current = true;
+                const silent = new Audio("data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARAAAAAgABAAIAZGF0YQQAAAAAAA==");
+                silent.play().catch(()=>{});
+                if (gated) { startSwipe(); return; }
+                tryStartSoloGame();
+              }}
+              style={{width:"100%",minHeight:64,padding:"18px",fontSize:"clamp(14px,4vw,17px)",fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",
+                background: gated
+                  ? "linear-gradient(135deg,rgba(232,197,71,.25),rgba(212,168,48,.15))"
+                  : "linear-gradient(135deg,#e8c547,#d4a830)",
+                color: gated ? "rgba(232,197,71,.7)" : T.bg,
+                borderRadius:16,position:"relative",overflow:"hidden",
+                boxShadow: gated
+                  ? "0 0 20px rgba(232,197,71,0.08)"
+                  : "0 0 60px rgba(232,197,71,0.25), 0 8px 24px rgba(232,197,71,0.15), inset 0 1px 0 rgba(255,255,255,0.2)",
+                animation:"g-fadeUp .5s .2s both",transition:"transform .15s",marginBottom:10,
+                border: gated ? "1px dashed rgba(232,197,71,.4)" : "none",
+                cursor:"pointer",
+              }}
+              onMouseDown={e=>e.currentTarget.style.transform="scale(.97)"} onMouseUp={e=>e.currentTarget.style.transform=""}
+              onTouchStart={e=>e.currentTarget.style.transform="scale(.97)"} onTouchEnd={e=>e.currentTarget.style.transform=""}>
+              {!gated && <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 3s infinite"}}/>}
+              <span style={{position:"relative"}}>
+                {gated ? `🔒 ${t("swipe.unlock_climb_cta")}` : (total>0?t("home.cta_challenge_again"):t("home.cta_challenge"))}
+              </span>
+            </button>
+          );
+        })()}
 
         {/* 5. SECONDARY MODES — Blitz + Duel side-by-side */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8,animation:"g-fadeUp .5s .28s both"}}>
@@ -6074,6 +6226,16 @@ export default function BluffGame() {
         onComplete={(summary) => {
           handleSideModeComplete(summary);
         }}
+      />
+    );
+  }
+  if (screen === "swipe") {
+    return (
+      <SwipeWarmup
+        lang={lang}
+        userId={userIdRef.current}
+        onExit={() => setScreen("home")}
+        onComplete={onSwipeComplete}
       />
     );
   }
@@ -7063,6 +7225,10 @@ function GameStyles(){
     @keyframes lobby-dotwave{0%,100%{opacity:0.4;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
     @keyframes lobby-tick{0%,100%{opacity:0.4;transform:scale(1)}50%{opacity:1;transform:scale(1.4)}}
     @keyframes home-shimmer{0%,100%{transform:translateX(-100%)}50%{transform:translateX(100%)}}
+    @keyframes swipe-cta-pulse{
+      0%,100%{box-shadow:0 0 36px rgba(255,107,53,.25), 0 6px 18px rgba(255,107,53,.18)}
+      50%{box-shadow:0 0 56px rgba(255,107,53,.45), 0 6px 18px rgba(255,107,53,.32)}
+    }
     @keyframes result-heroIn{0%{opacity:0;transform:translateY(40px) scale(0.9)}100%{opacity:1;transform:translateY(0) scale(1)}}
     @keyframes skeleton-shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
     @keyframes timer-glitch{
