@@ -46,31 +46,29 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "list failed", detail: e.message });
   }
 
-  let considered = 0, written = 0, skippedExisting = 0, skippedLong = 0, errors = 0;
+  let considered = 0, skippedLong = 0;
   const now = Date.now();
 
+  // Flatten all writes up front, then run them in parallel batches.
+  // Sequential writes hit the 60s Vercel gateway with ~1300 statements.
+  const writes = [];
   for (const doc of docs) {
     const roundId = doc.id;
     const f = doc.fields || {};
     const stmts = Array.isArray(f.statements) ? f.statements : [];
     if (stmts.length === 0) continue;
-
     const category   = f.category || "mixed";
     const difficulty = typeof f.level === "number" ? f.level : 3;
-
     for (let i = 0; i < stmts.length; i++) {
       const s = stmts[i];
       if (!s || typeof s.text !== "string") continue;
       considered++;
       if (s.text.length > MAX_LEN) { skippedLong++; continue; }
       if (typeof s.real !== "boolean") continue;
-
-      const id = poolIdFor(roundId, i);
-      if (dryRun) { written++; continue; }
-
-      try {
-        const created = await fsCreateIfMissing(POOL_COL, id, {
-          id:          toFS(id),
+      writes.push({
+        id: poolIdFor(roundId, i),
+        fields: {
+          id:          toFS(poolIdFor(roundId, i)),
           text:        toFS(s.text),
           isTrue:      toFS(s.real),
           category:    toFS(category),
@@ -78,12 +76,29 @@ export default async function handler(req, res) {
           sourceRound: toFS(roundId),
           lang:        toFS(lang),
           createdAt:   toFS(now),
-        });
-        if (created) written++; else skippedExisting++;
-      } catch (e) {
-        errors++;
+        },
+      });
+    }
+  }
+
+  let written = 0, skippedExisting = 0, errors = 0;
+  if (!dryRun) {
+    const CHUNK = 100;
+    for (let i = 0; i < writes.length; i += CHUNK) {
+      const slice = writes.slice(i, i + CHUNK);
+      const results = await Promise.allSettled(
+        slice.map(w => fsCreateIfMissing(POOL_COL, w.id, w.fields))
+      );
+      for (const r of results) {
+        if (r.status === "fulfilled") {
+          if (r.value === true) written++; else skippedExisting++;
+        } else {
+          errors++;
+        }
       }
     }
+  } else {
+    written = writes.length;
   }
 
   return res.status(200).json({
