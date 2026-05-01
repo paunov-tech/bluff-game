@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { GameProvider, useGameActions, useGameState } from "./GameContext.jsx";
 import { PHASES, INTERSTITIAL, isFinalPhase, nextPhase, shouldRunInterstitialAfter } from "./phaseMachine.js";
 import { RouletteInterstitial } from "./RouletteInterstitial.jsx";
+import { V2Styles } from "./V2Styles.jsx";
 import { SwipeMode } from "./phases/SwipeMode.jsx";
 import { ClassicAxiom } from "./phases/ClassicAxiom.jsx";
 import { SniperMode } from "./phases/SniperMode.jsx";
@@ -23,6 +24,7 @@ import { SuddenDeath } from "./phases/SuddenDeath.jsx";
 export function GameEngine({ lang = "en", userId, onRunComplete, onRunAbort }) {
   return (
     <GameProvider>
+      <V2Styles />
       <EngineInner lang={lang} userId={userId} onRunComplete={onRunComplete} onRunAbort={onRunAbort} />
     </GameProvider>
   );

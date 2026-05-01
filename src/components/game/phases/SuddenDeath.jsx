@@ -2,8 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useGameActions, useSwear } from "../GameContext.jsx";
 import { authFetch, vibrate } from "../api.js";
 import { captureEvent } from "../../../lib/telemetry.js";
+import { pickSabotageType, scrambleText, SABOTAGE_TYPES } from "../../../lib/sabotage.js";
+import { PitFall } from "../../PitFall.jsx";
+import { AxiomReaction } from "../../AxiomReaction.jsx";
 
 // V2 SuddenDeath — final phase, classic format with infinite streak.
+//
+// Step 4 (drama):
+//   - Sabotage 15% per round, ALL difficulties (drama is the point).
+//   - PitFall (crimson + finalDeath) on the FATAL miss.
+//   - AxiomReaction LAUGH after each correct: streak >= 5 escalates from
+//     "default" tone to "worried" — AXIOM stops trying to pretend it's fine.
+//   - AxiomReaction MOCK with intensity="high" overlays PitFall on death.
+//   - NO CommunityToast — distraction would dilute the intensity.
 //
 //   Each round: 5 statements, find the lie, 20s timer, hardest difficulty.
 //   Reward grows with the streak: 500 × streak points, 10 × streak SWEAR.
@@ -19,7 +30,12 @@ import { captureEvent } from "../../../lib/telemetry.js";
 
 const SECONDS_PER_ROUND = 20;
 const CONTINUE_COST     = 10;
-const REVEAL_HOLD_MS    = 2500;
+const REVEAL_HOLD_CORRECT_MS = 2500;
+const REVEAL_HOLD_WRONG_MS   = 4000; // PitFall is 3s + 1s buffer
+const V2_SUDDEN_DEATH_SABOTAGE_CHANCE = 0.15;
+const V2_SD_SABOTAGE_DELAY_MIN_MS = 3000;
+const V2_SD_SABOTAGE_DELAY_MAX_MS = 11000;
+const V2_SD_SABOTAGE_TIMER_CUT_S  = 5;   // out of 20s timer; min 3s remaining
 
 const T = {
   bg: "#0c0306", crimson: "#1a0408", gold: "#e8c547",
@@ -59,8 +75,23 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
   const [timeLeft, setTimeLeft]         = useState(SECONDS_PER_ROUND);
   const [roundsPlayed, setRoundsPlayed] = useState(0);
 
+  // Drama state.
+  const [activeSabotage, setActiveSabotage] = useState(null);
+  const [sabotageBanner, setSabotageBanner] = useState(null);
+  const [showPitFall, setShowPitFall]       = useState(false);
+  const [showAxiomMock, setShowAxiomMock]   = useState(false);
+  const [showAxiomLaugh, setShowAxiomLaugh] = useState(false);
+  const [laughIntensity, setLaughIntensity] = useState("default");
+
   const finishedRef = useRef(false);
   const advanceTimerRef = useRef(null);
+  const sabotageScheduleRef = useRef(null);
+  const sabotageEndTimerRef = useRef(null);
+  const sabotagePeekTimerRef = useRef(null);
+  const sabotageBannerTimerRef = useRef(null);
+  // Per-round flag to ensure sabotage doesn't double-fire on re-renders.
+  // Resets every fetchNextRound() via roundsPlayed change.
+  const sabotageRoundFlagRef = useRef({ key: -1, triggered: false });
 
   useEffect(() => {
     captureEvent("v2_phase_started", { phase: "SUDDEN_DEATH" });
@@ -68,7 +99,71 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => () => { if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current); }, []);
+  // Cleanup pending timers on unmount.
+  useEffect(() => () => {
+    if (advanceTimerRef.current) clearTimeout(advanceTimerRef.current);
+    if (sabotageScheduleRef.current) clearTimeout(sabotageScheduleRef.current);
+    if (sabotageEndTimerRef.current) clearTimeout(sabotageEndTimerRef.current);
+    if (sabotagePeekTimerRef.current) clearTimeout(sabotagePeekTimerRef.current);
+    if (sabotageBannerTimerRef.current) clearTimeout(sabotageBannerTimerRef.current);
+  }, []);
+
+  // ── Sabotage scheduling — 15% per round, all difficulties ───────
+  useEffect(() => {
+    if (stage !== "playing" || revealed || finishedRef.current) return;
+    if (!round) return;
+    if (sabotageRoundFlagRef.current.key !== roundsPlayed) {
+      sabotageRoundFlagRef.current = { key: roundsPlayed, triggered: false };
+    }
+    if (sabotageRoundFlagRef.current.triggered) return;
+    if (Math.random() >= V2_SUDDEN_DEATH_SABOTAGE_CHANCE) {
+      sabotageRoundFlagRef.current.triggered = true; // burn the roll for this round
+      return;
+    }
+
+    const type = pickSabotageType();
+    const difficulty = round?.difficulty | 0 || 5;
+    const delay = V2_SD_SABOTAGE_DELAY_MIN_MS +
+                  Math.random() * (V2_SD_SABOTAGE_DELAY_MAX_MS - V2_SD_SABOTAGE_DELAY_MIN_MS);
+
+    sabotageScheduleRef.current = setTimeout(() => {
+      sabotageRoundFlagRef.current.triggered = true;
+      captureEvent("v2_sabotage_triggered", {
+        phase: "SUDDEN_DEATH", type, streak, difficulty,
+      });
+
+      const dur = SABOTAGE_TYPES[type]?.durationMs || 1500;
+
+      if (type === "TIME_THIEF") {
+        setActiveSabotage({ type });
+        setSabotageBanner({ text: "⚡ AXIOM STOLE YOUR TIME", key: Date.now() });
+        setTimeLeft(t => Math.max(3, t - V2_SD_SABOTAGE_TIMER_CUT_S));
+        sabotageEndTimerRef.current = setTimeout(() => setActiveSabotage(null), 800);
+      } else if (type === "REALITY_GLITCH") {
+        setActiveSabotage({ type });
+        setSabotageBanner({ text: "🌀 GLITCH IN THE MATRIX", key: Date.now() });
+        sabotageEndTimerRef.current = setTimeout(() => setActiveSabotage(null), dur);
+      } else if (type === "PEEK_AND_HIDE") {
+        const truthIdxs = (round?.statements || [])
+          .map((s, i) => (s?.real ? i : -1))
+          .filter(i => i >= 0);
+        if (truthIdxs.length === 0) return;
+        const peekIdx = truthIdxs[Math.floor(Math.random() * truthIdxs.length)];
+        setActiveSabotage({ type, peekIdx });
+        setSabotageBanner({ text: "👁 AXIOM SHOWED YOU SOMETHING. TOO LATE.", key: Date.now() });
+        sabotagePeekTimerRef.current = setTimeout(() => {
+          setActiveSabotage(prev => (prev && prev.type === "PEEK_AND_HIDE") ? { ...prev, peekIdx: -1 } : prev);
+        }, 1000);
+      }
+
+      sabotageBannerTimerRef.current = setTimeout(() => setSabotageBanner(null), 1800);
+    }, delay);
+
+    return () => {
+      if (sabotageScheduleRef.current) clearTimeout(sabotageScheduleRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, revealed, roundsPlayed, round, streak]);
 
   // Per-round timer.
   useEffect(() => {
@@ -100,6 +195,8 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
       setSelectedIdx(null);
       setRevealed(false);
       setTimeLeft(SECONDS_PER_ROUND);
+      setActiveSabotage(null);
+      setSabotageBanner(null);
       setStage("playing");
     } catch (e) {
       setError(e.message || "load_failed");
@@ -128,19 +225,33 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
       vibrate(15);
       captureEvent("v2_sudden_death_streak", { streak: newStreak });
 
-      advanceTimerRef.current = setTimeout(() => fetchNextRound(), REVEAL_HOLD_MS);
+      // AXIOM laughs after every correct, with intensity escalation at
+      // streak >= 5 to "worried" — its tone shifts from smug to anxious.
+      setLaughIntensity(newStreak >= 5 ? "worried" : "default");
+      setShowAxiomLaugh(true);
+
+      advanceTimerRef.current = setTimeout(() => fetchNextRound(), REVEAL_HOLD_CORRECT_MS);
     } else {
       vibrate([30, 60, 30, 60, 80]);
-      // Offer continue if the player can afford it AND has banked something
-      // worth saving. We always offer — if they want to walk away, the
-      // modal has a "Bank & End" button.
       const canContinue = swear >= CONTINUE_COST;
+
+      // FATAL miss: full crimson PitFall + high-intensity MOCK overlay,
+      // then advance to the continue offer or dead screen. PitFall is 3s,
+      // we add 1s buffer for the impact frame to settle.
+      captureEvent("v2_sudden_death_pitfall", {
+        finalStreak: streak, bankedScore: accumScore, bankedSwear: accumSwear,
+      });
+      setShowPitFall(true);
+      setShowAxiomMock(true);
+
       advanceTimerRef.current = setTimeout(() => {
+        setShowPitFall(false);
+        setShowAxiomMock(false);
         if (canContinue) setStage("continue_offer");
         else { setStage("dead"); endPhase("died"); }
-      }, REVEAL_HOLD_MS);
+      }, REVEAL_HOLD_WRONG_MS);
     }
-  }, [revealed, round, selectedIdx, streak, swear, addScore, addSwear]);
+  }, [revealed, round, selectedIdx, streak, swear, accumScore, accumSwear, addScore, addSwear]);
 
   function handleContinue() {
     if (swear < CONTINUE_COST) return;
@@ -292,18 +403,26 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
         )}
       </div>
 
-      <div style={list()}>
+      <div style={{
+        ...list(),
+        animation: !revealed && activeSabotage?.type === "REALITY_GLITCH"
+          ? "sabotage-glitch 1.5s linear" : "none",
+      }}>
         {(round.statements || []).map((s, idx) => {
           const isSel = selectedIdx === idx;
           const isCorrectAnswer = revealed && idx === correctIdx;
           const isWrongPick     = revealed && isSel && idx !== correctIdx;
+          const isPeeked   = !revealed && activeSabotage?.type === "PEEK_AND_HIDE" && activeSabotage.peekIdx === idx;
+          const isGlitching = !revealed && activeSabotage?.type === "REALITY_GLITCH";
 
           let border = `1.5px solid ${T.gb}`;
           let bg     = T.glass;
           let color  = "#e8e6e1";
           if (isCorrectAnswer) { border = `1.5px solid ${T.bad}`; bg = "rgba(244,63,94,.10)"; color = T.bad; }
           else if (isWrongPick) { border = `1.5px solid ${T.dim}`; bg = "rgba(255,255,255,.02)"; color = T.dim; }
+          else if (isPeeked)   { border = `1.5px solid ${T.ok}`; bg = "rgba(45,212,160,.08)"; }
           else if (isSel)       { border = `1.5px solid ${T.gold}`; bg = "rgba(232,197,71,.08)"; }
+          const renderText = isGlitching ? scrambleText(s.text) : s.text;
 
           return (
             <button
@@ -316,10 +435,11 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
                 fontFamily: "Georgia, serif",
                 fontSize: "clamp(14px, 3.6vw, 16px)", lineHeight: 1.4,
                 cursor: revealed ? "default" : "pointer", transition: "all .12s ease",
+                animation: isPeeked ? "peek-glow 1s ease" : "none",
               }}
             >
               {isCorrectAnswer && <span style={{ color: T.bad, fontWeight: 800, marginRight: 8 }}>✗ LIE</span>}
-              {s.text}
+              {renderText}
             </button>
           );
         })}
@@ -342,6 +462,45 @@ export function SuddenDeath({ lang = "en", userId, onComplete, onAbort }) {
           </div>
         )}
       </div>
+
+      {/* ── Drama overlays ─────────────────────────────────────── */}
+      {activeSabotage?.type === "TIME_THIEF" && (
+        <div aria-hidden="true" style={{
+          position: "fixed", inset: 0, zIndex: 55, pointerEvents: "none",
+          background: "radial-gradient(ellipse at 50% 0%, rgba(220,30,40,0.65) 0%, rgba(220,30,40,0.0) 60%)",
+          animation: "sabotage-flash 700ms ease-out",
+          mixBlendMode: "screen",
+        }} />
+      )}
+      {sabotageBanner && (
+        <div aria-hidden="true" key={sabotageBanner.key} style={crimsonBannerStyle()}>
+          {sabotageBanner.text}
+        </div>
+      )}
+      {showPitFall && (
+        <PitFall
+          fellToRound={null}
+          colorPalette="crimson"
+          finalDeath={true}
+          onComplete={() => setShowPitFall(false)}
+        />
+      )}
+      {showAxiomMock && (
+        <AxiomReaction
+          type="MOCK"
+          intensity="high"
+          playVoice={false}                                  /* PitFall owns voice */
+          onComplete={() => setShowAxiomMock(false)}
+        />
+      )}
+      {showAxiomLaugh && (
+        <AxiomReaction
+          type="LAUGH"
+          intensity={laughIntensity}
+          playVoice={true}
+          onComplete={() => setShowAxiomLaugh(false)}
+        />
+      )}
     </div>
   );
 }
@@ -395,5 +554,27 @@ function btnSecondary() {
     fontSize: 12, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase",
     background: "transparent", color: T.gold, border: `1px solid ${T.gold}`,
     borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+  };
+}
+function crimsonBannerStyle() {
+  return {
+    position: "fixed", top: 78, left: "50%", zIndex: 56,
+    transform: "translateX(-50%)",
+    background: "rgba(220,20,30,0.95)",
+    border: "2px solid #ff3344",
+    color: "#ffeeee",
+    padding: "10px 18px",
+    borderRadius: 12,
+    fontSize: 12.5,
+    fontWeight: 800,
+    letterSpacing: "1.5px",
+    textTransform: "uppercase",
+    fontFamily: "'Segoe UI',system-ui,sans-serif",
+    boxShadow: "0 0 40px rgba(220,20,30,0.5), 0 8px 24px rgba(220,20,30,0.4)",
+    backdropFilter: "blur(6px)",
+    textShadow: "0 0 10px rgba(255,100,100,0.5)",
+    animation: "sabotage-banner 1800ms ease forwards",
+    pointerEvents: "none",
+    whiteSpace: "nowrap",
   };
 }

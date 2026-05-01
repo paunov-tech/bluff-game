@@ -14,6 +14,15 @@ const MOCK_LINES = [
   "Such promise. Such failure.",
 ];
 
+// Spoken when the FALL ends a run entirely (V2 SuddenDeath finalDeath).
+// AXIOM is more triumphant than disappointed.
+const FINAL_DEATH_LINES = [
+  "I told you to stop. You didn't listen.",
+  "End of story.",
+  "Run over.",
+  "Game.",
+];
+
 function pitAudioBuzzer() {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -91,8 +100,9 @@ function pitAudioImpact() {
   } catch {}
 }
 
-function playMockVoice(skin) {
-  const line = MOCK_LINES[Math.floor(Math.random() * MOCK_LINES.length)];
+function playMockVoice(skin, lines) {
+  const pool = lines && lines.length ? lines : MOCK_LINES;
+  const line = pool[Math.floor(Math.random() * pool.length)];
   fetch("/api/axiom-voice", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -115,7 +125,14 @@ function playMockVoice(skin) {
 // Number of dust particles in the impact burst. Kept low for perf.
 const DUST_COUNT = 14;
 
-export function PitFall({ fellToRound, skin, onComplete }) {
+// PitFall props:
+//   fellToRound — round number to display in the IMPACT screen (legacy/V2)
+//   skin        — AXIOM skin override for the voice line
+//   onComplete  — fired ~3s after mount
+//   colorPalette — "default" (gold accent on dark) | "crimson" (V2 SuddenDeath)
+//   finalDeath  — true when this PitFall ENDS the run; swaps "FALLEN ROUND N"
+//                 for "RUN ENDED" and uses the FINAL_DEATH_LINES voice pool
+export function PitFall({ fellToRound, skin, onComplete, colorPalette = "default", finalDeath = false }) {
   const [phase, setPhase] = useState(0); // 0 shock, 1 fall, 2 impact
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -125,7 +142,7 @@ export function PitFall({ fellToRound, skin, onComplete }) {
     const t1 = setTimeout(() => {
       setPhase(1);
       pitAudioWind();
-      playMockVoice(skin);
+      playMockVoice(skin, finalDeath ? FINAL_DEATH_LINES : MOCK_LINES);
     }, 500);
     const t2 = setTimeout(() => {
       setPhase(2);
@@ -135,13 +152,24 @@ export function PitFall({ fellToRound, skin, onComplete }) {
       onCompleteRef.current?.();
     }, 3000);
     return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
-  }, [skin]);
+  }, [skin, finalDeath]);
 
+  // Crimson: deeper reds throughout; default = legacy gold-accent palette.
+  const isCrimson = colorPalette === "crimson";
   const bg = phase === 0
-    ? "rgba(244,63,94,0.18)"
+    ? (isCrimson ? "rgba(220,30,40,0.32)" : "rgba(244,63,94,0.18)")
     : phase === 1
-      ? "linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0.95))"
-      : "linear-gradient(to bottom, #0a0000, #1a0006)";
+      ? (isCrimson
+          ? "linear-gradient(to bottom, rgba(20,0,0,0.7), rgba(20,0,0,0.98))"
+          : "linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0.95))")
+      : (isCrimson
+          ? "linear-gradient(to bottom, #1a0000, #2a0006)"
+          : "linear-gradient(to bottom, #0a0000, #1a0006)");
+  const accentColor = isCrimson ? "#ff3344" : "#e8c547";
+  const flashColor  = isCrimson ? "rgba(220,30,40,0.65)" : "rgba(244,63,94,0.55)";
+  const streakColor = isCrimson ? "rgba(220,30,40,0.30)" : "rgba(244,63,94,0.18)";
+  const fallenLabel = finalDeath ? "💀 RUN ENDED" : "💀 FALLEN";
+  const showRoundLine = !finalDeath && Number.isFinite(fellToRound) && fellToRound > 0;
 
   return (
     <div
@@ -159,7 +187,7 @@ export function PitFall({ fellToRound, skin, onComplete }) {
       {phase === 0 && (
         <div style={{
           position: "absolute", inset: 0,
-          background: "radial-gradient(circle at 50% 50%, rgba(244,63,94,0.55) 0%, rgba(244,63,94,0.0) 60%)",
+          background: `radial-gradient(circle at 50% 50%, ${flashColor} 0%, rgba(244,63,94,0.0) 60%)`,
           animation: "pit-flash 500ms ease-out forwards",
         }} />
       )}
@@ -168,7 +196,7 @@ export function PitFall({ fellToRound, skin, onComplete }) {
         <>
           <div style={{
             position: "absolute", inset: 0,
-            background: "linear-gradient(to bottom, transparent 0%, rgba(244,63,94,0.18) 100%)",
+            background: `linear-gradient(to bottom, transparent 0%, ${streakColor} 100%)`,
             animation: "pit-streaks 1.5s linear",
             pointerEvents: "none",
           }} />
@@ -218,19 +246,21 @@ export function PitFall({ fellToRound, skin, onComplete }) {
             <div style={{
               fontSize: "clamp(14px, 3.6vw, 18px)",
               letterSpacing: "6px",
-              color: "rgba(244,63,94,0.85)",
+              color: isCrimson ? "rgba(255,80,90,0.95)" : "rgba(244,63,94,0.85)",
               fontWeight: 800,
             }}>
-              💀 FALLEN
+              {fallenLabel}
             </div>
-            {Number.isFinite(fellToRound) && fellToRound > 0 && (
+            {showRoundLine && (
               <div style={{
                 fontSize: "clamp(28px, 7vw, 48px)",
-                color: "#e8c547",
+                color: accentColor,
                 fontFamily: "Georgia, serif",
                 fontWeight: 900,
                 letterSpacing: "3px",
-                textShadow: "0 0 30px rgba(232,197,71,0.5)",
+                textShadow: isCrimson
+                  ? "0 0 30px rgba(255,80,90,0.5)"
+                  : "0 0 30px rgba(232,197,71,0.5)",
               }}>
                 ROUND {fellToRound}
               </div>
