@@ -423,4 +423,18 @@ export default {
     feedback_lightning: "Lightning!",
     back_home: "Back home",
   },
+  v2: {
+    run: {
+      victory: "Run completed",
+      death:   "Survived sudden death",
+      abort:   "Run abandoned",
+    },
+    phase: {
+      swipe:        "Warm-up",
+      classic:      "Classic AXIOM",
+      sniper:       "Sniper",
+      blind_math:   "Blind Math",
+      sudden_death: "Sudden Death",
+    },
+  },
 };

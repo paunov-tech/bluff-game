@@ -59,7 +59,10 @@ function EngineInner({ lang, userId, onRunComplete, onRunAbort }) {
 
     if (slot === "PHASE") {
       if (isFinalPhase(currentPhase)) {
-        finishRun("victory");
+        // Final phase reached — phase may signal a death override via
+        // `result.stats.reason === "died"` (Sudden Death's no-continue path).
+        const died = result?.stats?.reason === "died";
+        finishRun(died ? "death" : "victory");
         return;
       }
       if (shouldRunInterstitialAfter(currentPhase)) {

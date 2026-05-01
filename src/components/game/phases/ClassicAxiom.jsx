@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useGameActions } from "../GameContext.jsx";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useActiveEffects, useGameActions } from "../GameContext.jsx";
 import { authFetch, vibrate } from "../api.js";
+import { captureEvent } from "../../../lib/telemetry.js";
 
 // V2 ClassicAxiom — 3 rounds of "find the lie among 5 statements".
 //   15s per round, lock-in or auto-reveal at 0s.
@@ -25,7 +26,11 @@ const T = {
 };
 
 export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
-  const { addScore, addSwear } = useGameActions();
+  const { addScore, addSwear, consumeEffect } = useGameActions();
+  const activeEffects = useActiveEffects();
+  // Snapshot effects on mount so consumption doesn't affect this phase mid-run.
+  const pointsMultRef = useRef(1);
+  const shieldActiveRef = useRef(false);
 
   const [rounds, setRounds]               = useState([]);
   const [currentRound, setCurrentRound]   = useState(0);
@@ -39,6 +44,16 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
   const finishedRef    = useRef(false);
   const completionRef  = useRef({ correct: 0, total: 0 });
   const advanceTimerRef = useRef(null);
+
+  // ── Effect consumption + telemetry on mount ─────────────────
+  useEffect(() => {
+    const has2x     = activeEffects.some(e => e.type === "POINTS_2X");
+    const hasShield = activeEffects.some(e => e.type === "SHIELD");
+    if (has2x)     { pointsMultRef.current = 2; consumeEffect("POINTS_2X"); }
+    if (hasShield) { shieldActiveRef.current = true; consumeEffect("SHIELD"); }
+    captureEvent("v2_phase_started", { phase: "CLASSIC", points2x: has2x, shield: hasShield });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Initial fetch ───────────────────────────────────────────
   useEffect(() => {
@@ -107,6 +122,7 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
   function finish() {
     if (finishedRef.current) return;
     finishedRef.current = true;
+    captureEvent("v2_phase_completed", { phase: "CLASSIC", ...completionRef.current });
     onComplete?.({
       ok: true,
       phase: "CLASSIC",
@@ -126,7 +142,7 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
     const correct    = userPicked !== null && userPicked === correctIdx;
 
     if (correct) {
-      addScore(100);
+      addScore(100 * pointsMultRef.current);
       addSwear(5);
       vibrate(15);
     } else {
@@ -177,6 +193,11 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
   const round = rounds[currentRound];
   if (!round) return null;
   const correctIdx = (round.statements || []).findIndex(s => !s.real);
+  // SHIELD only applies to round 1 of this phase. Pick a deterministic
+  // wrong option to eliminate (avoid the lie at correctIdx).
+  const shieldEliminatedIdx = (shieldActiveRef.current && currentRound === 0)
+    ? ((round.statements || []).findIndex((s, i) => i !== correctIdx))
+    : -1;
 
   return (
     <div style={wrap()}>
@@ -216,6 +237,7 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
 
       <div style={statementList()}>
         {(round.statements || []).map((s, idx) => {
+          const isShielded = idx === shieldEliminatedIdx;
           const isSelected = selectedIdx === idx;
           const isCorrect  = revealed && idx === correctIdx;
           const isWrongPick = revealed && isSelected && idx !== correctIdx;
@@ -223,7 +245,11 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
           let border = `1.5px solid ${T.gb}`;
           let bg     = T.glass;
           let color  = "#e8e6e1";
-          if (isCorrect) {
+          if (isShielded && !revealed) {
+            border = `1.5px dashed rgba(232,197,71,.45)`;
+            bg     = "rgba(232,197,71,.04)";
+            color  = "rgba(232,230,225,.35)";
+          } else if (isCorrect) {
             border = `1.5px solid ${T.bad}`;
             bg     = "rgba(244,63,94,.10)";
             color  = T.bad;
@@ -239,18 +265,20 @@ export function ClassicAxiom({ lang = "en", userId, onComplete, onAbort }) {
           return (
             <button
               key={idx}
-              onClick={() => { if (!revealed) setSelectedIdx(idx); }}
-              disabled={revealed}
+              onClick={() => { if (!revealed && !isShielded) setSelectedIdx(idx); }}
+              disabled={revealed || isShielded}
               style={{
                 width: "100%", textAlign: "left",
                 padding: "14px 16px",
                 background: bg, border, borderRadius: 12,
                 color, fontFamily: "Georgia, serif",
                 fontSize: "clamp(14px, 3.6vw, 16px)", lineHeight: 1.4,
-                cursor: revealed ? "default" : "pointer",
+                cursor: revealed || isShielded ? "default" : "pointer",
                 transition: "all .15s ease",
+                textDecoration: isShielded ? "line-through" : "none",
               }}
             >
+              {isShielded && <span style={{ color: T.gold, fontWeight: 800, marginRight: 8 }}>🛡 ELIM</span>}
               {isCorrect && <span style={{ color: T.bad, fontWeight: 800, marginRight: 8 }}>✗ LIE</span>}
               {s.text}
             </button>

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t as translate } from "../../../i18n/index.js";
-import { useGameActions } from "../GameContext.jsx";
+import { useActiveEffects, useGameActions } from "../GameContext.jsx";
 import { authFetch, vibrate } from "../api.js";
+import { captureEvent } from "../../../lib/telemetry.js";
 
 // V2 SwipeMode — warm-up phase.
 //   12 cards, 3 seconds per card.
@@ -35,7 +36,11 @@ const T = {
 
 export function SwipeMode({ lang = "en", userId, onComplete, onAbort }) {
   const t = (k, params) => translate(k, lang, params);
-  const { addScore, addSwear } = useGameActions();
+  const { addScore, addSwear, consumeEffect } = useGameActions();
+  const activeEffects = useActiveEffects();
+  // Snapshot the multiplier on mount so it's stable for this whole phase
+  // even after we consume the effect.
+  const pointsMultRef = useRef(1);
 
   const [statements, setStatements]   = useState([]);
   const [sessionId, setSessionId]     = useState(null);
@@ -55,6 +60,14 @@ export function SwipeMode({ lang = "en", userId, onComplete, onAbort }) {
   const finishedRef    = useRef(false);
   const sessionIdRef   = useRef(null);
   const completionRef  = useRef({ correct: 0, total: 0, bestStreak: 0 });
+
+  // ── Effect consumption + phase-start telemetry (mount once) ─
+  useEffect(() => {
+    const has2x = activeEffects.some(e => e.type === "POINTS_2X");
+    if (has2x) { pointsMultRef.current = 2; consumeEffect("POINTS_2X"); }
+    captureEvent("v2_phase_started", { phase: "SWIPE", points2x: has2x });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Initial batch fetch ─────────────────────────────────────
   useEffect(() => {
@@ -121,6 +134,9 @@ export function SwipeMode({ lang = "en", userId, onComplete, onAbort }) {
     if (finishedRef.current) return;
     finishedRef.current = true;
     const final = completionRef.current;
+    captureEvent("v2_phase_completed", {
+      phase: "SWIPE", correct: final.correct, total: final.total, bestStreak: final.bestStreak,
+    });
     onComplete?.({
       ok: true,
       phase: "SWIPE",
@@ -145,7 +161,7 @@ export function SwipeMode({ lang = "en", userId, onComplete, onAbort }) {
       const newStreak = result.newCombo | 0;
       setStreak(newStreak);
       setBestStreak(b => Math.max(b, newStreak));
-      const mult   = streakMultiplier(newStreak);
+      const mult   = streakMultiplier(newStreak) * pointsMultRef.current;
       const points = Math.floor(10 * mult);
       addScore(points);
       // Trust the server for SWEAR awarded — bluff_players is already updated.
