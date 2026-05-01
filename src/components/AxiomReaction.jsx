@@ -4,24 +4,60 @@ import { useEffect, useRef } from "react";
 // corner with a voice line. LAUGH plays after the user nails round 5+,
 // MOCK plays alongside PitFall on a wrong answer (PitFall handles its
 // own voice line, so we only fire MOCK voice when used standalone).
+//
+// V2 step 4 added an `intensity` prop:
+//   "default"  — legacy tone (😂 "Lucky." / 😏 "Pathetic.")
+//   "worried"  — used in V2 SuddenDeath when streak >= 5; AXIOM is unsettled
+//   "high"     — used in V2 SuddenDeath PitFall; smug victory after a kill
 
 const REACTIONS = {
   LAUGH: {
-    emoji: "😂",
-    voiceLines: ["Lucky.", "I let you have that one.", "Coincidence."],
-    duration: 1500,
-    accent: "#2dd4a0",
+    default: {
+      emoji: "😂",
+      voiceLines: ["Lucky.", "I let you have that one.", "Coincidence."],
+      duration: 1500,
+      accent: "#2dd4a0",
+    },
+    worried: {
+      emoji: "😰",
+      voiceLines: [
+        "How are you doing this?",
+        "Stop.",
+        "I'm trying my hardest.",
+        "This shouldn't be happening.",
+      ],
+      duration: 1700,
+      accent: "#fbbf24",
+    },
   },
   MOCK: {
-    emoji: "😏",
-    voiceLines: ["Pathetic.", "I expected more.", "Predictable."],
-    duration: 1500,
-    accent: "#f43f5e",
+    default: {
+      emoji: "😏",
+      voiceLines: ["Pathetic.", "I expected more.", "Predictable."],
+      duration: 1500,
+      accent: "#f43f5e",
+    },
+    high: {
+      emoji: "🤣",
+      voiceLines: [
+        "I told you to stop. You didn't listen.",
+        "End of story.",
+        "Game.",
+      ],
+      duration: 1800,
+      accent: "#ff3344",
+    },
   },
 };
 
-export function AxiomReaction({ type, skin, playVoice = true, onComplete }) {
-  const reaction = REACTIONS[type];
+function pickReaction(type, intensity) {
+  const tier = REACTIONS[type];
+  if (!tier) return null;
+  return tier[intensity] || tier.default || null;
+}
+
+export function AxiomReaction({ type, skin, playVoice = true, intensity = "default", onComplete }) {
+  const reaction = pickReaction(type, intensity);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
@@ -55,6 +91,10 @@ export function AxiomReaction({ type, skin, playVoice = true, onComplete }) {
 
   if (!reaction) return null;
 
+  // "high" intensity gets a slightly bigger avatar to read across PitFall.
+  const sizePx = intensity === "high" ? 72 : 64;
+  const fontSize = intensity === "high" ? 38 : 32;
+
   return (
     <div
       aria-hidden="true"
@@ -65,9 +105,9 @@ export function AxiomReaction({ type, skin, playVoice = true, onComplete }) {
         background: "rgba(20,20,28,0.85)",
         border: `2px solid ${reaction.accent}`,
         borderRadius: "50%",
-        width: 64, height: 64,
+        width: sizePx, height: sizePx,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 32,
+        fontSize,
         boxShadow: `0 0 40px ${reaction.accent}66, inset 0 0 12px ${reaction.accent}33`,
         animation: "axiom-reaction-pulse 1.5s ease both",
         pointerEvents: "none",
