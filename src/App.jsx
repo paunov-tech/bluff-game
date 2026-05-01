@@ -29,6 +29,14 @@ import { CommunityToast } from "./components/CommunityToast.jsx";
 import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
 import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
+import { GameEngine } from "./components/game/GameEngine.jsx";
+
+// V2 single-player loop (5 phases + roulette interstitials).
+// Off by default; opt in with ?v2=1 in the URL. Old Climb stays the default
+// "play" screen until the V2 phases are real and validated.
+const V2_ENABLED = (() => {
+  try { return new URLSearchParams(window.location.search).get("v2") === "1"; } catch { return false; }
+})();
 
 // ── Daily warm-up gating ─────────────────────────────────────────
 // Phased rollout: ship as a SOFT gate (warning, never blocks). Flip to true
@@ -6240,7 +6248,29 @@ export default function BluffGame() {
     );
   }
 
-  // ─── PLAY ──────────────────────────────────────────────────
+  // ─── PLAY (V2) ─────────────────────────────────────────────
+  // Step 1 of the V2 rollout: GameEngine wired in behind ?v2=1.
+  // Phases are still placeholders. Real implementations land in step 2-3.
+  if (screen === "play" && V2_ENABLED) {
+    return (
+      <GameEngine
+        lang={lang}
+        userId={userIdRef.current}
+        onRunComplete={(payload) => {
+          // eslint-disable-next-line no-console
+          console.log("[v2] run complete", payload);
+          setScreen("home");
+        }}
+        onRunAbort={() => {
+          // eslint-disable-next-line no-console
+          console.log("[v2] run aborted");
+          setScreen("home");
+        }}
+      />
+    );
+  }
+
+  // ─── PLAY (legacy Climb) ───────────────────────────────────
   if(screen==="play") return (
     <div style={{
       ...wrap,
