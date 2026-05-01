@@ -32,13 +32,11 @@ import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
 import { captureEvent } from "./lib/telemetry.js";
 
-// V2 single-player loop is the default at /play.
-// Legacy Climb is preserved as an escape hatch — append ?legacy=1 to the
-// URL to fall back. The legacy code path is marked @deprecated and
-// scheduled for removal in a cleanup commit ~2 weeks after this lands,
-// pending no critical bugs in V2.
-const LEGACY_ENABLED = (() => {
-  try { return new URLSearchParams(window.location.search).get("legacy") === "1"; } catch { return false; }
+// V2 single-player loop (5 phases + roulette interstitials).
+// Off by default; opt in with ?v2=1 in the URL. Old Climb stays the default
+// "play" screen until the V2 phases are real and validated.
+const V2_ENABLED = (() => {
+  try { return new URLSearchParams(window.location.search).get("v2") === "1"; } catch { return false; }
 })();
 
 // ── Daily warm-up gating ─────────────────────────────────────────
@@ -6251,13 +6249,13 @@ export default function BluffGame() {
     );
   }
 
-  // ─── PLAY (V2 — default) ───────────────────────────────────
-  // V2 single-player loop. Default at /play unless ?legacy=1 is set.
+  // ─── PLAY (V2) ─────────────────────────────────────────────
+  // V2 single-player loop. Opt-in via ?v2=1 until promoted to default.
   // Per-phase SWEAR is credited individually by the server-judged phases
   // (swipe-judge, sniper-judge). The handler below adds the run-end
   // completion bonus (v2_run_victory / v2_run_death) and writes a
   // leaderboard entry on victory.
-  if (screen === "play" && !LEGACY_ENABLED) {
+  if (screen === "play" && V2_ENABLED) {
     const handleV2RunComplete = (payload) => {
       const { score, swearEarned, phasesCompleted, finalPhase, outcome } = payload || {};
       captureEvent("v2_run_completed", {
@@ -6309,9 +6307,6 @@ export default function BluffGame() {
   }
 
   // ─── PLAY (legacy Climb) ───────────────────────────────────
-  // @deprecated — escape hatch, reachable only via ?legacy=1. Scheduled
-  // for removal in a cleanup commit ~2 weeks after V2 promotion (no
-  // critical bugs in V2 by then). Do not add features here.
   if(screen==="play") return (
     <div style={{
       ...wrap,
