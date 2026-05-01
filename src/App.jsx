@@ -30,6 +30,7 @@ import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
 import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
+import { captureEvent } from "./lib/telemetry.js";
 
 // V2 single-player loop (5 phases + roulette interstitials).
 // Off by default; opt in with ?v2=1 in the URL. Old Climb stays the default
@@ -6249,23 +6250,58 @@ export default function BluffGame() {
   }
 
   // ─── PLAY (V2) ─────────────────────────────────────────────
-  // Step 1 of the V2 rollout: GameEngine wired in behind ?v2=1.
-  // Phases are still placeholders. Real implementations land in step 2-3.
+  // V2 single-player loop. Opt-in via ?v2=1 until promoted to default.
+  // Per-phase SWEAR is credited individually by the server-judged phases
+  // (swipe-judge, sniper-judge). The handler below adds the run-end
+  // completion bonus (v2_run_victory / v2_run_death) and writes a
+  // leaderboard entry on victory.
   if (screen === "play" && V2_ENABLED) {
+    const handleV2RunComplete = (payload) => {
+      const { score, swearEarned, phasesCompleted, finalPhase, outcome } = payload || {};
+      captureEvent("v2_run_completed", {
+        outcome, score, swearEarned, phasesCompleted, finalPhase,
+      });
+      // Navigate first so the user isn't staring at a blank screen while
+      // the awards round-trip. Awards + leaderboard run fire-and-forget.
+      setScreen("home");
+
+      const gid = `v2_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+      const earnEvent = outcome === "victory" ? "v2_run_victory"
+                      : outcome === "death"   ? "v2_run_death"
+                      : null;
+      if (earnEvent) {
+        const labelKey = outcome === "victory" ? "v2.run.victory" : "v2.run.death";
+        awardSwear(earnEvent, gid, { label: t(labelKey, lang), meta: { score, finalPhase } })
+          .catch(e => console.warn("[v2] swear-earn failed:", e?.message));
+      }
+
+      if (outcome === "victory" && score > 0 && userIdRef.current) {
+        const playerName =
+          swearProfile?.handle
+          || authUser?.displayName
+          || (authUser?.email ? authUser.email.split("@")[0].slice(0, 20) : "Anonymous");
+        fetch("/api/leaderboard", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            deviceId:      userIdRef.current,
+            playerName,
+            score:         score | 0,
+            climbComplete: false, // V2 isn't Climb; field repurposed to just flag run completion
+          }),
+        }).catch(e => console.warn("[v2] leaderboard write failed:", e?.message));
+      }
+    };
+    const handleV2RunAbort = () => {
+      captureEvent("v2_run_aborted", {});
+      setScreen("home");
+    };
     return (
       <GameEngine
         lang={lang}
         userId={userIdRef.current}
-        onRunComplete={(payload) => {
-          // eslint-disable-next-line no-console
-          console.log("[v2] run complete", payload);
-          setScreen("home");
-        }}
-        onRunAbort={() => {
-          // eslint-disable-next-line no-console
-          console.log("[v2] run aborted");
-          setScreen("home");
-        }}
+        onRunComplete={handleV2RunComplete}
+        onRunAbort={handleV2RunAbort}
       />
     );
   }

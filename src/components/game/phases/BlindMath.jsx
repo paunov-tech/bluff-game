@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useGameActions } from "../GameContext.jsx";
+import { useActiveEffects, useGameActions } from "../GameContext.jsx";
 import { useBlindMath } from "../hooks/useBlindMath.js";
 import { vibrate } from "../api.js";
+import { captureEvent } from "../../../lib/telemetry.js";
 
 // V2 BlindMath — 3 rounds, progressive difficulty.
 //   Round 1: 3 ops, range 10-30, +/- only.
@@ -33,12 +34,26 @@ const T = {
 };
 
 export function BlindMath({ onComplete, onAbort }) {
+  const { consumeEffect } = useGameActions();
+  const activeEffects = useActiveEffects();
   const [roundIdx, setRoundIdx]       = useState(0);
   const [stats, setStats]             = useState({ correct: 0, total: 0 });
   const finishedRef = useRef(false);
   const completionRef = useRef({ correct: 0, total: 0 });
+  // Effect snapshots — consumed once on mount, applied to all rounds.
+  const pointsMultRef = useRef(1);
+  const stepMsCutRef  = useRef(0);
 
   useEffect(() => { completionRef.current = stats; }, [stats]);
+
+  useEffect(() => {
+    const has2x  = activeEffects.some(e => e.type === "POINTS_2X");
+    const hasCut = activeEffects.some(e => e.type === "TIMER_CUT");
+    if (has2x)  { pointsMultRef.current = 2; consumeEffect("POINTS_2X"); }
+    if (hasCut) { stepMsCutRef.current = 200; consumeEffect("TIMER_CUT"); }
+    captureEvent("v2_phase_started", { phase: "BLIND_MATH", points2x: has2x, timerCut: hasCut });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleRoundDone(correct) {
     setStats(s => ({
@@ -52,6 +67,9 @@ export function BlindMath({ onComplete, onAbort }) {
         // Use computed (not setState) to avoid losing the last round.
         const finalCorrect = completionRef.current.correct + (correct ? 1 : 0);
         const finalTotal   = completionRef.current.total + 1;
+        captureEvent("v2_phase_completed", {
+          phase: "BLIND_MATH", correct: finalCorrect, total: finalTotal,
+        });
         onComplete?.({
           ok: true,
           phase: "BLIND_MATH",
@@ -75,14 +93,18 @@ export function BlindMath({ onComplete, onAbort }) {
 
       <BlindMathRound
         key={roundIdx}
-        config={ROUND_CONFIGS[roundIdx]}
+        config={{
+          ...ROUND_CONFIGS[roundIdx],
+          stepMs: Math.max(500, ROUND_CONFIGS[roundIdx].stepMs - stepMsCutRef.current),
+        }}
+        pointsMultiplier={pointsMultRef.current}
         onDone={handleRoundDone}
       />
     </div>
   );
 }
 
-function BlindMathRound({ config, onDone }) {
+function BlindMathRound({ config, pointsMultiplier = 1, onDone }) {
   const { addScore, addSwear } = useGameActions();
   const m = useBlindMath(config);
   const [showResult, setShowResult] = useState(false);
@@ -97,7 +119,7 @@ function BlindMathRound({ config, onDone }) {
     submittedRef.current = true;
     const correct = m.submit(saysTrue);
     if (correct === null) { submittedRef.current = false; return; }
-    if (correct) { addScore(POINTS_PER_HIT); addSwear(SWEAR_PER_HIT); vibrate(15); }
+    if (correct) { addScore(POINTS_PER_HIT * pointsMultiplier); addSwear(SWEAR_PER_HIT); vibrate(15); }
     else         { vibrate([20, 50, 20]); }
     setShowResult(true);
     doneTimerRef.current = setTimeout(() => onDone(correct), REVEAL_HOLD_MS);

@@ -24,6 +24,11 @@ export const EARN_RATES = {
   numbers_match_win:          30,
   numbers_match_loss:         10,
   numbers_clean_sweep:        50,
+  // V2 multi-phase loop. Per-phase SWEAR is credited individually by
+  // swipe-judge / sniper-judge for those server-judged phases. These two
+  // events are the run-end completion bonus.
+  v2_run_victory:             50,
+  v2_run_death:               15,
 };
 
 export function rateFor(event) {
