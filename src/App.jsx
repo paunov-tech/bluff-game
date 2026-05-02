@@ -29,6 +29,9 @@ import { CommunityToast } from "./components/CommunityToast.jsx";
 import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
 import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
+import { ClimbMiniBlackjack } from "./components/climb/ClimbMiniBlackjack.jsx";
+import { ClimbMiniSniper } from "./components/climb/ClimbMiniSniper.jsx";
+import { ClimbMiniMath } from "./components/climb/ClimbMiniMath.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
 import { captureEvent } from "./lib/telemetry.js";
 
@@ -2238,6 +2241,9 @@ export default function BluffGame() {
   const autoAdvanceRef = useRef(null);
   const audioRef = useRef(null);
   const userInteractedRef = useRef(false);
+  // CLIMB mini-game carry-over points: Mini1 awards points BEFORE the BLUFF
+  // rounds reset score, so we stash them here and apply inside startGame.
+  const pendingMiniCarryRef = useRef(0);
   const onMultiplierMilestone = (threshold) => {
     if (!userInteractedRef.current) return;
     const tap = haptic.streakFire || haptic.timerWarning;
@@ -3312,7 +3318,13 @@ export default function BluffGame() {
       const next = incrementFreeGames();
       setFreeGamesRemaining(Math.max(0, 3 - next));
     }
-    startGame();
+    // CLIMB flow: Mini1 (Blackjack Warm-up) → 4 BLUFF rounds → Roulette →
+    //   Mini2 (Shifter sniper) → 4 BLUFF → Roulette → Mini3 (Numbers TRUE/FALSE)
+    //   → 4 BLUFF → Final.
+    userInteractedRef.current = true;
+    AudioTension.init();
+    pendingMiniCarryRef.current = 0;
+    setScreen("climb-mini1");
     return true;
   }
 
@@ -3441,7 +3453,14 @@ export default function BluffGame() {
     setSel(null);
     currentSelRef.current=null;
     setRevealed(false);
-    setScore(0);
+    {
+      // Carry-over from CLIMB Mini1 (Blackjack Warm-up) — applied as the
+      // starting score so player sees their pre-game points roll into CLIMB.
+      const carry = pendingMiniCarryRef.current | 0;
+      pendingMiniCarryRef.current = 0;
+      setScore(carry);
+      scoreRef.current = carry;
+    }
     setAxiomScore(0);
     axiomScoreRef.current = 0;
     setTotal(0);
@@ -3512,6 +3531,9 @@ export default function BluffGame() {
         setTimeout(() => {
           setShowWheelTeaser(false);
           if (justCompleted >= totalRounds) showResultScreen();
+          // After teaser at phase 1/2, drop into the corresponding mini-game.
+          else if (justCompleted === 4) setScreen("climb-mini2");
+          else if (justCompleted === 8) setScreen("climb-mini3");
           else nextRound();
         }, 2200);
         return;
@@ -5193,67 +5215,7 @@ export default function BluffGame() {
           </div>
         )}
 
-        {/* 4a. DAILY WARM-UP — primary entry point. Pulsing if not done today. */}
-        {(() => {
-          const warmupTodayDate = swearProfile?.dailyWarmup?.todayCompletedDate || null;
-          const warmupDoneToday = warmupTodayDate === todayLocalDateStr();
-          const warmupStreak = swearProfile?.dailyWarmup?.streakDays | 0;
-          if (warmupDoneToday) {
-            return (
-              <div style={{
-                width:"100%",padding:"10px 14px",marginBottom:10,
-                background:"linear-gradient(135deg,rgba(45,212,160,.10),rgba(45,212,160,.03))",
-                border:"1px solid rgba(45,212,160,.25)",borderRadius:12,
-                display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
-                animation:"g-fadeUp .5s .15s both",
-              }}>
-                <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                  <span style={{fontSize:11,letterSpacing:1.5,fontWeight:700,color:"#2dd4a0",textTransform:"uppercase"}}>
-                    ✓ {t("swipe.complete_today")}
-                  </span>
-                  {warmupStreak > 0 && (
-                    <span style={{fontSize:10,color:"rgba(232,230,225,.55)",letterSpacing:1}}>
-                      🔥 {t("swipe.streak", { n: warmupStreak })}
-                    </span>
-                  )}
-                </div>
-                <button onClick={startSwipe} style={{
-                  background:"transparent",border:"1px solid rgba(45,212,160,.4)",
-                  color:"#2dd4a0",padding:"6px 10px",borderRadius:8,
-                  fontSize:10,letterSpacing:1.5,fontWeight:700,
-                  textTransform:"uppercase",cursor:"pointer",fontFamily:"inherit",
-                }}>{t("swipe.again")}</button>
-              </div>
-            );
-          }
-          return (
-            <button onClick={startSwipe} style={{
-              width:"100%",minHeight:62,padding:"14px 16px",
-              fontSize:"clamp(13px,3.6vw,15px)",fontWeight:800,letterSpacing:"2px",textTransform:"uppercase",
-              background:"linear-gradient(135deg,#ff6b35,#e8c547)",color:"#0a0a14",
-              border:"none",borderRadius:14,position:"relative",overflow:"hidden",
-              boxShadow:"0 0 50px rgba(255,107,53,0.3), 0 6px 18px rgba(255,107,53,0.2)",
-              cursor:"pointer",fontFamily:"inherit",
-              animation:"g-fadeUp .5s .15s both, swipe-cta-pulse 2.4s ease-in-out infinite",
-              marginBottom:10,
-              display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,
-            }}>
-              <span style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,position:"relative"}}>
-                <span>🔥 {t("swipe.daily_warmup")}</span>
-                <span style={{fontSize:10,opacity:.75,letterSpacing:1.4,fontWeight:600}}>
-                  {t("swipe.duration")}
-                </span>
-              </span>
-              {warmupStreak > 0 && (
-                <span style={{
-                  fontSize:11,fontWeight:800,letterSpacing:1.2,
-                  background:"rgba(0,0,0,.18)",padding:"6px 10px",borderRadius:999,
-                  color:"#0a0a14",
-                }}>🔥 {warmupStreak}</span>
-              )}
-            </button>
-          );
-        })()}
+        {/* 4a. DAILY WARM-UP button removed — Warm-up is now Mini-game 1 inside CLIMB. */}
 
         {/* 4. PRIMARY CTA */}
         {(() => {
@@ -5309,29 +5271,7 @@ export default function BluffGame() {
             {t("home.cta_duel")}
           </button>
         </div>
-        {/* 5b. SIDE MODES — Shifter + Numbers (Brojke i slova / Countdown style) */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14,animation:"g-fadeUp .5s .32s both"}}>
-          <button onClick={startShifter} style={{
-            minHeight:60,padding:"10px 12px",fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
-            background:"linear-gradient(135deg,rgba(45,212,160,.14),rgba(45,212,160,.04))",
-            color:"#2dd4a0",border:"1px solid rgba(45,212,160,.3)",
-            borderRadius:12,cursor:"pointer",fontFamily:"inherit",
-            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
-          }}>
-            <span>{t("home.cta_shifter")}</span>
-            <span style={{fontSize:9,letterSpacing:1.4,color:"rgba(45,212,160,.6)",textTransform:"uppercase",fontWeight:500}}>{t("home.cta_shifter_sub")}</span>
-          </button>
-          <button onClick={startNumbers} style={{
-            minHeight:60,padding:"10px 12px",fontSize:12,fontWeight:700,letterSpacing:1,textTransform:"uppercase",
-            background:"linear-gradient(135deg,rgba(34,211,238,.14),rgba(34,211,238,.04))",
-            color:"#22d3ee",border:"1px solid rgba(34,211,238,.3)",
-            borderRadius:12,cursor:"pointer",fontFamily:"inherit",
-            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:3,
-          }}>
-            <span>{t("home.cta_numbers")}</span>
-            <span style={{fontSize:9,letterSpacing:1.4,color:"rgba(34,211,238,.6)",textTransform:"uppercase",fontWeight:500}}>{t("home.cta_numbers_sub")}</span>
-          </button>
-        </div>
+        {/* 5b. SIDE MODES (Shifter + Numbers) removed — both are now mini-games inside CLIMB. */}
 
         {/* 6. STATS — only if played */}
         {total>0&&(
@@ -6249,6 +6189,54 @@ export default function BluffGame() {
     );
   }
 
+  // ─── CLIMB mini-games (1: Blackjack-form Warm-up, 2: Sniper, 3: Math) ──
+  if (screen === "climb-mini1") {
+    return (
+      <ClimbMiniBlackjack
+        lang={lang}
+        userId={userIdRef.current}
+        onComplete={({ pointsEarned } = {}) => {
+          pendingMiniCarryRef.current = pointsEarned | 0;
+          startGame();
+        }}
+      />
+    );
+  }
+  if (screen === "climb-mini2") {
+    return (
+      <ClimbMiniSniper
+        lang={lang}
+        userId={userIdRef.current}
+        onComplete={({ pointsEarned } = {}) => {
+          const add = pointsEarned | 0;
+          if (add > 0) {
+            const next = scoreRef.current + add;
+            scoreRef.current = next;
+            setScore(next);
+          }
+          setScreen("play");
+          nextRound();
+        }}
+      />
+    );
+  }
+  if (screen === "climb-mini3") {
+    return (
+      <ClimbMiniMath
+        onComplete={({ pointsEarned } = {}) => {
+          const add = pointsEarned | 0;
+          if (add > 0) {
+            const next = scoreRef.current + add;
+            scoreRef.current = next;
+            setScore(next);
+          }
+          setScreen("play");
+          nextRound();
+        }}
+      />
+    );
+  }
+
   // ─── PLAY (V2) ─────────────────────────────────────────────
   // V2 single-player loop. Opt-in via ?v2=1 until promoted to default.
   // Per-phase SWEAR is credited individually by the server-judged phases
@@ -6431,8 +6419,11 @@ export default function BluffGame() {
             setScore(s => { const next = s + phaseScore; scoreRef.current = next; return next; });
             setPhaseScore(0);
             phaseScoreRef.current = 0;
+            const justClosed = wheelPhaseNum;
             setWheelOpen(false);
-            if (wheelPhaseNum === 3) showResultScreen();
+            if (justClosed === 3) showResultScreen();
+            else if (justClosed === 1) setScreen("climb-mini2");
+            else if (justClosed === 2) setScreen("climb-mini3");
             else nextRound();
           }}
           onSpinResult={(zone) => {
@@ -6485,8 +6476,11 @@ export default function BluffGame() {
             }
             setPhaseScore(0);
             phaseScoreRef.current = 0;
+            const justClosed = wheelPhaseNum;
             setWheelOpen(false);
-            if (wheelPhaseNum === 3) showResultScreen();
+            if (justClosed === 3) showResultScreen();
+            else if (justClosed === 1) setScreen("climb-mini2");
+            else if (justClosed === 2) setScreen("climb-mini3");
             else nextRound();
           }}
         />
