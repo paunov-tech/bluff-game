@@ -202,53 +202,75 @@ export function ClimbMiniSniper({ lang = "en", userId, onComplete }) {
         }} />
       </div>
 
-      <div style={{ padding: "14px 16px 6px", textAlign: "center" }}>
-        <div style={{ fontSize: 11, letterSpacing: 3, color: T.shifter, opacity: 0.85, textTransform: "uppercase" }}>
-          Tap the lie word
+      {/* Vertically-centered main area — header + progress stay at top. */}
+      <div style={{
+        flex: 1,
+        display: "flex", flexDirection: "column", justifyContent: "center",
+      }}>
+        <div style={{ padding: "0 16px 6px", textAlign: "center" }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, color: T.shifter, opacity: 0.85, textTransform: "uppercase" }}>
+            Tap the lie word
+          </div>
         </div>
-      </div>
 
-      <div style={sentenceBox()}>
-        {(sentence.words || []).map((word, idx) => {
-          const isTap = idx === tappedIdx;
-          const isLie = revealed && idx === revealData?.lieWordIndex;
-          const isWrong = revealed && isTap && !revealData?.correct;
+        <div style={sentenceBox()}>
+          {/* Subtle 5s shimmer sweep so the box reads as alive while the user
+              scans for the lie. Pure visual; absolute-positioned so it doesn't
+              affect chip layout. */}
+          <div style={shimmerSweep()} aria-hidden="true" />
+          {(sentence.words || []).map((word, idx) => {
+            const isTap = idx === tappedIdx;
+            const isLie = revealed && idx === revealData?.lieWordIndex;
+            const isWrong = revealed && isTap && !revealData?.correct;
 
-          let style = wordChip();
-          if (isLie) style = { ...style, ...wordChipLie() };
-          else if (isWrong) style = { ...style, ...wordChipWrong() };
-          else if (isTap) style = { ...style, ...wordChipTap() };
+            let style = wordChip();
+            if (isLie) style = { ...style, ...wordChipLie() };
+            else if (isWrong) style = { ...style, ...wordChipWrong() };
+            else if (isTap) style = { ...style, ...wordChipTap() };
 
-          return (
-            <span
-              key={idx}
-              role="button"
-              tabIndex={revealed ? -1 : 0}
-              onClick={() => handleTap(idx)}
-              style={style}
-            >{word}</span>
-          );
-        })}
-      </div>
-
-      {revealed && revealData && (
-        <div style={revealBox()}>
-          {revealData.correct ? (
-            <div style={{ color: T.ok, fontWeight: 800, fontSize: 14 }}>
-              ✓ +{revealData.pointsAwarded} · 🎯 Sniper
-            </div>
-          ) : (
-            <div style={{ color: T.bad, fontWeight: 700, fontSize: 13 }}>
-              The lie was “<b>{revealData.lieWord}</b>” — should be “<b>{revealData.correctWord}</b>”.
-            </div>
-          )}
-          {revealData.explanation && (
-            <div style={{ color: T.dim, fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
-              {revealData.explanation}
-            </div>
-          )}
+            return (
+              <span
+                key={idx}
+                role="button"
+                tabIndex={revealed ? -1 : 0}
+                onClick={() => handleTap(idx)}
+                onMouseDown={e => { if (!revealed) e.currentTarget.style.transform = "scale(.95)"; }}
+                onMouseUp={e => { e.currentTarget.style.transform = ""; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; }}
+                onTouchStart={e => { if (!revealed) e.currentTarget.style.transform = "scale(.95)"; }}
+                onTouchEnd={e => { e.currentTarget.style.transform = ""; }}
+                style={style}
+              >{word}</span>
+            );
+          })}
         </div>
-      )}
+
+        {revealed && revealData && (
+          <div style={revealBox()}>
+            {revealData.correct ? (
+              <div style={{ color: T.ok, fontWeight: 800, fontSize: 14 }}>
+                ✓ +{revealData.pointsAwarded} · 🎯 Sniper
+              </div>
+            ) : (
+              <div style={{ color: T.bad, fontWeight: 700, fontSize: 13 }}>
+                The lie was “<b>{revealData.lieWord}</b>” — should be “<b>{revealData.correctWord}</b>”.
+              </div>
+            )}
+            {revealData.explanation && (
+              <div style={{ color: T.dim, fontSize: 12, marginTop: 6, lineHeight: 1.5 }}>
+                {revealData.explanation}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <style>{`
+        @keyframes climb-sniper-shimmer {
+          0%   { transform: translateX(-100%); opacity: 0; }
+          40%  { opacity: .55; }
+          100% { transform: translateX(220%); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -271,25 +293,37 @@ function hud() {
 }
 function sentenceBox() {
   return {
+    position: "relative", overflow: "hidden",
     margin: "16px",
     padding: "20px 16px",
     background: "linear-gradient(135deg, #232336, #14141f)",
     border: "1px solid rgba(45,212,160,.18)",
     borderRadius: 18,
-    boxShadow: "0 10px 40px rgba(0,0,0,.45)",
-    display: "flex", flexWrap: "wrap", gap: 6, justifyContent: "center",
+    boxShadow: "0 10px 40px rgba(0,0,0,.45), 0 0 60px rgba(45,212,160,.06)",
+    display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center",
     fontSize: "clamp(16px, 4.4vw, 20px)", lineHeight: 1.55,
     fontFamily: "Georgia, serif", color: "#f0eee8",
   };
 }
+function shimmerSweep() {
+  return {
+    position: "absolute", top: 0, bottom: 0, left: 0,
+    width: "40%",
+    background: "linear-gradient(90deg, transparent, rgba(45,212,160,.10), transparent)",
+    pointerEvents: "none",
+    animation: "climb-sniper-shimmer 5s ease-in-out infinite",
+    animationDelay: "1.2s",
+  };
+}
 function wordChip() {
   return {
+    position: "relative", zIndex: 1,
     padding: "6px 10px",
     borderRadius: 8,
     background: "rgba(255,255,255,.04)",
     border: "1px solid rgba(255,255,255,.06)",
     cursor: "pointer",
-    transition: "background .15s, border-color .15s",
+    transition: "background .15s, border-color .15s, transform .12s",
     userSelect: "none",
   };
 }
