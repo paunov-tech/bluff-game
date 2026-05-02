@@ -47,6 +47,16 @@ const V2_ENABLED = (() => {
 // after the first few days once users have learned the daily ritual.
 const WARMUP_HARD_GATE = false;
 
+// ── CLIMB-flow screen transitions ───────────────────────────────
+// Fade-in animation on mount for screens in the CLIMB sequence
+// (climb-mini1/2/3, play, result). Each screen change is a remount
+// of a different return branch in App.jsx, so the keyframe runs
+// fresh on each transition. Toggle false to revert to snap-cuts
+// without changing any other code.
+const CLIMB_TRANSITIONS_ENABLED = true;
+const CLIMB_FADE_IN = "climb-screen-fade-in 350ms ease-out";
+const climbScreenAnim = () => CLIMB_TRANSITIONS_ENABLED ? CLIMB_FADE_IN : undefined;
+
 function todayLocalDateStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -6218,50 +6228,62 @@ export default function BluffGame() {
   }
 
   // ─── CLIMB mini-games (1: Blackjack-form Warm-up, 2: Sniper, 3: Math) ──
+  // The wrapping div carries the fade-in animation that fires on each
+  // screen mount. GameStyles is rendered alongside so the keyframe is
+  // present in the DOM when the animation evaluates.
   if (screen === "climb-mini1") {
     return (
-      <ClimbMiniBlackjack
-        lang={lang}
-        userId={userIdRef.current}
-        onComplete={({ pointsEarned } = {}) => {
-          pendingMiniCarryRef.current = pointsEarned | 0;
-          startGame();
-        }}
-      />
+      <div style={{ animation: climbScreenAnim() }}>
+        <ClimbMiniBlackjack
+          lang={lang}
+          userId={userIdRef.current}
+          onComplete={({ pointsEarned } = {}) => {
+            pendingMiniCarryRef.current = pointsEarned | 0;
+            startGame();
+          }}
+        />
+        <GameStyles/>
+      </div>
     );
   }
   if (screen === "climb-mini2") {
     return (
-      <ClimbMiniSniper
-        lang={lang}
-        userId={userIdRef.current}
-        onComplete={({ pointsEarned } = {}) => {
-          const add = pointsEarned | 0;
-          if (add > 0) {
-            const next = scoreRef.current + add;
-            scoreRef.current = next;
-            setScore(next);
-          }
-          setScreen("play");
-          nextRound();
-        }}
-      />
+      <div style={{ animation: climbScreenAnim() }}>
+        <ClimbMiniSniper
+          lang={lang}
+          userId={userIdRef.current}
+          onComplete={({ pointsEarned } = {}) => {
+            const add = pointsEarned | 0;
+            if (add > 0) {
+              const next = scoreRef.current + add;
+              scoreRef.current = next;
+              setScore(next);
+            }
+            setScreen("play");
+            nextRound();
+          }}
+        />
+        <GameStyles/>
+      </div>
     );
   }
   if (screen === "climb-mini3") {
     return (
-      <ClimbMiniMath
-        onComplete={({ pointsEarned } = {}) => {
-          const add = pointsEarned | 0;
-          if (add > 0) {
-            const next = scoreRef.current + add;
-            scoreRef.current = next;
-            setScore(next);
-          }
-          setScreen("play");
-          nextRound();
-        }}
-      />
+      <div style={{ animation: climbScreenAnim() }}>
+        <ClimbMiniMath
+          onComplete={({ pointsEarned } = {}) => {
+            const add = pointsEarned | 0;
+            if (add > 0) {
+              const next = scoreRef.current + add;
+              scoreRef.current = next;
+              setScore(next);
+            }
+            setScreen("play");
+            nextRound();
+          }}
+        />
+        <GameStyles/>
+      </div>
     );
   }
 
@@ -6330,7 +6352,13 @@ export default function BluffGame() {
         "radial-gradient(ellipse at 50% 0%,rgba(232,197,71,.08) 0%,rgba(8,8,15,0) 55%),"
         + "radial-gradient(ellipse at 50% 115%,rgba(20,83,45,.28) 0%,rgba(8,8,15,0) 60%),"
         + `${T.bg}`,
-      animation: !revealed && time>0 && time<=3 ? "screen-shake 200ms infinite" : "none",
+      // Compose animations: fade-in runs once on mount (each transition
+      // remounts this branch), screen-shake fires when the timer is
+      // critical. Both can coexist via comma-list.
+      animation: [
+        CLIMB_TRANSITIONS_ENABLED ? CLIMB_FADE_IN : null,
+        !revealed && time>0 && time<=3 ? "screen-shake 200ms infinite" : null,
+      ].filter(Boolean).join(", ") || "none",
     }}>
       <div aria-hidden="true" style={{
         position:"absolute",inset:0,pointerEvents:"none",zIndex:0,
@@ -6980,7 +7008,8 @@ export default function BluffGame() {
       display:"flex",flexDirection:"column",alignItems:"center",
       padding:"max(28px,env(safe-area-inset-top)) 20px max(28px,env(safe-area-inset-bottom))",
       position:"relative",overflow:"hidden",
-      color:"#e8e6e1",fontFamily:"'Segoe UI',system-ui,sans-serif"
+      color:"#e8e6e1",fontFamily:"'Segoe UI',system-ui,sans-serif",
+      animation: climbScreenAnim()
     }}>
       <Particles/>
       {won && confetti && <Confetti/>}
@@ -7291,6 +7320,7 @@ function GameStyles(){
     @keyframes hexRotate{to{transform:rotate(360deg)}}
     @keyframes hexRotateCCW{to{transform:rotate(-360deg)}}
     @keyframes g-fadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes climb-screen-fade-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
     @keyframes g-glitchText{
       0%{transform:scale(2) rotate(-5deg);opacity:0}
       40%{transform:scale(1.1) rotate(1deg);opacity:1}
