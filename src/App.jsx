@@ -33,9 +33,6 @@ import { ClimbMiniBlackjack } from "./components/climb/ClimbMiniBlackjack.jsx";
 import { ClimbMiniSniper } from "./components/climb/ClimbMiniSniper.jsx";
 import { ClimbMiniMath } from "./components/climb/ClimbMiniMath.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
-import { HomeScreen } from "./components/HomeScreen.jsx";
-import { BluffEngine } from "./components/BluffEngine.jsx";
-import { MultiplayerStub } from "./components/MultiplayerStub.jsx";
 import { captureEvent } from "./lib/telemetry.js";
 
 // V2 single-player loop (5 phases + roulette interstitials).
@@ -43,14 +40,6 @@ import { captureEvent } from "./lib/telemetry.js";
 // "play" screen until the V2 phases are real and validated.
 const V2_ENABLED = (() => {
   try { return new URLSearchParams(window.location.search).get("v2") === "1"; } catch { return false; }
-})();
-
-// Consolidation home screen (post-V2-revert default). Set ?home=v1 in the
-// URL to fall back to the legacy 2,000-line home render with all the mode
-// buttons. The legacy modes themselves remain reachable from the new home
-// via the "More" archive.
-const HOME_V1 = (() => {
-  try { return new URLSearchParams(window.location.search).get("home") === "v1"; } catch { return false; }
 })();
 
 // ── Daily warm-up gating ─────────────────────────────────────────
@@ -4997,48 +4986,6 @@ export default function BluffGame() {
 
   // ─── HOME ──────────────────────────────────────────────────
   if(screen==="home") {
-  // ─── New consolidation home (default, ?home=v1 to opt out) ──
-  // Renders before the legacy home JSX so the legacy block never builds
-  // when HOME_V1 is off. Clicking PLAY → bluff_play screen (BluffEngine).
-  // Clicking MULTIPLAYER → MultiplayerStub waitlist. Clicking More →
-  // small archive of legacy modes (Blitz, Daily, Duel, Shifter, Numbers,
-  // legacy Climb).
-  if (!HOME_V1) {
-    return (
-      <HomeScreen
-        lang={lang}
-        userStats={{
-          totalScore:   0, // not currently tracked across sessions
-          swearBalance: swearBalance | 0,
-          gamesPlayed:  ((swearProfile?.stats?.soloWins || 0)
-                        + (swearProfile?.stats?.blitzWins || 0)
-                        + (swearProfile?.stats?.duelWins  || 0)
-                        + (swearProfile?.stats?.dailyCompletes || 0)) | 0,
-        }}
-        onPlay={() => {
-          userInteractedRef.current = true;
-          AudioTension.init?.();
-          if (!isPro) {
-            const used = getFreeGamesUsed();
-            const remaining = Math.max(0, 3 - used);
-            setFreeGamesRemaining(remaining);
-            if (remaining <= 0) {
-              setPaywallReason("daily_limit");
-              setShowPaywall(true);
-              return;
-            }
-            const next = incrementFreeGames();
-            setFreeGamesRemaining(Math.max(0, 3 - next));
-          }
-          setScreen("bluff_play");
-        }}
-        onMultiplayer={() => setScreen("multiplayer")}
-        onMore={() => setScreen("more")}
-        onSettings={() => setScreen("more")}      // placeholder until a settings page lands
-        onLeaderboard={() => setScreen("more")}   // placeholder
-      />
-    );
-  }
   const settingButtonStyle = {
     flex:1, minHeight:36, padding:"8px 4px",
     background:"transparent", border:"none", cursor:"pointer",
@@ -6239,71 +6186,6 @@ export default function BluffGame() {
         onExit={() => setScreen("home")}
         onComplete={onSwipeComplete}
       />
-    );
-  }
-  // ─── PLAY (consolidation BluffEngine) ──────────────────────
-  // 6-module flow per src/lib/moduleRegistry.js. Default entry from new
-  // home's PLAY button. Legacy `screen === "play"` (Climb) still works
-  // for the More archive — they coexist by name.
-  if (screen === "bluff_play") {
-    return (
-      <BluffEngine
-        userId={userIdRef.current}
-        lang={lang}
-        awardSwear={awardSwear}
-        onExit={() => setScreen("home")}
-      />
-    );
-  }
-  // ─── MULTIPLAYER (waitlist stub) ───────────────────────────
-  if (screen === "multiplayer") {
-    return (
-      <MultiplayerStub
-        lang={lang}
-        onBack={() => setScreen("home")}
-      />
-    );
-  }
-  // ─── MORE (legacy modes archive) ───────────────────────────
-  if (screen === "more") {
-    return (
-      <div style={{
-        minHeight: "100dvh", background: "#04060f", color: "#e8e6e1",
-        fontFamily: "'Segoe UI',system-ui,sans-serif",
-        padding: "max(40px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom))",
-      }}>
-        <header style={{ display: "flex", alignItems: "center", marginBottom: 24 }}>
-          <button onClick={() => setScreen("home")} style={{
-            padding: "8px 12px", borderRadius: 8, background: "transparent",
-            color: "#e8e6e1", border: "1px solid rgba(255,255,255,.12)",
-            cursor: "pointer", fontFamily: "inherit", fontSize: 12,
-          }}>← Home</button>
-          <div style={{ marginLeft: 14, fontSize: 12, letterSpacing: 3, color: "#e8c547", fontWeight: 800, textTransform: "uppercase" }}>
-            Other Modes
-          </div>
-        </header>
-        <div style={{
-          display: "grid", gridTemplateColumns: "1fr", gap: 10,
-          maxWidth: 420, margin: "0 auto",
-        }}>
-          {[
-            { label: "🎯 Climb (legacy)", action: () => { startGame(); } },
-            { label: "⚡ Blitz",          action: () => { tryStartBlitz(); } },
-            { label: "📅 Daily Challenge", action: () => { startDailyChallenge(); } },
-            { label: "⚔️ Duel",           action: () => { setDuelScreen("mode-select"); setScreen("home"); } },
-            { label: "📝 Shifter",        action: () => { setScreen("shifter"); } },
-            { label: "🧮 Numbers",        action: () => { setScreen("numbers"); } },
-            { label: "🔥 Daily Warm-up",  action: () => { startSwipe(); } },
-          ].map((row, i) => (
-            <button key={i} onClick={row.action} style={{
-              padding: 16, fontSize: 14, fontWeight: 700, letterSpacing: 1.5,
-              background: "rgba(255,255,255,.04)", color: "#e8e6e1",
-              border: "1px solid rgba(255,255,255,.1)", borderRadius: 12,
-              cursor: "pointer", textAlign: "left", fontFamily: "inherit",
-            }}>{row.label}</button>
-          ))}
-        </div>
-      </div>
     );
   }
 
