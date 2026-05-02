@@ -437,4 +437,50 @@ export default {
       sudden_death: "Sudden Death",
     },
   },
+  home_v2: {
+    tagline:               "The AI Deception Game",
+    play:                  "PLAY",
+    play_subtitle:         "Solo · 6 challenges · ~10 min",
+    multiplayer:           "MULTIPLAYER",
+    multiplayer_subtitle:  "Coming soon · Join waitlist",
+    leaderboard:           "Leaderboard",
+    more:                  "More",
+    settings:              "Settings",
+  },
+  modules: {
+    blackjack: {
+      title:    "Blackjack 21",
+      subtitle: "Best of 3 against AXIOM",
+    },
+    classic: {
+      set_1:     "BLUFF Set 1",
+      set_2:     "BLUFF Set 2",
+      final_set: "BLUFF Final Set",
+      subtitle:  "5 statements, find the lie",
+    },
+    blindmath: {
+      title:    "Blind Math",
+      subtitle: "Track operations in your head",
+    },
+    sniper: {
+      title:    "Sniper",
+      subtitle: "Tap the wrong word",
+    },
+  },
+  final: {
+    complete:     "Game complete",
+    swear_earned: "earned",
+    swear_label:  "Session bonus",
+    play_again:   "Play again",
+    home:         "Home",
+  },
+  multiplayer: {
+    back:              "Back",
+    coming_soon:       "Coming soon",
+    blurb:             "1v1 BLUFF matches and 4-player rooms are on the way. Drop your email and we'll let you know when it's ready.",
+    email_placeholder: "you@example.com",
+    notify_me:         "Notify me",
+    invalid_email:     "Please enter a valid email.",
+    thanks:            "You're on the list. We'll be in touch.",
+  },
 };

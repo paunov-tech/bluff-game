@@ -29,6 +29,9 @@ export const EARN_RATES = {
   // events are the run-end completion bonus.
   v2_run_victory:             50,
   v2_run_death:               15,
+  // Consolidation BLUFF flow (BluffEngine 6-module sequence). Per-module
+  // SWEAR is shown in-run only; this is the run-end completion bonus.
+  bluff_session_complete:     25,
 };
 
 export function rateFor(event) {
