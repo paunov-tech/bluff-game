@@ -2946,7 +2946,11 @@ export default function BluffGame() {
       AudioTension.stopDrone();
       AudioTension.fanfare();
       earned = Math.round(BASE_POINTS * lockedMult * streakMultAtLock);
-      if (blitzMode) setScore(s=>s+earned);
+      // Blitz and Daily skip the phase-end wheel entirely, so they bank
+      // points directly into score on each round. Solo/Climb accumulates
+      // into phaseScore which the wheel (Pro) or the free-tier teaser
+      // path (now also banking, see advanceAfterRound) folds into score.
+      if (blitzMode || dailyModeRef.current) setScore(s=>s+earned);
       else setPhaseScore(s=>s+earned);
       setCorrectCount(c => { correctCountRef.current = c + 1; return c + 1; });
       setMaxCashout(m => { const next = Math.max(m, lockedMult); maxCashoutRef.current = next; return next; });
@@ -3526,7 +3530,20 @@ export default function BluffGame() {
       clearTimeout(autoAdvanceRef.current);
       setAutoAdvanceCount(null);
       if (!isPro) {
-        // Free users: show teaser instead of wheel/gambit, auto-continue
+        // Free users: show teaser instead of wheel/gambit, auto-continue.
+        // CRITICAL: bank the phase's accumulated points into total score
+        // here. The wheel onCashOut/onSpinResult is the only other place
+        // phaseScore folds into score, and free users skip the wheel
+        // entirely. Without this, every BLUFF round answered correctly
+        // is silently dropped — score stays at 0 across phases.
+        const curPhaseScore = phaseScoreRef.current;
+        if (curPhaseScore > 0) {
+          const next = scoreRef.current + curPhaseScore;
+          scoreRef.current = next;
+          setScore(next);
+          phaseScoreRef.current = 0;
+          setPhaseScore(0);
+        }
         setShowWheelTeaser(true);
         setTimeout(() => {
           setShowWheelTeaser(false);
@@ -3777,11 +3794,21 @@ export default function BluffGame() {
 
     const currentUserId = localStorage.getItem("bluff_user_id") || "anon";
 
-    fetch("/api/shop", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId: currentUserId, sessionId }),
-    })
+    // Send Bearer token so the server can pin the unlock to the auth'd
+    // uid. Anonymous purchases still resolve through the Stripe metadata
+    // userId captured at checkout creation; only fully-anon sessions
+    // (metadata.userId === "anon") will be 401'd, requiring sign-in.
+    (async () => {
+      const headers = { "Content-Type": "application/json" };
+      try {
+        const token = await getCurrentIdToken();
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+      } catch { /* anon proceed */ }
+      fetch("/api/shop", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ action: "verify", skinId: skinPurchased, userId: currentUserId, sessionId }),
+      })
     .then(r => r.json())
     .then(data => {
       if (data.success) {
@@ -3812,6 +3839,7 @@ export default function BluffGame() {
       console.error("[shop] Verify fetch error:", err);
       alert(`⚠️ ${t("common.checkout_verify_network")}`);
     });
+    })();
   }, []);
 
   // Deep-link: ?duel=CODE&mode=regular|blitz → auto-join that room

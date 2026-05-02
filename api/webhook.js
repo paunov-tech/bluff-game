@@ -3,6 +3,21 @@
 import Stripe from "stripe";
 import { kv } from "@vercel/kv";
 
+// Stripe signs the raw HTTP body byte-for-byte. Vercel's Node runtime
+// auto-parses JSON which mutates whitespace/key-order, so we must opt out
+// of bodyParser and read the raw stream ourselves before constructEvent.
+export const config = {
+  api: { bodyParser: false },
+};
+
+async function readRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 async function writePremium(deviceId, data) {
   const apiKey = process.env.FIREBASE_API_KEY;
   if (!apiKey || !deviceId) return false;
@@ -26,10 +41,12 @@ export default async function handler(req, res) {
 
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const sig = req.headers["stripe-signature"];
+  if (!sig) return res.status(400).send("Webhook Error: missing stripe-signature");
+
   let event;
   try {
-    const buf = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
-    event = stripe.webhooks.constructEvent(buf, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    const rawBody = await readRawBody(req);
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error("Webhook sig error:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);

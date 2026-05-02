@@ -1,6 +1,11 @@
 // api/shop.js
 import Stripe from "stripe";
 import { kv } from "@vercel/kv";
+import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
+
+// Consumed-session TTL: 90 days is past Stripe's typical refund/dispute
+// window, after which replay protection is no longer load-bearing.
+const CONSUMED_TTL_SEC = 60 * 60 * 24 * 90;
 
 const SKIN_PRICES = {
   balkan:    "price_1TMAwkFrEcgVfTLCLUeAremZ",
@@ -72,6 +77,17 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Missing sessionId" });
     }
     try {
+      // Replay protection: each Stripe session may grant skins exactly
+      // once. Without this, anyone who learns a paid sessionId can
+      // re-trigger the verify path indefinitely; combined with the
+      // injection of `userId` from the body that previously existed,
+      // that was a permanent skin-grant primitive.
+      const consumedKey = `shop:consumed:${sessionId}`;
+      const alreadyConsumed = await kv.get(consumedKey).catch(() => null);
+      if (alreadyConsumed) {
+        return res.status(400).json({ error: "Session already redeemed" });
+      }
+
       const stripe = getStripe();
       const session = await stripe.checkout.sessions.retrieve(sessionId);
       console.log(`[shop] Session ${sessionId}: payment_status=${session.payment_status}`);
@@ -83,19 +99,35 @@ export default async function handler(req, res) {
         });
       }
 
+      // userId resolution priority: (1) authenticated bearer token,
+      // (2) metadata captured at checkout creation, (3) reject. Body
+      // `userId` is NEVER trusted — that was the injection vector.
+      const auth = await verifyRequestAuth(req);
+      const metaUid = session.metadata?.userId;
+      let resolvedUserId;
+      if (auth?.uid) {
+        resolvedUserId = auth.uid;
+      } else if (metaUid && metaUid !== "anonymous" && metaUid !== "anon") {
+        resolvedUserId = metaUid;
+      } else {
+        return res.status(401).json({ error: "auth_required_for_verify" });
+      }
+
       const purchasedSkin = session.metadata?.skinId || skinId;
-      const purchasedUserId = session.metadata?.userId || userId || "anonymous";
       const skinsToUnlock = purchasedSkin === "bundle" ? BUNDLE_INCLUDES : [purchasedSkin];
 
-      // Best-effort KV save — not fatal if it fails
-      const kvSaved = await saveSkinsToKV(purchasedUserId, skinsToUnlock);
-      console.log(`[shop] Unlocked [${skinsToUnlock}] for ${purchasedUserId} — KV: ${kvSaved}`);
+      // Mark the session consumed BEFORE granting so a parallel race
+      // can't double-grant. KV is the source of truth here.
+      await kv.set(consumedKey, { uid: resolvedUserId, ts: Date.now() }, { ex: CONSUMED_TTL_SEC }).catch(() => {});
+
+      const kvSaved = await saveSkinsToKV(resolvedUserId, skinsToUnlock);
+      console.log(`[shop] Unlocked [${skinsToUnlock}] for ${resolvedUserId} — KV: ${kvSaved}`);
 
       return res.status(200).json({
         success: true,
         skinId: purchasedSkin,
         skinsUnlocked: skinsToUnlock,
-        userId: purchasedUserId,
+        userId: resolvedUserId,
       });
     } catch (err) {
       console.error("[shop] Verify error:", err.message);
