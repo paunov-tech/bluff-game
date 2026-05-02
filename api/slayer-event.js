@@ -1,5 +1,11 @@
 import { kv } from "@vercel/kv";
 import Stripe from "stripe";
+import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
+
+// Maximum plausible solo run score. The current Climb tops out around
+// ~25k under best-case scoring; 100k is generous headroom but still
+// cheap-cheating-proof for the weekly cash pool.
+const MAX_SLAYER_SCORE = 100000;
 
 let _stripe;
 function getStripe() {
@@ -15,7 +21,7 @@ export default async function handler(req, res) {
     ? `https://${process.env.PRODUCT_DOMAIN.split(",")[0].trim()}` : "*";
   res.setHeader("Access-Control-Allow-Origin", CORS_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(204).end();
 
   const weekKey = getWeekKey();
@@ -59,11 +65,24 @@ export default async function handler(req, res) {
     }
 
     if (action === "submit_score") {
-      const { score, userId: uid } = req.body;
-      const isMember = await kv.sismember(`slayer:${weekKey}:entrants`, uid);
+      // Hardened: require Bearer token, score is type+range checked,
+      // member is forced to auth.uid (not from body), and ZADD GT means
+      // a replay with a lower score can't overwrite a higher one.
+      const auth = await verifyRequestAuth(req);
+      if (!auth?.uid) return res.status(401).json({ error: "auth_required" });
+
+      const { score } = req.body || {};
+      if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > MAX_SLAYER_SCORE) {
+        return res.status(400).json({ error: "invalid_score" });
+      }
+
+      const member = auth.uid;
+      const isMember = await kv.sismember(`slayer:${weekKey}:entrants`, member);
       if (!isMember) return res.status(403).json({ error: "Not entered" });
-      await kv.zadd(`slayer:${weekKey}:scores`, { score, member: uid });
-      return res.json({ ok: true });
+
+      // GT: only update if the new score is strictly greater than current.
+      await kv.zadd(`slayer:${weekKey}:scores`, { gt: true }, { score, member });
+      return res.json({ ok: true, score, member });
     }
   }
 
