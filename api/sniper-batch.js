@@ -131,13 +131,23 @@ export default async function handler(req, res) {
   const reIded = valid.map((s, i) => ({ ...s, id: `${sessionId}_${i + 1}` }));
 
   // Server-side store with the answer key — never sent to the client.
-  fsPatch(SESSIONS_COL, sessionId, {
-    userId:    toFS(uid || null),
-    lang:      toFS(lang),
-    sentences: toFS(reIded),
-    consumed:  toFS([]),
-    createdAt: toFS(Date.now()),
-  }).catch(err => console.warn("[sniper-batch] session write failed:", err.message));
+  // MUST await: sniper has only 3 sentences and the user can tap within ~1s
+  // of receiving the batch, so a fire-and-forget write often gets frozen by
+  // the Vercel runtime before reaching Firestore, then sniper-judge 404s
+  // with session_not_found. Awaiting trades a few hundred ms of latency for
+  // a reliable next read.
+  try {
+    await fsPatch(SESSIONS_COL, sessionId, {
+      userId:    toFS(uid || null),
+      lang:      toFS(lang),
+      sentences: toFS(reIded),
+      consumed:  toFS([]),
+      createdAt: toFS(Date.now()),
+    });
+  } catch (err) {
+    console.warn("[sniper-batch] session write failed:", err.message);
+    return res.status(503).json({ error: "session_persist_failed" });
+  }
 
   // Strip the answer key from the response.
   const clientSentences = reIded.map(s => ({

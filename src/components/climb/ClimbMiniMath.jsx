@@ -152,43 +152,61 @@ export function ClimbMiniMath({ onComplete }) {
         }} />
       </div>
 
-      <div style={{ padding: "14px 18px 4px", textAlign: "center" }}>
-        <div style={{ fontSize: 11, letterSpacing: 3, color: T.numbers, opacity: 0.8, textTransform: "uppercase" }}>
-          AXIOM claims:
+      {/* Vertically-centered main area — header + progress stay at top. */}
+      <div style={{
+        flex: 1,
+        display: "flex", flexDirection: "column", justifyContent: "center",
+        padding: "0 4px",
+      }}>
+        <div style={{ padding: "0 18px 4px", textAlign: "center" }}>
+          <div style={{ fontSize: 11, letterSpacing: 3, color: T.numbers, opacity: 0.8, textTransform: "uppercase" }}>
+            AXIOM claims:
+          </div>
+        </div>
+
+        <div style={card()}>
+          <div style={{ fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 700, fontFamily: "Georgia, serif", color: "#f0eee8", letterSpacing: 1.5 }}>
+            {challenge.expr}
+          </div>
+          <div style={{
+            marginTop: 18, fontSize: "clamp(28px, 8vw, 40px)", fontWeight: 800,
+            fontFamily: "Georgia, serif", color: T.numbers, letterSpacing: 2,
+            animation: revealed ? "none" : "climb-math-pulse 2.2s ease-in-out infinite",
+          }}>
+            = {challenge.claim}
+          </div>
+        </div>
+
+        {correctnessLabel && (
+          <div style={{ textAlign: "center", marginTop: 10, color: correctnessLabel.color, fontWeight: 700, fontSize: 14 }}>
+            {correctnessLabel.txt}
+          </div>
+        )}
+
+        <div style={btnRow()}>
+          <button
+            onClick={() => handleAnswer("false")}
+            disabled={revealed}
+            style={btnFalse(revealed && tapped === "false")}
+          >✗ FALSE</button>
+          <button
+            onClick={() => handleAnswer("true")}
+            disabled={revealed}
+            style={btnTrue(revealed && tapped === "true")}
+          >✓ TRUE</button>
+        </div>
+
+        <div style={{ textAlign: "center", color: T.dim, fontSize: 11, letterSpacing: 1.5, marginTop: 14 }}>
+          AXIOM lies sometimes. Trust nothing.
         </div>
       </div>
 
-      <div style={card()}>
-        <div style={{ fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 700, fontFamily: "Georgia, serif", color: "#f0eee8", letterSpacing: 1.5 }}>
-          {challenge.expr}
-        </div>
-        <div style={{ marginTop: 18, fontSize: "clamp(28px, 8vw, 40px)", fontWeight: 800, fontFamily: "Georgia, serif", color: T.numbers, letterSpacing: 2 }}>
-          = {challenge.claim}
-        </div>
-      </div>
-
-      {correctnessLabel && (
-        <div style={{ textAlign: "center", marginTop: 10, color: correctnessLabel.color, fontWeight: 700, fontSize: 14 }}>
-          {correctnessLabel.txt}
-        </div>
-      )}
-
-      <div style={btnRow()}>
-        <button
-          onClick={() => handleAnswer("false")}
-          disabled={revealed}
-          style={btnFalse(revealed && tapped === "false")}
-        >✗ FALSE</button>
-        <button
-          onClick={() => handleAnswer("true")}
-          disabled={revealed}
-          style={btnTrue(revealed && tapped === "true")}
-        >✓ TRUE</button>
-      </div>
-
-      <div style={{ textAlign: "center", color: T.dim, fontSize: 11, letterSpacing: 1.5, marginTop: 14 }}>
-        AXIOM lies sometimes. Trust nothing.
-      </div>
+      <style>{`
+        @keyframes climb-math-pulse {
+          0%, 100% { transform: scale(1); }
+          50%      { transform: scale(1.03); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -217,7 +235,9 @@ function card() {
     border: "1px solid rgba(34,211,238,.18)",
     borderRadius: 18,
     textAlign: "center",
-    boxShadow: "0 10px 40px rgba(0,0,0,.45)",
+    // Outer glow gives a faint warm halo under the card so it doesn't feel
+    // like it's floating in negative space; inner shadow preserves depth.
+    boxShadow: "0 10px 40px rgba(0,0,0,.45), 0 0 60px rgba(232,197,71,.07)",
   };
 }
 function btnRow() {
@@ -228,20 +248,22 @@ function btnRow() {
 }
 function btnTrue(highlight) {
   return {
-    minHeight: 60, fontSize: 16, fontWeight: 800, letterSpacing: 2,
+    minHeight: 68, fontSize: 16, fontWeight: 800, letterSpacing: 2,
     textTransform: "uppercase",
     background: highlight ? "rgba(45,212,160,.20)" : "rgba(45,212,160,.08)",
     color: T.ok, border: `1.5px solid ${T.ok}`,
     borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+    transition: "transform .12s, background .15s",
   };
 }
 function btnFalse(highlight) {
   return {
-    minHeight: 60, fontSize: 16, fontWeight: 800, letterSpacing: 2,
+    minHeight: 68, fontSize: 16, fontWeight: 800, letterSpacing: 2,
     textTransform: "uppercase",
     background: highlight ? "rgba(244,63,94,.20)" : "rgba(244,63,94,.08)",
     color: T.bad, border: `1.5px solid ${T.bad}`,
     borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
+    transition: "transform .12s, background .15s",
   };
 }
 

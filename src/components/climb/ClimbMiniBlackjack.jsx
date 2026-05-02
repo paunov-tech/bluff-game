@@ -19,6 +19,12 @@ import { getCurrentIdToken } from "../../auth.js";
 const POINTS_PER_CARD = 25;     // Each successful draw — points = card value × this.
 const WIN_BONUS = 400;
 const PUSH_BONUS = 100;
+// Max additional player draws after the initial deal of 2 cards. Caps the
+// hand at 6 cards so a streak doesn't drag the mini-game out indefinitely.
+const MAX_DRAWS = 4;
+// Hold the win/lose card on screen this long before auto-advancing the run.
+// Player can also tap "Continue" to skip the wait.
+const RESULT_HOLD_MS = 4400;
 
 const T = {
   bg: "#04060f",
@@ -181,6 +187,14 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
         advanceRef.current = setTimeout(() => beginAxiomTurn(next), 900);
         return;
       }
+      // Cap player draws so the mini-game can't sprawl. Initial deal is 2;
+      // after MAX_DRAWS additional cards the player auto-stands and AXIOM
+      // turn begins.
+      if (next.length >= 2 + MAX_DRAWS) {
+        setFeedback({ kind: "ok", text: "STAND · max draws" });
+        advanceRef.current = setTimeout(() => beginAxiomTurn(next), 900);
+        return;
+      }
       setCurrentIdx(i => i + 1);
       cardShownAtRef.current = Date.now();
       setTimeout(() => { submittingRef.current = false; setFeedback(null); }, 700);
@@ -258,7 +272,15 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
       if (finishedRef.current) return;
       finishedRef.current = true;
       onComplete?.({ pointsEarned: pointsRef.current, outcome: result });
-    }, 2400);
+    }, RESULT_HOLD_MS);
+  }
+
+  // User can short-circuit the result hold and go straight into BLUFF.
+  function continueNow() {
+    if (finishedRef.current) return;
+    if (advanceRef.current) clearTimeout(advanceRef.current);
+    finishedRef.current = true;
+    onComplete?.({ pointsEarned: pointsRef.current, outcome });
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -342,6 +364,19 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
             <div style={{ marginTop: 10, color: T.dim, fontSize: 13 }}>
               +{pointsEarned} → CLIMB
             </div>
+            <button onClick={continueNow} style={{
+              marginTop: 18,
+              padding: "10px 18px",
+              fontSize: 11, fontWeight: 700, letterSpacing: 2,
+              textTransform: "uppercase",
+              background: "rgba(232,197,71,.10)",
+              color: T.warm,
+              border: `1px solid rgba(232,197,71,.4)`,
+              borderRadius: 10,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+              Tap to continue →
+            </button>
           </div>
         )}
       </div>
