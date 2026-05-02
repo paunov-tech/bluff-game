@@ -423,20 +423,6 @@ export default {
     feedback_lightning: "Lightning!",
     back_home: "Back home",
   },
-  predigra: {
-    title:           "Warm-up Round",
-    subtitle:        "Quick refresh before Climb",
-    loading:         "Preparing warm-up…",
-    load_failed:     "Couldn't load warm-up. Try again.",
-    lie:             "LIE",
-    true:            "TRUE",
-    correct_label:   "Correct",
-    streak_label:    "Streak",
-    complete:        "Warm-up done",
-    start_climb:     "▶ Start Climb",
-    streak_carries:  "Climb starts with streak {n}",
-    back_home:       "Back home",
-  },
   v2: {
     run: {
       victory: "Run completed",

@@ -29,7 +29,6 @@ import { CommunityToast } from "./components/CommunityToast.jsx";
 import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
 import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
-import { ClimbPredigra } from "./components/ClimbPredigra.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
 import { captureEvent } from "./lib/telemetry.js";
 
@@ -3437,10 +3436,7 @@ export default function BluffGame() {
     dailyModeRef.current = false;
     dailyResultsRef.current = [];
     setDailyRank(null);
-    // Route through the swipe Predigra (mandatory 30s warm-up) before
-    // landing in Climb. The Predigra completion handler seeds Climb's
-    // streak with the carry-over and then routes to "play".
-    setScreen("predigra");
+    setScreen("play");
     setRoundIdx(0);
     setSel(null);
     currentSelRef.current=null;
@@ -6249,24 +6245,6 @@ export default function BluffGame() {
         userId={userIdRef.current}
         onExit={() => setScreen("home")}
         onComplete={onSwipeComplete}
-      />
-    );
-  }
-  // ─── PREDIGRA ──────────────────────────────────────────────
-  // 30-second swipe warm-up that runs BEFORE legacy Climb. Mandatory
-  // (no skip-to-Climb button); the ✕ in the corner cancels the run
-  // and returns to home. On complete, the predigra's final streak is
-  // seeded into Climb's streak state before routing to "play".
-  if (screen === "predigra") {
-    return (
-      <ClimbPredigra
-        lang={lang}
-        userId={userIdRef.current}
-        onComplete={({ initialStreak }) => {
-          setStreak(initialStreak | 0);
-          setScreen("play");
-        }}
-        onAbort={() => setScreen("home")}
       />
     );
   }
