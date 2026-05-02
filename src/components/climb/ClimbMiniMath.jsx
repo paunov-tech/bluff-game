@@ -12,6 +12,34 @@ const ROUNDS = 3;
 const POINTS_PER_HIT = 200;
 const SECONDS_PER_ROUND = 18;
 
+// Progressive equation reveal — chosen to match the user's mental-math
+// pace. ~700ms between operands feels deliberate, then an extra 900ms
+// hold before the claim builds tension. Buttons + per-round timer stay
+// disabled until the claim appears so total interaction window is a
+// consistent 18s regardless of how many operands the equation has.
+const TOKEN_GAP_MS    = 700;
+const CLAIM_PAUSE_MS  = 900;
+const TOKEN_FADE_MS   = 220;
+
+// Split a whitespace-separated equation like "8 × 6 × 7 + 31" into
+// chunks the user can read in one tick — first chunk is the seed pair
+// "operand op operand", every subsequent chunk is "op operand". The
+// claim ("= 367") is appended as the final token. Returns at least
+// [exprFallback, claimStr] if parsing fails so the UI never shows
+// nothing.
+function parseEquationTokens(exprStr, claimStr) {
+  if (typeof exprStr !== "string" || !exprStr.trim()) return [claimStr];
+  const parts = exprStr.split(/\s+/).filter(Boolean);
+  if (parts.length < 3) return [exprStr, claimStr];
+  const out = [];
+  out.push(`${parts[0]} ${parts[1]} ${parts[2]}`);
+  for (let i = 3; i + 1 < parts.length; i += 2) {
+    out.push(`${parts[i]} ${parts[i + 1]}`);
+  }
+  out.push(claimStr);
+  return out;
+}
+
 const T = {
   bg: "#04060f",
   numbers: "#22d3ee",
@@ -79,8 +107,18 @@ export function ClimbMiniMath({ onComplete }) {
   const [revealed, setRevealed] = useState(false);
   const [tapped, setTapped] = useState(null); // "true" | "false"
   const [timeLeft, setTimeLeft] = useState(SECONDS_PER_ROUND);
+  // Progressive reveal: how many of the parsed equation tokens are
+  // currently on screen, and whether the claim has landed (gates timer
+  // + buttons so the user gets a consistent 18s reaction window).
+  const [revealedCount, setRevealedCount] = useState(0);
+  const [revealComplete, setRevealComplete] = useState(false);
   const finishedRef = useRef(false);
   const advanceRef = useRef(null);
+
+  const tokens = useMemo(
+    () => parseEquationTokens(challenge.expr, `= ${challenge.claim}`),
+    [challenge]
+  );
 
   useEffect(() => {
     setTimeLeft(SECONDS_PER_ROUND);
@@ -88,13 +126,37 @@ export function ClimbMiniMath({ onComplete }) {
     setTapped(null);
   }, [round]);
 
+  // Sequentially reveal tokens whenever the challenge changes. Each
+  // operand-chunk lands every TOKEN_GAP_MS, then the claim has an
+  // extra CLAIM_PAUSE_MS hold for the "what does AXIOM say it is?"
+  // beat. Cleanup clears in-flight timers on unmount or new round.
   useEffect(() => {
-    if (revealed || finishedRef.current) return;
+    setRevealedCount(0);
+    setRevealComplete(false);
+    if (tokens.length === 0) return;
+    const timers = [];
+    for (let i = 0; i < tokens.length; i++) {
+      const isLast = i === tokens.length - 1;
+      const delay = isLast
+        ? Math.max(0, tokens.length - 2) * TOKEN_GAP_MS + CLAIM_PAUSE_MS
+        : i * TOKEN_GAP_MS;
+      timers.push(setTimeout(() => {
+        setRevealedCount(c => c + 1);
+        if (isLast) setRevealComplete(true);
+      }, delay));
+    }
+    return () => { for (const t of timers) clearTimeout(t); };
+  }, [tokens]);
+
+  useEffect(() => {
+    // Hold the timer until the equation is fully revealed — otherwise
+    // longer equations eat 2-3s of the player's reaction window.
+    if (!revealComplete || revealed || finishedRef.current) return;
     if (timeLeft <= 0) { handleAnswer(null); return; }
     const id = setTimeout(() => setTimeLeft(s => s - 1), 1000);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeft, revealed]);
+  }, [timeLeft, revealed, revealComplete]);
 
   useEffect(() => () => { if (advanceRef.current) clearTimeout(advanceRef.current); }, []);
 
@@ -165,13 +227,38 @@ export function ClimbMiniMath({ onComplete }) {
         </div>
 
         <div style={card()}>
-          <div style={{ fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 700, fontFamily: "Georgia, serif", color: "#f0eee8", letterSpacing: 1.5 }}>
-            {challenge.expr}
+          {/* Expression tokens: every chunk fades in on its own
+              schedule. The claim sits in its own slot below so the
+              cyan/pulse styling stays distinct from the white expr. */}
+          <div style={{
+            fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 700,
+            fontFamily: "Georgia, serif", color: "#f0eee8", letterSpacing: 1.5,
+            display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.4em",
+            minHeight: "1.5em",
+          }}>
+            {tokens.slice(0, Math.max(0, Math.min(revealedCount, tokens.length - 1))).map((tok, i) => (
+              <span
+                key={`${challenge.expr}|${i}`}
+                style={{
+                  display: "inline-block",
+                  opacity: 0,
+                  animation: `climb-math-token-fade ${TOKEN_FADE_MS}ms ease-out forwards`,
+                }}
+              >{tok}</span>
+            ))}
           </div>
           <div style={{
             marginTop: 18, fontSize: "clamp(28px, 8vw, 40px)", fontWeight: 800,
             fontFamily: "Georgia, serif", color: T.numbers, letterSpacing: 2,
-            animation: revealed ? "none" : "climb-math-pulse 2.2s ease-in-out infinite",
+            // Hidden until the reveal sequence finishes. After landing,
+            // play the one-shot fade-in then the existing infinite pulse
+            // (paused once the user has tapped an answer).
+            visibility: revealComplete ? "visible" : "hidden",
+            animation: !revealComplete
+              ? "none"
+              : (revealed
+                ? `climb-math-token-fade 300ms ease-out`
+                : `climb-math-token-fade 300ms ease-out, climb-math-pulse 2.2s 300ms ease-in-out infinite`),
           }}>
             = {challenge.claim}
           </div>
@@ -186,13 +273,13 @@ export function ClimbMiniMath({ onComplete }) {
         <div style={btnRow()}>
           <button
             onClick={() => handleAnswer("false")}
-            disabled={revealed}
-            style={btnFalse(revealed && tapped === "false")}
+            disabled={revealed || !revealComplete}
+            style={btnFalse(revealed && tapped === "false", revealComplete)}
           >✗ FALSE</button>
           <button
             onClick={() => handleAnswer("true")}
-            disabled={revealed}
-            style={btnTrue(revealed && tapped === "true")}
+            disabled={revealed || !revealComplete}
+            style={btnTrue(revealed && tapped === "true", revealComplete)}
           >✓ TRUE</button>
         </div>
 
@@ -205,6 +292,10 @@ export function ClimbMiniMath({ onComplete }) {
         @keyframes climb-math-pulse {
           0%, 100% { transform: scale(1); }
           50%      { transform: scale(1.03); }
+        }
+        @keyframes climb-math-token-fade {
+          from { opacity: 0; transform: scale(.85); }
+          to   { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
@@ -246,24 +337,30 @@ function btnRow() {
     padding: "14px 16px 18px",
   };
 }
-function btnTrue(highlight) {
+function btnTrue(highlight, ready = true) {
   return {
     minHeight: 68, fontSize: 16, fontWeight: 800, letterSpacing: 2,
     textTransform: "uppercase",
     background: highlight ? "rgba(45,212,160,.20)" : "rgba(45,212,160,.08)",
     color: T.ok, border: `1.5px solid ${T.ok}`,
-    borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-    transition: "transform .12s, background .15s",
+    borderRadius: 14,
+    cursor: ready ? "pointer" : "not-allowed",
+    opacity: ready ? 1 : 0.32,
+    fontFamily: "inherit",
+    transition: "transform .12s, background .15s, opacity 250ms ease",
   };
 }
-function btnFalse(highlight) {
+function btnFalse(highlight, ready = true) {
   return {
     minHeight: 68, fontSize: 16, fontWeight: 800, letterSpacing: 2,
     textTransform: "uppercase",
     background: highlight ? "rgba(244,63,94,.20)" : "rgba(244,63,94,.08)",
     color: T.bad, border: `1.5px solid ${T.bad}`,
-    borderRadius: 14, cursor: "pointer", fontFamily: "inherit",
-    transition: "transform .12s, background .15s",
+    borderRadius: 14,
+    cursor: ready ? "pointer" : "not-allowed",
+    opacity: ready ? 1 : 0.32,
+    fontFamily: "inherit",
+    transition: "transform .12s, background .15s, opacity 250ms ease",
   };
 }
 
