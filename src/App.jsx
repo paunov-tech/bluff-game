@@ -29,6 +29,7 @@ import { CommunityToast } from "./components/CommunityToast.jsx";
 import { ShifterMode } from "./components/ShifterMode.jsx";
 import { NumbersMode } from "./components/NumbersMode.jsx";
 import { SwipeWarmup } from "./components/SwipeWarmup.jsx";
+import { BlackjackPredigra } from "./components/BlackjackPredigra.jsx";
 import { GameEngine } from "./components/game/GameEngine.jsx";
 import { captureEvent } from "./lib/telemetry.js";
 
@@ -3436,7 +3437,10 @@ export default function BluffGame() {
     dailyModeRef.current = false;
     dailyResultsRef.current = [];
     setDailyRank(null);
-    setScreen("play");
+    // Route through the Blackjack 21 Predigra (best-of-3 vs AXIOM) before
+    // landing in Climb. The Predigra completion handler seeds Climb's
+    // streak with the streakTransfer payload and then routes to "play".
+    setScreen("predigra");
     setRoundIdx(0);
     setSel(null);
     currentSelRef.current=null;
@@ -6245,6 +6249,24 @@ export default function BluffGame() {
         userId={userIdRef.current}
         onExit={() => setScreen("home")}
         onComplete={onSwipeComplete}
+      />
+    );
+  }
+  // ─── BLACKJACK PREDIGRA ────────────────────────────────────
+  // Best-of-3 Blackjack 21 against AXIOM. Mandatory pre-Climb beat;
+  // the ✕ in the corner cancels the run and returns to home. On complete,
+  // streakTransfer (0..9) is seeded into Climb's streak state before
+  // routing to "play".
+  if (screen === "predigra") {
+    return (
+      <BlackjackPredigra
+        lang={lang}
+        userId={userIdRef.current}
+        onComplete={({ initialStreak }) => {
+          setStreak(initialStreak | 0);
+          setScreen("play");
+        }}
+        onAbort={() => setScreen("home")}
       />
     );
   }
