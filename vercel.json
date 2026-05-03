@@ -12,7 +12,8 @@
   "crons": [
     { "path": "/api/pre-generate", "schedule": "0 */6 * * *" },
     { "path": "/api/cron-daily", "schedule": "0 23 * * *" },
-    { "path": "/api/cron-axiom-reset", "schedule": "0 0 * * 0" }
+    { "path": "/api/cron-axiom-reset", "schedule": "0 0 * * 0" },
+    { "path": "/api/admin/build-sniper-pool", "schedule": "0 */6 * * *" }
   ],
   "headers": [
     {
