@@ -45,7 +45,7 @@ const V2_ENABLED = (() => {
 // ── Daily warm-up gating ─────────────────────────────────────────
 // Phased rollout: ship as a SOFT gate (warning, never blocks). Flip to true
 // after the first few days once users have learned the daily ritual.
-const WARMUP_HARD_GATE = false;
+const WARMUP_HARD_GATE = true;
 
 function todayLocalDateStr() {
   const d = new Date();
