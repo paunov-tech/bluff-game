@@ -21,6 +21,8 @@ const COLLECTION_BY_MODE = {
   blitz:   "bluff_rounds_blitz",
 };
 
+const LANG_NAMES = { en: "English", sr: "Serbian (Latin script)", hr: "Croatian" };
+
 const CATS = [
   "history", "science", "medicine", "showbiz", "culture",
   "geography", "animals", "food", "technology", "life", "sports"
@@ -170,6 +172,10 @@ const SUBTOPICS_PRE = {
 // Keep backwards-compat keys for any lingering references
 const CAT_DESCS = Object.fromEntries(Object.keys(SUBTOPICS_PRE).map(k => [k, null]));
 
+function buildDocId(cat, lvl, variant, lang) {
+  return lang === "en" ? `${cat}_${lvl}_${variant}` : `${cat}_${lvl}_${variant}_${lang}`;
+}
+
 function buildLevelRules({ truths, total }) {
   return {
     1: `LEVEL 1 — WARM-UP: The lie should be obvious to anyone with basic general knowledge.
@@ -192,7 +198,7 @@ function buildLevelRules({ truths, total }) {
 }
 
 // ── Build Claude prompt ──────────────────────────────────────
-function buildPrompt(category, level, mode, subtopic) {
+function buildPrompt(category, level, mode, subtopic, lang = "en") {
   const schema = SCHEMA[mode] || SCHEMA.regular;
   const { total, truths, lies } = schema;
   const rules = buildLevelRules(schema)[level] || buildLevelRules(schema)[3];
@@ -200,6 +206,10 @@ function buildPrompt(category, level, mode, subtopic) {
     ? `${category}. Sub-topic for this round: ${subtopic}. Use specific names, dates, records, and surprising statistics.`
     : category;
   const truthEntries = Array(truths).fill(`    {"text": "...", "real": true}`).join(",\n");
+  const langName = LANG_NAMES[lang] || "English";
+  const langNote = lang === "en"
+    ? "Write all statements in English."
+    : `Write ALL statements in ${langName}. Rephrase naturally for native speakers — do NOT translate literally. Use natural phrasing, idioms, and cultural references appropriate for ${langName} speakers. The facts must still be internationally accurate.`;
   return `Generate a BLUFF game round. Category: ${catDesc}.
 
 ${rules}
@@ -246,7 +256,9 @@ CONTENT:
 - Specific numbers where possible ("11 time zones", not "many")
 - Make truths SURPRISING — reward curiosity
 - Randomize lie position
-- NEVER use profanity or explicit content`;
+- NEVER use profanity or explicit content
+
+${langNote}`;
 }
 
 // ── Firestore helpers ────────────────────────────────────────
@@ -285,7 +297,7 @@ function readIntegerField(doc, key) {
 }
 
 // ── Generate one round via Claude ────────────────────────────
-async function generateOne(category, level, mode, subtopic) {
+async function generateOne(category, level, mode, subtopic, lang = "en") {
   const schema = SCHEMA[mode] || SCHEMA.regular;
   const resp = await fetch("https://api.anthropic.com/v1/messages", {
     method:  "POST",
@@ -297,7 +309,7 @@ async function generateOne(category, level, mode, subtopic) {
     body: JSON.stringify({
       model:      "claude-sonnet-4-20250514",
       max_tokens: 1024,
-      messages:   [{ role: "user", content: buildPrompt(category, level, mode, subtopic) }],
+      messages:   [{ role: "user", content: buildPrompt(category, level, mode, subtopic, lang) }],
     }),
     signal: AbortSignal.timeout(28000),
   });
@@ -325,12 +337,13 @@ async function generateOne(category, level, mode, subtopic) {
 }
 
 // ── Store round in mode-specific Firestore collection ────────
-async function storeSlot(col, docId, category, level, variant, round) {
+async function storeSlot(col, docId, category, level, variant, round, lang = "en") {
   const now = Date.now();
   await fsPatch(col, docId, {
     category:         { stringValue:  category },
     level:            { integerValue: String(level) },
     variant:          { integerValue: String(variant) },
+    lang:             { stringValue:  lang },
     used:             { booleanValue: false },
     ts:               { stringValue:  new Date(now).toISOString() },
     generatedAt:      { integerValue: String(now) },
@@ -364,7 +377,7 @@ async function storeSlot(col, docId, category, level, variant, round) {
         category:    { stringValue:  category },
         difficulty:  { integerValue: String(level) },
         sourceRound: { stringValue:  docId },
-        lang:        { stringValue:  "en" },
+        lang:        { stringValue:  lang },
         createdAt:   { integerValue: String(now) },
       }).catch(() => {}); // non-fatal — pool refresh is best-effort
     }).filter(Boolean));
@@ -387,6 +400,9 @@ export default async function handler(req, res) {
   const mode = req.query.mode === "blitz" ? "blitz" : "regular";
   const col = COLLECTION_BY_MODE[mode] || COLLECTION_BY_MODE.regular;
 
+  const rawLang = req.query.lang || "en";
+  const lang = Object.prototype.hasOwnProperty.call(LANG_NAMES, rawLang) ? rawLang : "en";
+
   // Optional override — if provided, only regenerate the chosen variant slot
   // set. Useful to split long populates across multiple invocations when
   // hitting the 60s gateway limit before the function-level 300s kicks in.
@@ -405,7 +421,7 @@ export default async function handler(req, res) {
   for (const cat of CATS) {
     for (const lvl of LEVELS) {
       for (const variant of variantsToProcess) {
-        const docId = `${cat}_${lvl}_${variant}`;
+        const docId = buildDocId(cat, lvl, variant, lang);
         combos.push({ cat, level: lvl, variant, docId });
       }
     }
@@ -436,8 +452,8 @@ export default async function handler(req, res) {
           const subtopic = subtopicsArr.length > 0
             ? subtopicsArr[(variant + cronRunIdx) % subtopicsArr.length]
             : null;
-          const round = await generateOne(cat, level, mode, subtopic);
-          await storeSlot(col, docId, cat, level, variant, round);
+          const round = await generateOne(cat, level, mode, subtopic, lang);
+          await storeSlot(col, docId, cat, level, variant, round, lang);
           results.ok++;
         } catch (e) {
           results.failed++;
@@ -449,6 +465,7 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     mode,
+    lang,
     collection: col,
     variantsProcessed: variantsToProcess,
     considered: combos.length,
