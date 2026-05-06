@@ -2102,6 +2102,10 @@ export default function BluffGame() {
   const maxCashoutRef = useRef(1.0);
   const [confetti, setConfetti] = useState(false);
   const [autoAdvanceCount, setAutoAdvanceCount] = useState(null);
+  // Soft lock on the Next-round button after reveal so a refl impulse tap
+  // doesn't blow past the result. Lifted after 1.2s.
+  const [revealLocked, setRevealLocked] = useState(false);
+  const revealLockTimerRef = useRef(null);
   const [loadingRound, setLoadingRound] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [axiomPower, setAxiomPower] = useState(null);
@@ -3328,6 +3332,22 @@ export default function BluffGame() {
     userInteractedRef.current = true;
     AudioTension.init();
     pendingMiniCarryRef.current = 0;
+    // Daily warm-up gate: Mini1 (Blackjack) is the daily warm-up. Once
+    // completed for the day, every subsequent run skips it and drops
+    // straight into BLUFF — otherwise the player would feel "trapped"
+    // re-doing the warm-up every time they tap CHALLENGE.
+    let warmupDoneToday = false;
+    try {
+      warmupDoneToday = localStorage.getItem(`bluff_daily_done_${todayLocalDateStr()}`) === "1";
+    } catch { /* fall through to running warm-up */ }
+    if (!warmupDoneToday) {
+      const serverDate = swearProfileRef.current?.dailyWarmup?.todayCompletedDate || null;
+      if (serverDate && serverDate === todayLocalDateStr()) warmupDoneToday = true;
+    }
+    if (warmupDoneToday) {
+      startGame();
+      return true;
+    }
     setScreen("climb-mini1");
     return true;
   }
@@ -4253,12 +4273,17 @@ export default function BluffGame() {
       webApp.MainButton.show();
     } else {
       const isLast = roundIdx + 1 >= (blitzMode ? BLITZ_ROUNDS : ROUND_DIFFICULTY.length);
-      webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
-      webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
-      webApp.MainButton.onClick(advanceAfterRound);
+      if (revealLocked) {
+        webApp.MainButton.setText("…");
+        webApp.MainButton.setParams({ color: "#2a2a2a", text_color: "#777777", is_active: false, is_visible: true });
+      } else {
+        webApp.MainButton.setText(isLast ? "SEE RESULTS →" : "NEXT ROUND →");
+        webApp.MainButton.setParams({ color: "#22d3ee", text_color: "#04060f", is_active: true, is_visible: true });
+        webApp.MainButton.onClick(advanceAfterRound);
+      }
       webApp.MainButton.show();
     }
-  }, [screen, sel, revealed, roundIdx]);
+  }, [screen, sel, revealed, roundIdx, revealLocked]);
 
   // ── TELEGRAM BACK BUTTON ────────────────────────────────────
   useEffect(() => {
@@ -4281,7 +4306,18 @@ export default function BluffGame() {
   useEffect(()=>()=>clearInterval(timerRef.current),[]);
   useEffect(()=>()=>{ try{ AudioTension.destroy(); }catch{} try{ _closeTickCtx(); }catch{} },[]);
   useEffect(()=>{
-    if(!revealed){ clearTimeout(autoAdvanceRef.current); setAutoAdvanceCount(null); return; }
+    if(!revealed){
+      clearTimeout(autoAdvanceRef.current);
+      setAutoAdvanceCount(null);
+      clearTimeout(revealLockTimerRef.current);
+      setRevealLocked(false);
+      return;
+    }
+    // Lock the Next button briefly so a refl impulse tap doesn't blow past
+    // the result before the player has read it. 1.2s feels intentional but
+    // not annoying.
+    setRevealLocked(true);
+    revealLockTimerRef.current = setTimeout(() => setRevealLocked(false), 1200);
     let count=3;
     setAutoAdvanceCount(count);
     const tick=()=>{
@@ -4289,8 +4325,14 @@ export default function BluffGame() {
       if(count<=0){ setAutoAdvanceCount(null); advanceAfterRound(); }
       else{ setAutoAdvanceCount(count); autoAdvanceRef.current=setTimeout(tick,750); }
     };
-    autoAdvanceRef.current=setTimeout(tick, blitzMode ? 100 : 4300);
-    return ()=>clearTimeout(autoAdvanceRef.current);
+    // Initial wait before the 3-2-1 countdown begins. Blitz used to be 100ms
+    // which made reveals flash by — bumped to 3000ms so the result actually
+    // registers before the round flips.
+    autoAdvanceRef.current=setTimeout(tick, blitzMode ? 3000 : 4300);
+    return ()=>{
+      clearTimeout(autoAdvanceRef.current);
+      clearTimeout(revealLockTimerRef.current);
+    };
   },[revealed]);
   useEffect(() => {
     return () => {
@@ -6225,6 +6267,13 @@ export default function BluffGame() {
         userId={userIdRef.current}
         onComplete={({ pointsEarned } = {}) => {
           pendingMiniCarryRef.current = pointsEarned | 0;
+          // Persist a local "daily warm-up done" flag so subsequent runs
+          // today skip the warm-up entirely and drop straight into BLUFF.
+          // Server-side dailyWarmup.todayCompletedDate is the source of
+          // truth across devices; this is the same-device fast path.
+          try {
+            localStorage.setItem(`bluff_daily_done_${todayLocalDateStr()}`, "1");
+          } catch { /* localStorage may be blocked — non-fatal */ }
           startGame();
         }}
       />
@@ -6859,9 +6908,9 @@ export default function BluffGame() {
                 </button>
             :<div style={{display:"flex",gap:10}}>
               <button onClick={()=>{clearInterval(timerRef.current);clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);setScreen("home");}} style={{flex:1,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:600,background:T.glass,color:"#e8e6e1",border:`1.5px solid ${T.gb}`,borderRadius:12,fontFamily:"inherit"}}>{t("play.home")}</button>
-              <button onClick={()=>{clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);advanceAfterRound();}} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background:"linear-gradient(135deg,#e8c547,#d4a830)",color:T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>
-                <span style={{position:"relative"}}>{autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_in",{n:autoAdvanceCount}):t("play.results_in",{n:autoAdvanceCount})):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_round"):t("play.see_results"))}</span>
+              <button onClick={()=>{ if(revealLocked) return; clearTimeout(autoAdvanceRef.current);setAutoAdvanceCount(null);advanceAfterRound();}} disabled={revealLocked} style={{flex:2,minHeight:52,padding:14,fontSize:"clamp(13px,3.5vw,15px)",fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",background: revealLocked?"linear-gradient(135deg,rgba(232,197,71,.35),rgba(212,168,48,.25))":"linear-gradient(135deg,#e8c547,#d4a830)",color: revealLocked?"rgba(4,6,15,.55)":T.bg,borderRadius:12,fontFamily:"inherit",position:"relative",overflow:"hidden",cursor: revealLocked?"wait":"pointer",opacity: revealLocked?0.7:1,transition:"all .25s"}}>
+                {!revealLocked && <div style={{position:"absolute",inset:0,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent)",animation:"g-btnShimmer 2.5s infinite"}}/>}
+                <span style={{position:"relative"}}>{revealLocked?"…":autoAdvanceCount!=null?(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_in",{n:autoAdvanceCount}):t("play.results_in",{n:autoAdvanceCount})):(roundIdx+1<(blitzMode?BLITZ_ROUNDS:ROUND_DIFFICULTY.length)?t("play.next_round"):t("play.see_results"))}</span>
               </button>
             </div>
           }

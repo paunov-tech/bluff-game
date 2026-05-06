@@ -1,83 +1,95 @@
-// api/sniper-batch.js — Generate N "find the lie word" sentences via Claude.
+// api/sniper-batch.js — Returns N "find the lie word" sentences per session.
 //
 // GET /api/sniper-batch?count=3&lang=en   (auth optional — anon OK)
 //
+// Selection priority:
+//   1. Pre-generated pool (sniper_pool/{id}, lang field) — populated by the
+//      /api/admin/build-sniper-pool cron every 6h. This is the fast path
+//      and is immune to Anthropic outages.
+//   2. Live Claude generation — fallback when the pool doesn't have enough
+//      sentences for the requested lang. Successful live generations are
+//      backfilled into the pool fire-and-forget so the next user doesn't
+//      pay the same Claude latency.
+//
 // Each sentence is a 10-15 word factual statement where exactly ONE word
 // has been swapped for a plausible-but-wrong alternative. The client gets
-// the words array; the lie index + correct word + explanation are stored
-// server-side in `sniper_sessions/{sessionId}` and resolved by sniper-judge.
+// {id, text, words[]} only; the lie index + correct word + explanation
+// stay in `sniper_sessions/{sessionId}` and resolve via /api/sniper-judge.
 
-import Anthropic from "@anthropic-ai/sdk";
-import { fsPatch, toFS } from "./_lib/firestore-rest.js";
+import { fsQuery, fsPatch, fsCreateIfMissing, toFS } from "./_lib/firestore-rest.js";
 import { rateLimit, applyRateLimitHeaders } from "./_lib/rate-limit.js";
 import { verifyRequestAuth } from "./_lib/verify-firebase-token.js";
+import { generateSniperBatch, poolIdFor } from "./_lib/sniper-generate.js";
 
-const SESSIONS_COL = "sniper_sessions";
+const SESSIONS_COL  = "sniper_sessions";
+const POOL_COL      = "sniper_pool";
 const DEFAULT_COUNT = 3;
 const MAX_COUNT     = 5;
+const POOL_FETCH    = 200;          // Cap pool docs read per request.
+const POOL_TTL_MS   = 5 * 60 * 1000; // Per-instance cache lifetime.
 
-const LANG_NAMES = {
-  en: "English", sr: "Serbian", hr: "Croatian", de: "German",
-  fr: "French", es: "Spanish", sl: "Slovenian", bs: "Bosnian",
-};
+// In-memory pool cache, keyed by lang. Same pattern as swipe-batch.
+// Stale by up to 5 min per Vercel instance — acceptable since pool turnover
+// is on a 6h cron cadence.
+const _poolCache = new Map();
 
-const MODEL = "claude-sonnet-4-6";
+async function loadPool(lang) {
+  const now = Date.now();
+  const cached = _poolCache.get(lang);
+  if (cached && (now - cached.cachedAt) < POOL_TTL_MS) return cached.pool;
 
-const client = new Anthropic();
+  const docs = await fsQuery(POOL_COL, {
+    where: [{ path: "lang", op: "EQUAL", value: lang }],
+    limit: POOL_FETCH,
+  });
+  const pool = docs.map(d => ({
+    id:           d.id,
+    text:         d.fields.text,
+    words:        Array.isArray(d.fields.words) ? d.fields.words : null,
+    lieWordIndex: d.fields.lieWordIndex,
+    lieWord:      d.fields.lieWord,
+    correctWord:  d.fields.correctWord,
+    explanation:  d.fields.explanation,
+  })).filter(s =>
+    typeof s.text === "string" &&
+    Array.isArray(s.words) &&
+    Number.isInteger(s.lieWordIndex)
+  );
+  _poolCache.set(lang, { pool, cachedAt: now });
+  return pool;
+}
 
-function buildPrompt(count, langName) {
-  return `Generate ${count} factual sentences in ${langName}, each 10-15 words, on diverse topics (history, science, geography, culture).
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
-CRITICAL: In each sentence, replace ONE specific word with a factually WRONG alternative that fits grammatically but is incorrect.
-
-Example:
-  Original: "Apollo 11 landed on the Moon in 1969 with commander Neil Armstrong."
-  Modified: "Apollo 11 landed on the Moon in 1969 with commander Yuri Gagarin."
-                                                              ↑ wrong (was Armstrong)
-
-Return STRICT JSON only — no prose, no markdown fences:
-{
-  "sentences": [
-    {
-      "id": "sniper_1",
-      "text": "Apollo 11 landed on the Moon in 1969 with commander Yuri Gagarin.",
-      "words": ["Apollo","11","landed","on","the","Moon","in","1969","with","commander","Yuri","Gagarin"],
-      "lieWordIndex": 10,
-      "lieWord": "Yuri",
-      "correctWord": "Neil",
-      "explanation": "Yuri Gagarin was the first Soviet cosmonaut; Neil Armstrong commanded Apollo 11."
+// Backfill freshly-Claude-generated sentences into the pool so subsequent
+// users skip the live path. Fire-and-forget — losing this on lambda freeze
+// just means the next cron picks up. Don't block the user's response.
+async function backfillPool(lang, sentences) {
+  for (const s of sentences) {
+    const id = poolIdFor(lang, s.text);
+    try {
+      await fsCreateIfMissing(POOL_COL, id, {
+        id:           toFS(id),
+        text:         toFS(s.text),
+        words:        toFS(s.words),
+        lieWordIndex: toFS(s.lieWordIndex),
+        lieWord:      toFS(s.lieWord),
+        correctWord:  toFS(s.correctWord),
+        explanation:  toFS(s.explanation),
+        lang:         toFS(lang),
+        createdAt:    toFS(Date.now()),
+      });
+    } catch (e) {
+      console.warn("[sniper-batch] backfill failed for", id, ":", e.message);
     }
-  ]
-}
-
-Rules:
-- "words" MUST be a tokenisation of "text" by whitespace (punctuation stays attached to its word).
-- "lieWordIndex" MUST point to the swapped word in "words".
-- The lie should be SPECIFIC (a name, date, place, number) — not generic.
-- The lie should be PLAUSIBLE — same category (person→person, year→year).
-- Difficulty progressive: sentence 1 easier, last hardest.
-- Do NOT include any sentence where the lie word is a stop-word ("the", "a", "of", etc.).`;
-}
-
-function stripFences(text) {
-  return String(text || "").replace(/```json\s*/gi, "").replace(/```/g, "").trim();
-}
-
-// Validate one sentence shape — defends against partial / malformed model output.
-function isValidSentence(s) {
-  if (!s || typeof s !== "object") return false;
-  if (typeof s.text !== "string" || s.text.length < 8) return false;
-  if (!Array.isArray(s.words) || s.words.length < 6 || s.words.length > 30) return false;
-  if (!Number.isInteger(s.lieWordIndex)) return false;
-  if (s.lieWordIndex < 0 || s.lieWordIndex >= s.words.length) return false;
-  if (typeof s.lieWord !== "string" || typeof s.correctWord !== "string") return false;
-  if (typeof s.explanation !== "string") return false;
-  // The lieWord at lieWordIndex must roughly match the words[lieWordIndex].
-  // Strip trailing punctuation for the comparison so "Gagarin." matches "Gagarin".
-  const wordAtIdx = String(s.words[s.lieWordIndex] || "").replace(/[.,;:!?"']+$/g, "").toLowerCase();
-  const claimed   = String(s.lieWord).replace(/[.,;:!?"']+$/g, "").toLowerCase();
-  if (wordAtIdx !== claimed) return false;
-  return true;
+  }
 }
 
 export default async function handler(req, res) {
@@ -94,48 +106,64 @@ export default async function handler(req, res) {
   if (!process.env.FIREBASE_API_KEY) {
     return res.status(503).json({ error: "Firestore not configured" });
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(503).json({ error: "Anthropic not configured" });
-  }
 
   const count = Math.min(MAX_COUNT, Math.max(1, parseInt(req.query.count, 10) || DEFAULT_COUNT));
   const lang  = (req.query.lang || "en").toString().slice(0, 4);
-  const langName = LANG_NAMES[lang] || "English";
-  const auth = await verifyRequestAuth(req);
-  const uid  = auth?.uid || (typeof req.query.userId === "string" ? req.query.userId.slice(0, 80) : "");
+  const auth  = await verifyRequestAuth(req);
+  const uid   = auth?.uid || (typeof req.query.userId === "string" ? req.query.userId.slice(0, 80) : "");
 
-  let parsed;
+  // ── Step 1: try the pool ─────────────────────────────────────
+  // If the pool has at least `count` valid docs for this lang, pick a
+  // random `count`-subset. This is the fast, Anthropic-outage-immune path.
+  let picked = null;
+  let source = "pool";
   try {
-    const response = await client.messages.create({
-      model: MODEL,
-      max_tokens: 2000,
-      messages: [{ role: "user", content: buildPrompt(count, langName) }],
-    });
-
-    const block = (response.content || []).find(b => b.type === "text");
-    const raw   = stripFences(block?.text || "");
-    parsed      = JSON.parse(raw);
-  } catch (err) {
-    console.error("[sniper-batch] generation failed:", err.message);
-    return res.status(502).json({ error: "AXIOM is loading ammunition…" });
+    const pool = await loadPool(lang);
+    if (pool.length >= count) {
+      picked = shuffle(pool).slice(0, count);
+    }
+  } catch (e) {
+    console.warn("[sniper-batch] pool read failed for", lang, ":", e.message);
   }
 
-  const sentences = Array.isArray(parsed?.sentences) ? parsed.sentences : [];
-  const valid     = sentences.filter(isValidSentence).slice(0, count);
-  if (valid.length === 0) {
-    return res.status(502).json({ error: "AXIOM produced no usable sentences" });
+  // ── Step 2: live Claude fallback ─────────────────────────────
+  // Only if pool was insufficient (empty, partial, or read errored).
+  // Backfills the pool so the next user gets the pool path.
+  if (!picked) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({ error: "pool_empty_and_anthropic_unconfigured" });
+    }
+    let valid;
+    try {
+      valid = await generateSniperBatch(lang, count);
+    } catch (err) {
+      console.error("[sniper-batch] live generation failed:", err.message);
+      return res.status(502).json({ error: "AXIOM is loading ammunition…" });
+    }
+    if (!valid || valid.length === 0) {
+      return res.status(502).json({ error: "AXIOM produced no usable sentences" });
+    }
+    picked = valid.slice(0, count);
+    source = "live";
+    // Best-effort backfill so the pool warms up. Awaited — Vercel may freeze
+    // the lambda otherwise — but bounded by the live-generation count (3-5
+    // tiny PATCH requests). Keep it inside try/catch so a backfill failure
+    // never breaks the user response.
+    try { await backfillPool(lang, picked); } catch { /* logged inside */ }
   }
 
-  // Re-id so we don't depend on the model's choices and have stable references.
+  // ── Re-id to session-scoped IDs ──────────────────────────────
+  // The /api/sniper-judge endpoint expects sentenceId to be unique to the
+  // session, not a stable pool ID — that prevents replay attacks across
+  // runs. The original lieWord/correctWord/etc stays attached for the
+  // server-side session record.
   const sessionId = `snipe_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  const reIded = valid.map((s, i) => ({ ...s, id: `${sessionId}_${i + 1}` }));
+  const reIded = picked.map((s, i) => ({ ...s, id: `${sessionId}_${i + 1}` }));
 
-  // Server-side store with the answer key — never sent to the client.
-  // MUST await: sniper has only 3 sentences and the user can tap within ~1s
-  // of receiving the batch, so a fire-and-forget write often gets frozen by
-  // the Vercel runtime before reaching Firestore, then sniper-judge 404s
-  // with session_not_found. Awaiting trades a few hundred ms of latency for
-  // a reliable next read.
+  // ── Persist session — MUST await (PR #9 fix preserved) ───────
+  // Vercel freezes the lambda after the response is sent; a fire-and-forget
+  // PATCH would never reach Firestore on cold containers, leaving the next
+  // /api/sniper-judge call to 404 with session_not_found.
   try {
     await fsPatch(SESSIONS_COL, sessionId, {
       userId:    toFS(uid || null),
@@ -143,13 +171,14 @@ export default async function handler(req, res) {
       sentences: toFS(reIded),
       consumed:  toFS([]),
       createdAt: toFS(Date.now()),
+      source:    toFS(source),
     });
   } catch (err) {
     console.warn("[sniper-batch] session write failed:", err.message);
     return res.status(503).json({ error: "session_persist_failed" });
   }
 
-  // Strip the answer key from the response.
+  // ── Strip answer key from response ───────────────────────────
   const clientSentences = reIded.map(s => ({
     id:    s.id,
     text:  s.text,

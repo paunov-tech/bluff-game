@@ -36,7 +36,8 @@ export default async function handler(req, res) {
     const listData = await listRes.json();
     const docs = (listData.documents || [])
       .map(d => parseFirestoreDoc(d))
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter(d => !d.lang || d.lang === "en");
 
     if (docs.length === 0) {
       return res.status(503).json({ error: "Cache empty" });

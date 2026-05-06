@@ -5,16 +5,16 @@ import { getCurrentIdToken } from "../../auth.js";
 // Player and AXIOM each get 2 cards (one of AXIOM's hidden).
 // To draw a card: player sees a TRUE/LIE statement and swipes (tap buttons OK).
 //   ✓ correct  → card revealed and added to hand (random rank A/2-10/J/Q/K)
-//   ✗ wrong    → no card, turn ends
+//   ✗ wrong    → BUST, hand lost (Blackjack rule: bust = end of hand)
 //   bust > 21  → lose hand
 // AXIOM auto-plays to 17 with 70% answer accuracy (simulated client-side).
-// Best-of-1 hand. Card values + win-hand bonus feed CLIMB total.
+// Best-of-3 hands. Card values + win-hand bonus feed CLIMB total.
 //
 // Reuses existing endpoints ONLY:
 //   GET  /api/swipe-batch?count=20&lang=en
 //   POST /api/swipe-judge { sessionId, statementId, swipeDirection, reactionMs }
 //
-// onComplete({ pointsEarned, outcome })
+// onComplete({ pointsEarned, outcome, results })
 
 const POINTS_PER_CARD = 25;     // Each successful draw — points = card value × this.
 const WIN_BONUS = 400;
@@ -22,9 +22,20 @@ const PUSH_BONUS = 100;
 // Max additional player draws after the initial deal of 2 cards. Caps the
 // hand at 6 cards so a streak doesn't drag the mini-game out indefinitely.
 const MAX_DRAWS = 4;
-// Hold the win/lose card on screen this long before auto-advancing the run.
-// Player can also tap "Continue" to skip the wait.
-const RESULT_HOLD_MS = 4400;
+// Best-of-N: 3 hands total. First to 2 wins decides the predigra; remaining
+// hands are still played for points but the match outcome is locked.
+const TOTAL_HANDS = 3;
+// Hold the per-hand result this long before allowing tap-through to next hand.
+const HAND_RESULT_HOLD_MS = 2200;
+// Final summary auto-advance fallback if the player doesn't tap.
+const FINAL_HOLD_MS = 6000;
+
+const HAND_STATE = {
+  PLAYING:   "playing",
+  BUST:      "bust",
+  STAND:     "stand",
+  BLACKJACK: "blackjack",
+};
 
 const T = {
   bg: "#04060f",
@@ -84,20 +95,28 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState(null);
 
-  // Hand state
+  // Match state (across hands)
+  const [currentHand, setCurrentHand] = useState(1);
+  const [handResults, setHandResults] = useState([]); // [{ hand, score, state, outcome }]
+  const [matchDone, setMatchDone]     = useState(false);
+
+  // Per-hand state
   const [playerHand, setPlayerHand] = useState([]);
   const [axiomHand, setAxiomHand]   = useState([]); // first card hidden until reveal
   const [phase, setPhase] = useState("loading");
-    // "loading" | "player" | "axiom" | "result"
+    // "loading" | "player" | "axiom" | "result" | "final"
   const [feedback, setFeedback] = useState(null); // {kind: "ok"|"miss", text}
   const [pointsEarned, setPointsEarned] = useState(0);
   const [outcome, setOutcome] = useState(null); // "win"|"lose"|"push"|"bust"
+  const [handState, setHandState] = useState(HAND_STATE.PLAYING);
 
   const pointsRef = useRef(0); // mirrors pointsEarned for closure-safe reads
   const cardShownAtRef = useRef(Date.now());
   const submittingRef = useRef(false);
   const finishedRef = useRef(false);
   const advanceRef = useRef(null);
+  const handResultsRef = useRef([]);
+  const currentHandRef = useRef(1);
 
   function addPoints(n) {
     pointsRef.current += n;
@@ -109,7 +128,8 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
     let cancelled = false;
     (async () => {
       try {
-        const url = `/api/swipe-batch?count=20&lang=${encodeURIComponent(lang)}` +
+        // Fetch enough statements for 3 hands × ~6 cards = 18, plus buffer.
+        const url = `/api/swipe-batch?count=30&lang=${encodeURIComponent(lang)}` +
                     (userId ? `&userId=${encodeURIComponent(userId)}` : "");
         const r = await authFetch(url);
         if (!r.ok) {
@@ -146,6 +166,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
   // ── Player swipe (tap TRUE / LIE) ──────────────────────────
   const handleSwipe = useCallback(async (direction) => {
     if (phase !== "player" || submittingRef.current) return;
+    if (handState !== HAND_STATE.PLAYING) return;
     if (currentIdx >= statements.length) return;
     const stmt = statements[currentIdx];
     if (!stmt) return;
@@ -178,11 +199,13 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
 
       const tot = handTotal(next);
       if (tot > 21) {
+        setHandState(HAND_STATE.BUST);
         setOutcome("bust");
         advanceRef.current = setTimeout(() => endHand("bust", next, axiomHand), 900);
         return;
       }
       if (tot === 21) {
+        setHandState(HAND_STATE.BLACKJACK);
         setFeedback({ kind: "ok", text: "✓ 21!" });
         advanceRef.current = setTimeout(() => beginAxiomTurn(next), 900);
         return;
@@ -191,6 +214,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
       // after MAX_DRAWS additional cards the player auto-stands and AXIOM
       // turn begins.
       if (next.length >= 2 + MAX_DRAWS) {
+        setHandState(HAND_STATE.STAND);
         setFeedback({ kind: "ok", text: "STAND · max draws" });
         advanceRef.current = setTimeout(() => beginAxiomTurn(next), 900);
         return;
@@ -199,15 +223,20 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
       cardShownAtRef.current = Date.now();
       setTimeout(() => { submittingRef.current = false; setFeedback(null); }, 700);
     } else {
-      // Wrong answer — no card, turn ends (player STANDS on current total).
-      setFeedback({ kind: "miss", text: "✗ Turn ends" });
-      advanceRef.current = setTimeout(() => beginAxiomTurn(playerHand), 1100);
+      // Blackjack rule: wrong answer = BUST. Hand is lost immediately, no
+      // AXIOM turn, no chance to recover within this hand.
+      setHandState(HAND_STATE.BUST);
+      setOutcome("bust");
+      setFeedback({ kind: "miss", text: "✗ BUST · Hand lost" });
+      advanceRef.current = setTimeout(() => endHand("bust", playerHand, axiomHand), 900);
     }
-  }, [phase, currentIdx, statements, sessionId, userId, playerHand, axiomHand]);
+  }, [phase, currentIdx, statements, sessionId, userId, playerHand, axiomHand, handState]);
 
   function handleStand() {
     if (phase !== "player" || submittingRef.current) return;
+    if (handState !== HAND_STATE.PLAYING) return;
     submittingRef.current = true;
+    setHandState(HAND_STATE.STAND);
     setFeedback({ kind: "ok", text: "STAND" });
     advanceRef.current = setTimeout(() => beginAxiomTurn(playerHand), 700);
   }
@@ -268,19 +297,78 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
     if (result === "win") bonus = WIN_BONUS;
     else if (result === "push") bonus = PUSH_BONUS;
     if (bonus > 0) addPoints(bonus);
+
+    const handRecord = {
+      hand: currentHandRef.current,
+      score: pTot,
+      state: forcedOutcome === "bust" ? HAND_STATE.BUST : (handState !== HAND_STATE.PLAYING ? handState : HAND_STATE.STAND),
+      outcome: result,
+    };
+    handResultsRef.current = [...handResultsRef.current, handRecord];
+    setHandResults(handResultsRef.current);
+  }
+
+  // Advance to the next hand (or final summary if last).
+  function nextHand() {
+    if (advanceRef.current) clearTimeout(advanceRef.current);
+    if (currentHandRef.current >= TOTAL_HANDS) {
+      finalizeMatch();
+      return;
+    }
+    currentHandRef.current += 1;
+    setCurrentHand(currentHandRef.current);
+    // Re-deal
+    setPlayerHand([drawCard(), drawCard()]);
+    setAxiomHand([drawCard(), drawCard()]);
+    setHandState(HAND_STATE.PLAYING);
+    setOutcome(null);
+    setFeedback(null);
+    submittingRef.current = false;
+    setPhase("player");
+    cardShownAtRef.current = Date.now();
+    // Advance the statement cursor — leave plenty of statements per hand.
+    setCurrentIdx(i => i + 1);
+  }
+
+  function finalizeMatch() {
+    if (finishedRef.current) return;
+    setMatchDone(true);
+    setPhase("final");
     advanceRef.current = setTimeout(() => {
       if (finishedRef.current) return;
       finishedRef.current = true;
-      onComplete?.({ pointsEarned: pointsRef.current, outcome: result });
-    }, RESULT_HOLD_MS);
+      onComplete?.({
+        pointsEarned: pointsRef.current,
+        outcome: matchOutcomeFrom(handResultsRef.current),
+        results: handResultsRef.current,
+      });
+    }, FINAL_HOLD_MS);
   }
 
-  // User can short-circuit the result hold and go straight into BLUFF.
+  function matchOutcomeFrom(results) {
+    const wins = results.filter(r => r.outcome === "win").length;
+    const losses = results.filter(r => r.outcome === "lose").length;
+    if (wins > losses) return "win";
+    if (losses > wins) return "lose";
+    return "push";
+  }
+
+  // User can short-circuit: from per-hand result → next hand; from final → exit.
   function continueNow() {
-    if (finishedRef.current) return;
-    if (advanceRef.current) clearTimeout(advanceRef.current);
-    finishedRef.current = true;
-    onComplete?.({ pointsEarned: pointsRef.current, outcome });
+    if (phase === "result") {
+      nextHand();
+      return;
+    }
+    if (phase === "final") {
+      if (advanceRef.current) clearTimeout(advanceRef.current);
+      if (finishedRef.current) return;
+      finishedRef.current = true;
+      onComplete?.({
+        pointsEarned: pointsRef.current,
+        outcome: matchOutcomeFrom(handResultsRef.current),
+        results: handResultsRef.current,
+      });
+    }
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -305,6 +393,66 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
     );
   }
 
+  // Final summary screen — all hands played.
+  if (phase === "final") {
+    const wins = handResults.filter(r => r.outcome === "win").length;
+    const losses = handResults.filter(r => r.outcome === "lose").length;
+    const pushes = handResults.filter(r => r.outcome === "push").length;
+    const matchResult = matchOutcomeFrom(handResults);
+    return (
+      <div style={wrap()}>
+        <header style={hud()}>
+          <span style={{ fontSize: 11, letterSpacing: 3, color: T.warm, fontWeight: 700, textTransform: "uppercase" }}>
+            Warm-up · Final
+          </span>
+          <span style={{ fontSize: 12, color: T.ok, fontWeight: 700 }}>+{pointsEarned} pts</span>
+        </header>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "24px 18px", gap: 16 }}>
+          <div style={{
+            fontSize: 32, fontWeight: 800, fontFamily: "Georgia, serif", letterSpacing: 4, textTransform: "uppercase",
+            color: matchResult === "win" ? T.ok : matchResult === "push" ? T.warm : T.bad,
+          }}>
+            {matchResult === "win" ? "Match win" : matchResult === "push" ? "Match push" : "AXIOM took it"}
+          </div>
+          <div style={{ fontSize: 13, color: T.dim }}>
+            {wins}W · {losses}L{pushes ? ` · ${pushes}P` : ""} ({TOTAL_HANDS} hands)
+          </div>
+          <div style={{ width: "100%", maxWidth: 380, display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+            {handResults.map((r) => (
+              <div key={r.hand} style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "10px 14px",
+                background: T.glass, border: `1px solid ${T.gb}`, borderRadius: 10,
+                color: r.outcome === "win" ? T.ok : r.outcome === "push" ? T.warm : T.bad,
+                fontSize: 13, fontWeight: 700, letterSpacing: 1,
+              }}>
+                <span style={{ textTransform: "uppercase", fontSize: 11, color: T.dim, letterSpacing: 2 }}>
+                  Hand {r.hand}
+                </span>
+                <span>
+                  {r.state === HAND_STATE.BUST ? "BUST" : `${r.score} pts`} · {r.outcome.toUpperCase()}
+                </span>
+              </div>
+            ))}
+          </div>
+          <button onClick={continueNow} style={{
+            marginTop: 6,
+            padding: "12px 20px",
+            fontSize: 12, fontWeight: 800, letterSpacing: 2.5,
+            textTransform: "uppercase",
+            background: "linear-gradient(135deg,#e8c547,#d4a830)",
+            color: T.bg,
+            border: "none",
+            borderRadius: 12,
+            cursor: "pointer", fontFamily: "inherit",
+          }}>
+            Continue to BLUFF →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const stmt = statements[currentIdx];
   const pTot = handTotal(playerHand);
   const aTotShown = phase === "player" ? "?" : handTotal(axiomHand);
@@ -313,7 +461,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
     <div style={wrap()}>
       <header style={hud()}>
         <span style={{ fontSize: 11, letterSpacing: 3, color: T.warm, fontWeight: 700, textTransform: "uppercase" }}>
-          Warm-up · Blackjack 21
+          Hand {currentHand} / {TOTAL_HANDS}
         </span>
         <span style={{ fontSize: 12, color: T.ok, fontWeight: 700 }}>
           +{pointsEarned} pts
@@ -335,7 +483,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
         {phase === "player" && stmt && (
           <div style={stmtBox()}>
             <div style={{ fontSize: 10, letterSpacing: 2.5, color: T.warm, fontWeight: 700, textTransform: "uppercase", marginBottom: 10 }}>
-              Answer to draw a card
+              Answer to draw — wrong = BUST
             </div>
             <div style={{ fontSize: "clamp(15px, 4vw, 18px)", color: "#f0eee8", fontFamily: "Georgia, serif", lineHeight: 1.45, textAlign: "center" }}>
               {stmt.text}
@@ -355,14 +503,17 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
         {phase === "result" && (
           <div style={{ textAlign: "center" }}>
             <div style={{
-              fontSize: 32, fontWeight: 800, fontFamily: "Georgia, serif",
+              fontSize: outcome === "bust" ? 48 : 32,
+              fontWeight: 900, fontFamily: "Georgia, serif",
               color: outcome === "win" ? T.ok : outcome === "push" ? T.warm : T.bad,
-              letterSpacing: 4, textTransform: "uppercase",
+              letterSpacing: outcome === "bust" ? 6 : 4,
+              textTransform: "uppercase",
+              textShadow: outcome === "bust" ? `0 0 50px ${T.bad}` : "none",
             }}>
-              {outcome === "win" ? "You win" : outcome === "push" ? "Push" : outcome === "bust" ? "Bust" : "AXIOM wins"}
+              {outcome === "bust" ? "BUST" : outcome === "win" ? "You win" : outcome === "push" ? "Push" : "AXIOM wins"}
             </div>
-            <div style={{ marginTop: 10, color: T.dim, fontSize: 13 }}>
-              +{pointsEarned} → CLIMB
+            <div style={{ marginTop: 8, color: T.dim, fontSize: 12, letterSpacing: 1.5 }}>
+              {outcome === "bust" ? "Hand lost — wrong answer" : `+${pointsEarned} → CLIMB`}
             </div>
             <button onClick={continueNow} style={{
               marginTop: 18,
@@ -375,7 +526,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
               borderRadius: 10,
               cursor: "pointer", fontFamily: "inherit",
             }}>
-              Tap to continue →
+              {currentHand < TOTAL_HANDS ? `Next hand (${currentHand + 1}/${TOTAL_HANDS}) →` : "See results →"}
             </button>
           </div>
         )}
@@ -390,7 +541,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
       </div>
 
       {/* Action buttons */}
-      {phase === "player" && (
+      {phase === "player" && handState === HAND_STATE.PLAYING && (
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, padding: "12px 14px 16px" }}>
           <button onClick={() => handleSwipe("left")} style={btnLie()}>✗ LIE</button>
           <button onClick={handleStand} style={btnStand()}>STAND</button>
