@@ -3,7 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="description" content="BLUFF — The AI Deception Game. Find the fake fact among 5 surprising statements." />
+
+  <!-- Primary SEO -->
+  <title>BLUFF™ — The AI Deception Game</title>
+  <meta name="description" content="Can you spot the AI-fabricated lie? BLUFF is a fast-paced deception game — find the one fake fact hidden among 5 convincing statements. Play solo, duel a friend, or battle in the multiplayer Arena." />
+  <meta name="application-name" content="BLUFF" />
+  <meta name="author" content="SIAL Games" />
+  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+  <link rel="canonical" href="https://playbluff.games/" />
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="BLUFF™" />
+  <meta property="og:title" content="BLUFF™ — The AI Deception Game" />
+  <meta property="og:description" content="Spot the AI-fabricated lie hidden among 5 convincing statements. A fast deception game — play solo, duel a friend, or battle in the multiplayer Arena." />
+  <meta property="og:url" content="https://playbluff.games/" />
+  <meta property="og:image" content="https://playbluff.games/og-image.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="BLUFF™ — The AI Deception Game" />
+  <meta property="og:locale" content="en_US" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="BLUFF™ — The AI Deception Game" />
+  <meta name="twitter:description" content="Spot the AI-fabricated lie hidden among 5 convincing statements. A fast deception game — play solo, duel a friend, or battle in the multiplayer Arena." />
+  <meta name="twitter:image" content="https://playbluff.games/og-image.png" />
+  <meta name="twitter:image:alt" content="BLUFF™ — The AI Deception Game" />
+
   <meta name="theme-color" content="#08080f" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,9 +41,37 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
   <link rel="manifest" href="/manifest.json" />
-  <title>BLUFF™ — The AI Deception Game</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "BLUFF™ — The AI Deception Game",
+    "alternateName": "BLUFF",
+    "url": "https://playbluff.games/",
+    "description": "BLUFF is a fast-paced deception game. Each round, an AI fabricates one convincing lie and hides it among 5 statements — your job is to find the fake. Play solo, duel a friend, or battle for the pot in the multiplayer Arena.",
+    "image": "https://playbluff.games/og-image.png",
+    "genre": ["Trivia", "Party Game", "Puzzle"],
+    "gamePlatform": "Web Browser",
+    "applicationCategory": "GameApplication",
+    "operatingSystem": "Any (modern web browser)",
+    "playMode": ["SinglePlayer", "MultiPlayer"],
+    "inLanguage": "en",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "SIAL Games"
+    }
+  }
+  </script>
+
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #08080f; -webkit-font-smoothing: antialiased; overscroll-behavior: none; }
@@ -41,9 +97,47 @@
                   0 6px 20px rgba(232,197,71,0.35) !important;
     }
   </style>
+  <style>
+    /* Pre-app content: crawlable by search engines + a branded loading
+       screen for real users. React's createRoot().render() replaces it
+       entirely once the app mounts. */
+    #pre-app {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; text-align: center;
+      background: #08080f; color: #f5f5f0;
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    }
+    #pre-app .wrap { max-width: 560px; }
+    #pre-app h1 {
+      font-size: 60px; font-weight: 700; color: #e8c547;
+      letter-spacing: 0.04em; line-height: 1;
+    }
+    #pre-app .tagline { font-size: 19px; font-weight: 500; margin-top: 10px; }
+    #pre-app .lede { font-size: 15px; line-height: 1.65; margin-top: 20px; color: #b5b5be; }
+    #pre-app ul { list-style: none; margin: 22px 0 0; padding: 0; font-size: 14px; color: #b5b5be; }
+    #pre-app li { margin: 7px 0; }
+    #pre-app li strong { color: #e8c547; font-weight: 600; }
+    #pre-app .loading { font-size: 12px; margin-top: 28px; color: #6a6a76; letter-spacing: 0.08em; text-transform: uppercase; }
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div id="pre-app">
+      <div class="wrap">
+        <h1>BLUFF™</h1>
+        <p class="tagline">The AI Deception Game</p>
+        <p class="lede">Every round, an AI fabricates one convincing lie and hides it among five statements. Spot the fake fact before the clock runs out.</p>
+        <ul>
+          <li><strong>Solo</strong> — sharpen your instincts against the AI</li>
+          <li><strong>Duel</strong> — challenge a friend to the exact same rounds</li>
+          <li><strong>Arena</strong> — battle up to 10 players for the pot</li>
+        </ul>
+        <p class="loading">Loading the game…</p>
+        <noscript><p class="lede">BLUFF needs JavaScript enabled to play.</p></noscript>
+      </div>
+    </div>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

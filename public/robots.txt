@@ -1,0 +1,6 @@
+# playbluff.games — BLUFF™
+User-agent: *
+Allow: /
+Disallow: /api/
+
+Sitemap: https://playbluff.games/sitemap.xml
