@@ -23,7 +23,7 @@ const LANG_NAMES = {
 
 const MODEL = "claude-sonnet-4-6";
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() }); // trim: env value may carry a trailing newline
 
 function buildPrompt(count, langName) {
   return `Generate ${count} factual sentences in ${langName}, each 10-15 words, on diverse topics (history, science, geography, culture).

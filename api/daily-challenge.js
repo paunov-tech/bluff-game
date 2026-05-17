@@ -15,7 +15,7 @@ const DIFF_PROMPTS = {
   5: "highly obscure, expert-level facts requiring deep knowledge",
 };
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() }); // trim: env value may carry a trailing newline
 
 function getTodayKey() {
   const d = new Date();

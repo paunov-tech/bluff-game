@@ -3,7 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { kv } from "@vercel/kv";
 import { SCHEMA } from "../src/config/schema.js";
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() }); // trim: env value may carry a trailing newline
 
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);

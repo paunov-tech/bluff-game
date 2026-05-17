@@ -7,7 +7,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() }); // trim: env value may carry a trailing newline
 
 const ALLOWED_RE = /^[0-9+\-*/()\s]+$/;
 
