@@ -81,6 +81,21 @@ export function ClimbMiniMath({ onComplete }) {
   const [timeLeft, setTimeLeft] = useState(SECONDS_PER_ROUND);
   const finishedRef = useRef(false);
   const advanceRef = useRef(null);
+  const [displayedClaim, setDisplayedClaim] = useState(0);
+  useEffect(() => {
+    if (!challenge) return;
+    const target = challenge.claim;
+    let start = null;
+    const duration = 700;
+    const step = (ts) => {
+      if (!start) start = ts;
+      const progress = Math.min((ts - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - progress, 3);
+      setDisplayedClaim(Math.round(ease * target));
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }, [challenge?.expr]);
 
   useEffect(() => {
     setTimeLeft(SECONDS_PER_ROUND);
@@ -133,6 +148,9 @@ export function ClimbMiniMath({ onComplete }) {
     return { txt: `✗ Truth: ${challenge.truth}`, color: T.bad };
   }, [revealed, tapped, challenge]);
 
+  // Did the player judge the claim correctly? (false until revealed)
+  const isCorrect = revealed && tapped != null && (tapped === "true") === challenge.claimIsTrue;
+
   return (
     <div style={wrap()}>
       <header style={hud()}>
@@ -160,7 +178,13 @@ export function ClimbMiniMath({ onComplete }) {
         padding: "0 4px",
       }}>
         <div style={{ padding: "0 18px 4px", textAlign: "center" }}>
-          <div style={{ fontSize: 11, letterSpacing: 3, color: T.numbers, opacity: 0.8, textTransform: "uppercase" }}>
+          <div style={{
+            fontSize: 11, letterSpacing: 3, textTransform: 'uppercase', fontWeight: 700,
+            color: 'rgba(232,197,71,0.6)',
+            display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'center',
+            marginBottom: 8,
+            animation: 'axiomBlink 1.8s ease-in-out infinite',
+          }}>
             AXIOM claims:
           </div>
         </div>
@@ -169,13 +193,18 @@ export function ClimbMiniMath({ onComplete }) {
           <div style={{ fontSize: "clamp(22px, 6vw, 30px)", fontWeight: 700, fontFamily: "Georgia, serif", color: "#f0eee8", letterSpacing: 1.5 }}>
             {challenge.expr}
           </div>
-          <div style={{
-            marginTop: 18, fontSize: "clamp(28px, 8vw, 40px)", fontWeight: 800,
-            fontFamily: "Georgia, serif", color: T.numbers, letterSpacing: 2,
-            animation: revealed ? "none" : "climb-math-pulse 2.2s ease-in-out infinite",
+          <span style={{
+            fontSize: 42, fontWeight: 900, fontFamily: 'Georgia, serif',
+            color: revealed ? (isCorrect ? '#2dd4a0' : '#f43f5e') : '#e8c547',
+            textShadow: revealed
+              ? (isCorrect ? '0 0 20px rgba(45,212,160,0.5)' : '0 0 20px rgba(244,63,94,0.5)')
+              : '0 0 20px rgba(232,197,71,0.3)',
+            transition: 'color 0.4s, text-shadow 0.4s',
+            animation: !revealed ? 'mathPulse 2s ease-in-out infinite' : 'none',
+            display: 'block', textAlign: 'center', lineHeight: 1,
           }}>
-            = {challenge.claim}
-          </div>
+            {revealed ? challenge.claim : displayedClaim}
+          </span>
         </div>
 
         {correctnessLabel && (
@@ -207,6 +236,8 @@ export function ClimbMiniMath({ onComplete }) {
           0%, 100% { transform: scale(1); }
           50%      { transform: scale(1.03); }
         }
+        @keyframes mathPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+        @keyframes axiomBlink { 0%,100%{opacity:0.6} 50%{opacity:1} }
       `}</style>
     </div>
   );

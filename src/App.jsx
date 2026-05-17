@@ -6736,9 +6736,28 @@ export default function BluffGame() {
                   </div>
                   <div style={{flex:1, fontFamily: glitching ? "monospace" : "inherit"}}>
                     {glitching ? scrambleText(s.text) : s.text}
-                    {revealed&&<div style={{marginTop:6,fontSize:10,fontWeight:700,letterSpacing:"1.5px",color:isB?T.bad:isS?T.bad:T.ok,opacity:isB||isS?1:.4}}>
-                      {isB?t("play.ai_fabrication"):isS?t("play.actually_real"):t("play.verified_fact")}
-                    </div>}
+                    {revealed && isB && (
+                      <div style={{
+                        marginTop: 12,
+                        animation: 'lieReveal 0.5s cubic-bezier(0.34,1.56,0.64,1)',
+                        background: 'linear-gradient(135deg,rgba(244,63,94,0.12),rgba(244,63,94,0.04))',
+                        border: '1.5px solid rgba(244,63,94,0.5)',
+                        borderRadius: 10, padding: '10px 14px',
+                        display: 'flex', alignItems: 'center', gap: 10,
+                      }}>
+                        <span style={{fontSize:26, animation:'liePulse 1.5s ease-in-out infinite', display:'block'}}>🎭</span>
+                        <div>
+                          <div style={{
+                            fontSize:14, fontWeight:800, color:'#f43f5e',
+                            letterSpacing:2, textTransform:'uppercase',
+                            textShadow:'0 0 12px rgba(244,63,94,0.4)',
+                          }}>THE LIE</div>
+                          <div style={{fontSize:11, color:'rgba(244,63,94,0.5)', marginTop:2}}>
+                            AI fabricated this statement
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </button>
               );
@@ -7300,6 +7319,8 @@ function shuffle(a){let b=[...a];for(let i=b.length-1;i>0;i--){let j=Math.floor(
 function GameStyles(){
   return <style>{`
     @keyframes g-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+    @keyframes lieReveal{0%{transform:scale(0.85) translateY(6px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+    @keyframes liePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18) rotate(-5deg)}}
     @keyframes g-shimmer{0%{background-position:-200% center}100%{background-position:200% center}}
     @keyframes g-fadeUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
     @keyframes g-cardIn{from{opacity:0;transform:translateX(-10px) scale(.97)}to{opacity:1;transform:none}}
