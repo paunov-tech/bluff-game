@@ -77,6 +77,8 @@ export default {
     "ai_fabrication": "🎭 AI IZMIŠLJOTINA",
     "actually_real": "✗ Ovo je zapravo istinito",
     "verified_fact": "✓ Potvrđena činjenica",
+    "the_lie": "LAŽ",
+    "lie_caption": "AI je izmislio ovu tvrdnju",
     "pick_your_bluff": "Izaberi svoj blef",
     "lock_in": "Zaključaj",
     "home": "Početna",

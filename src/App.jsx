@@ -6751,11 +6751,16 @@ export default function BluffGame() {
                             fontSize:14, fontWeight:800, color:'#f43f5e',
                             letterSpacing:2, textTransform:'uppercase',
                             textShadow:'0 0 12px rgba(244,63,94,0.4)',
-                          }}>THE LIE</div>
+                          }}>{t("play.the_lie")}</div>
                           <div style={{fontSize:11, color:'rgba(244,63,94,0.5)', marginTop:2}}>
-                            AI fabricated this statement
+                            {t("play.lie_caption")}
                           </div>
                         </div>
+                      </div>
+                    )}
+                    {revealed && !isB && (
+                      <div style={{marginTop:6,fontSize:10,fontWeight:700,letterSpacing:"1.5px",color:isS?T.bad:T.ok,opacity:isS?1:.4}}>
+                        {isS ? t("play.actually_real") : t("play.verified_fact")}
                       </div>
                     )}
                   </div>
