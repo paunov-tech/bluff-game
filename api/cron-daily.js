@@ -181,6 +181,14 @@ function getTodayKey() {
 }
 
 export default async function handler(req, res) {
+  // Auth: fail-closed. Vercel cron auto-sends `Authorization: Bearer ${CRON_SECRET}`
+  // when CRON_SECRET is set; manual runs can pass ?token= or an x-admin-token header.
+  const secret = process.env.CRON_SECRET;
+  const token  = req.headers["x-admin-token"] || req.query.token || "";
+  const auth   = req.headers["authorization"] || "";
+  if (!secret || (token !== secret && auth !== `Bearer ${secret}`))
+    return res.status(401).json({ error: "unauthorized" });
+
   const useToday = req.query.today === "1";
   const dateKey = useToday ? getTodayKey() : getTomorrowKey();
   const kvKey = `bluff:daily:${dateKey}`;

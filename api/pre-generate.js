@@ -373,11 +373,13 @@ async function storeSlot(col, docId, category, level, variant, round) {
 
 // ── Handler ──────────────────────────────────────────────────
 export default async function handler(req, res) {
-  // Accept Vercel cron requests (x-vercel-cron: 1) or manual with token
-  const isCron = req.headers["x-vercel-cron"] === "1";
+  // Auth: fail-closed. Vercel cron auto-sends `Authorization: Bearer ${CRON_SECRET}`
+  // when CRON_SECRET is set; manual runs can pass ?token= or an x-admin-token header.
+  // The old `x-vercel-cron` header check was dropped — that header is spoofable.
   const token  = req.headers["x-admin-token"] || req.query.token || "";
+  const auth   = req.headers["authorization"] || "";
   const secret = process.env.CRON_SECRET;
-  if (!isCron && secret && token !== secret)
+  if (!secret || (token !== secret && auth !== `Bearer ${secret}`))
     return res.status(401).json({ error: "unauthorized" });
   if (!ANTHROPIC_KEY)
     return res.status(503).json({ error: "AI not configured" });

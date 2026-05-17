@@ -113,6 +113,7 @@ export function ClimbMiniMath({ onComplete }) {
     if (navigator.vibrate) try { navigator.vibrate(correct ? 12 : [15, 40, 15]); } catch {}
 
     advanceRef.current = setTimeout(() => {
+      if (finishedRef.current) return; // a prior handleAnswer already completed the run
       const nextRound = round + 1;
       if (nextRound >= ROUNDS) {
         finishedRef.current = true;
