@@ -16,7 +16,7 @@ function rlOk(ip) {
 }
 
 async function writePremium(deviceId, data) {
-  const apiKey = process.env.FIREBASE_API_KEY;
+  const apiKey = process.env.FIREBASE_API_KEY?.trim(); // trim: env value may carry a trailing newline
   if (!apiKey || !deviceId) return false;
   const product = (process.env.PRODUCT_NAME || "sial").toLowerCase().replace(/[^a-z0-9]/g, "_");
   const url = `https://firestore.googleapis.com/v1/projects/molty-portal/databases/(default)/documents/${product}_premium/${deviceId}?key=${apiKey}`;

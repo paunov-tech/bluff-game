@@ -2,7 +2,7 @@
 // GET  → returns top 10 for today
 // POST { deviceId, playerName, score, climbComplete } → upserts (only if score improves)
 
-const FB_KEY     = process.env.FIREBASE_API_KEY;
+const FB_KEY     = process.env.FIREBASE_API_KEY?.trim(); // trim: env value may carry a trailing newline
 const FB_PROJECT = "molty-portal";
 const COL        = "bluff_leaderboard";
 

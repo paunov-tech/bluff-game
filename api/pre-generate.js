@@ -13,8 +13,8 @@ import { SCHEMA } from "../src/config/schema.js";
 // Steady-state runs with staleness skipping stay well under this.
 export const config = { maxDuration: 300 };
 
-const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const FB_KEY        = process.env.FIREBASE_API_KEY;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY?.trim(); // trim: env value may carry a trailing newline
+const FB_KEY        = process.env.FIREBASE_API_KEY?.trim(); // trim: env value may carry a trailing newline
 const FB_PROJECT    = "molty-portal";
 const COLLECTION_BY_MODE = {
   regular: "bluff_cache",

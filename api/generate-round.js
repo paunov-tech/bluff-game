@@ -8,7 +8,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY?.trim() });
 const CORS = (process.env.PRODUCT_DOMAIN || "playbluff.games,www.playbluff.games")
   .split(",").map(d => `https://${d.trim()}`);
 
-const FB_KEY     = process.env.FIREBASE_API_KEY;
+const FB_KEY     = process.env.FIREBASE_API_KEY?.trim(); // trim: env value may carry a trailing newline
 const FB_PROJECT = "molty-portal";
 const FB_URL     = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 

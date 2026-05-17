@@ -12,7 +12,7 @@
 // path. We always return 200 so the client's `.catch(() => {})` hook never
 // sees an error.
 
-const FB_KEY     = process.env.FIREBASE_API_KEY;
+const FB_KEY     = process.env.FIREBASE_API_KEY?.trim(); // trim: env value may carry a trailing newline
 const FB_PROJECT = "molty-portal";
 const FB_URL     = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
