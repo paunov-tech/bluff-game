@@ -17,6 +17,40 @@ const LANG_NAMES = {
   es:"Spanish", hr:"Croatian", sl:"Slovenian", bs:"Bosnian",
 };
 
+// Overused facts the model must never reuse — keeps live-gen genuinely fresh.
+const BANNED_FACTS = [
+  // Overused classics
+  "Cleopatra and Moon landing", "Napoleon rabbit attack",
+  "octopus hearts", "banana radioactive", "honey never spoils",
+  "Mpemba effect", "goldfish memory", "flamingo flamboyance",
+  "crow grudges", "mimic octopus", "neutron star teaspoon",
+  "Jupiter diamond", "Queen Victoria Urdu", "dolphin stereo dreaming",
+  "Great Wall of China visible from space", "we only use 10% of brain",
+  "lightning never strikes twice", "swallow before sleeping",
+  "bulls hate red color", "Everest tallest mountain",
+  // ExYU overused
+  "Tesla invented electricity", "Djokovic GOAT",
+];
+
+// Ex-Yugoslav region guidance — injected into the prompt for exyu* categories.
+const EXYU_RULES = `
+CATEGORY: Ex-Yugoslav Region (Serbia, Croatia, Slovenia, Bosnia, Montenegro, North Macedonia, Kosovo)
+
+REQUIRED CONTENT — each ExYU round must include statements from these areas:
+- Sports legends: Đoković, Pančev, Prosinečki, Stojković, Savićević, Vlado Divac, Sabonis (Slovene-adjacent), Iva Majoli, Arantxa-era rivalries
+- Music & culture: Turbofolk, Lepa Brena, Bijelo Dugme, Ekatarina Velika, No Smoking Orchestra, EXIT festival, Balašević
+- History (surprising, not textbook): SFRY oddities, Tito facts, Yugoslav space program, Non-Aligned Movement trivia, partisans facts
+- Cinema & art: Kusturica, Makavejev, Yugoslav Black Wave, Šijan, Goran Bregović
+- Science & invention: Tesla (real obscure facts, not the overused ones), Mileva Marić, Mihajlo Pupin
+- Geography oddities: Adriatic secrets, Dinaric Alps records, Neretva, Sava, Danube facts
+- Yugoslav Wars: factual, specific, not politicized
+- Food & tradition: ćevapi origins, rakija facts, burek debate, ajvar
+
+DIFFICULTY ADAPTATION for ExYU:
+- Level 1-2: Obvious local facts, regional pride questions
+- Level 3-4: Details only fans of the region know — wrong statistics, twisted attributions
+- Level 5: Truths so bizarre about the region that even locals will doubt them`;
+
 const DIFFICULTY_RULES = {
 
   0: `DIFFICULTY 0 — BABY MODE (Round 1 only):
@@ -62,127 +96,34 @@ TEST BEFORE RETURNING: Would a 6-year-old immediately know which statement is th
 If there is ANY doubt at all, make the lie even more ridiculous and obvious.`,
 
 
-  1: `DIFFICULTY 1 — WARM-UP:
+  1: `WARM-UP (Level 1):
+The lie is obvious — wrong country, wrong decade, obviously incorrect number.
+Truths are feel-good "wow, I didn't know that!" facts. Player should feel smart.
+Emotional target: "Easy! I got it!" — confidence builder.`,
 
-GOAL: Almost everyone should get this right. 95%+ of players must
-pass. This is a confidence booster, not a challenge. The player feels smart.
+  2: `TRICKY (Level 2):
+The lie sounds plausible but ONE detail is clearly wrong if you know the field.
+Wrong year by a lot, wrong country for a famous thing, off by a large factor.
+Truths should make the player say "wait, really?"
+Emotional target: slight uncertainty, then satisfaction.`,
 
-LIE RULE:
-One BLATANTLY incorrect piece of information that every adult and most children know.
-Wrong country, wrong continent, wrong century, or a bizarrely wrong number.
-The lie must NOT be subtle at all. It must "click" as wrong in under 5 seconds.
-Think of it as a trick question where the trick is too obvious to miss.
+  3: `SNEAKY (Level 3):
+The lie is structurally a real-looking fact but ONE specific detail is wrong.
+Same category, right ballpark, wrong number/name/date by a small amount.
+Truths sound surprising but are 100% real. Player genuinely hesitates.
+Emotional target: "I'm not sure... I'll go with my gut."`,
 
-GOOD LIE EXAMPLES for difficulty 1:
-- Wrong country: "The Eiffel Tower was built in London in 1889."
-- Wrong continent: "The Amazon River flows through Africa"
-- Wrong century: "Christopher Columbus discovered America in 1992."
-- Bizarre number: "The average person has 8 fingers on their hands"
-- Famous error: "Shakespeare wrote in French"
-- Absurd geography: "Australia is located in Europe"
-- Basic science error: "The human body has 3 lungs"
+  4: `DEVIOUS (Level 4):
+The lie IS something most people confidently believe is true — a common misconception.
+The 4 truths sound fake, impossible, or ridiculous — but are verified facts.
+Players who "know things" are most vulnerable here.
+Emotional target: "That can't be true... wait, is it?"`,
 
-WHAT TO AVOID:
-- Any subtle errors (e.g. 1776 vs 1766)
-- Anything requiring specific or expert knowledge
-- Lies that could sound possible or plausible
-- Anything that would confuse an average adult
-- Counterintuitive or trick facts among the truths
-
-4 TRUTHS RULE:
-Interesting and a little surprising, but EASY TO BELIEVE.
-The player should be able to accept each truth without second-guessing.
-Do NOT use facts that sound bizarre or counterintuitive — save those for harder rounds.
-The truths must be clearly believable so the lie stands out even more.
-
-TEST BEFORE RETURNING: Would a 10-year-old immediately know which statement is the lie
-within 5 seconds? If not, make the lie significantly more obvious.`,
-
-
-  2: `DIFFICULTY 2 — EASY:
-
-GOAL: Most adults (70%) should get this right.
-Requires a little thinking but not too much.
-
-LIE RULE:
-One incorrect piece of information that requires basic school-level knowledge.
-One wrong detail that ALMOST sounds right but something is "off".
-Wrong country for a famous invention, wrong decade for a famous event,
-a number that is close to correct but isn't.
-
-GOOD LIE EXAMPLES for difficulty 2:
-- "Penicillin was discovered by Alexander Graham Bell in 1928."
-  (wrong name — it was Fleming)
-- "The Berlin Wall fell in 1991."
-  (wrong year — it fell in 1989)
-- "The Olympic Games were revived in 1906 in Athens."
-  (wrong year — 1896)
-- "The DNA structure was discovered by Watson, Crick and Einstein."
-  (wrong name — Franklin, not Einstein)
-
-4 TRUTHS RULE:
-Must be surprising and educational.
-The player should learn something new from each round.`,
-
-
-  3: `DIFFICULTY 3 — SNEAKY:
-
-GOAL: Half the players get it right (50%). Requires attention.
-
-LIE RULE:
-One specific detail is wrong in an otherwise believable statement.
-The lie sounds completely plausible. Change: precise dates, specific names,
-exact numbers, locations that are close to the correct ones.
-
-The lie must be the same length and style as the truths.
-Specific details (names, numbers, dates) make it convincing.
-It must not be easily googleable in 5 seconds.
-
-4 TRUTHS RULE:
-Should be counterintuitive — things that sound false but are real.
-The player should doubt the truths.`,
-
-
-  4: `DIFFICULTY 4 — DEVIOUS:
-
-GOAL: Fewer than 35% of players get it right. Serious challenge.
-
-LIE RULE:
-Exploit a popular misconception — something most people THINK is
-true but isn't. The lie must be a "common myth" that circulates as truth.
-
-EXAMPLES of popular misconceptions for the lie:
-- "Goldfish have a 3-second memory" (MYTH — they remember for months)
-- "Napoleon was exceptionally short" (MYTH — he was average height for his era)
-- "Humans only use 10% of their brain" (MYTH — we use all of it)
-- "The Great Wall of China is visible from space with the naked eye" (MYTH — it isn't)
-- "Lightning never strikes the same place twice" (MYTH — it does)
-
-4 TRUTHS RULE:
-Must sound FAKE but be real.
-The player must doubt every statement.`,
-
-
-  5: `DIFFICULTY 5 — DIABOLICAL:
-
-GOAL: Fewer than 15% of players get it right. Maximum confusion.
-
-LIE RULE:
-The lie MUST be the most normal, accessible, believable
-statement of all five. The lie should sound like a textbook fact.
-
-4 TRUTHS RULE:
-ALL FOUR truths must sound like made-up nonsense.
-The more bizarre, the better. The player must doubt everything.
-The truths should be so strange that the player thinks:
-"This CANNOT possibly be true."
-
-PERFECT TRUTH EXAMPLES for difficulty 5:
-- Octopuses have three hearts, two of which stop beating when they swim
-- Cleopatra lived closer in time to the iPhone than to the Great Pyramid
-- Wombats are the only animals that produce cube-shaped droppings
-- On Saturn's moon Titan, liquid methane rains down instead of water
-- Ant colonies can survive a nuclear blast`,
+  5: `DIABOLICAL (Level 5):
+ALL 4 truths must be so bizarre, counterintuitive, or absurd that they seem like obvious lies.
+The ONE lie must be the most normal-sounding, mundane, "of course that's true" statement.
+The lie hides in plain sight among impossible-sounding truths.
+Emotional target: complete confusion, humility, "I have no idea."`,
 
 };
 
@@ -348,6 +289,21 @@ const SUBTOPICS = {
     "German football national team — World Cup records, 7-1 Brazil humiliation, surprising squad selection controversies",
   ],
 
+  exyu: [
+    "ExYU football — Red Star Belgrade's 1991 European Cup, Dejan Savićević, Robert Prosinečki, Darko Pančev's Golden Boot, Dragan Stojković, surprising Yugoslav national team facts",
+    "ExYU sport beyond football — Vlade Divac and the Yugoslav NBA wave, Dražen Petrović, Iva Majoli's 1997 Roland Garros, Yugoslav basketball and water polo dominance",
+    "Yugoslav rock — Bijelo Dugme, Ekatarina Velika, Riblja Čorba, Azra, the Yugoslav new wave, surprising music history facts",
+    "Turbofolk and pop — Lepa Brena's stadium fame, the rise of turbofolk, EXIT festival's origins in Novi Sad, Balašević, surprising entertainment facts",
+    "SFR Yugoslavia oddities — the Non-Aligned Movement, workers' self-management, the powerful red passport, surprising everyday-life facts",
+    "Tito's Yugoslavia — the personality cult, the 1948 Tito–Stalin split, the Brijuni islands, surprising political and personal facts",
+    "Yugoslav cinema — Emir Kusturica's two Palme d'Or wins, the Black Wave, Dušan Makavejev, partisan epics, surprising film-industry facts",
+    "Tesla & ExYU science — Nikola Tesla's lesser-known inventions, Mihajlo Pupin, Mileva Marić, Ruđer Bošković, surprising scientific facts",
+    "Adriatic & Dinaric geography — Croatia's 1,000+ islands, the Dinaric Alps, the Neretva and Sava rivers, surprising geography records",
+    "Yugoslav Wars — factual and specific: the breakup timeline, the siege of Sarajevo, the Dayton Agreement, surprising non-politicized details",
+    "ExYU food & tradition — the eternal burek debate, ćevapi origins, rakija varieties, ajvar and kajmak, surprising culinary history",
+    "ExYU surprising records — unusual regional firsts, world records held by the region, and bizarre-but-true ExYU facts",
+  ],
+
 };
 
 function simpleHash(str) {
@@ -439,10 +395,14 @@ export default async function handler(req, res) {
   const stmtCount = schema.total;
   const truthCount = schema.truths;
   const diffRules = DIFFICULTY_RULES[difficulty] ?? DIFFICULTY_RULES[3];
-  const subtopics = SUBTOPICS[category];
+  const isExYU = category === "exyu" || category === "exyu_sport"
+    || category === "exyu_music" || category === "exyu_history";
+  const subtopics = SUBTOPICS[category] || (isExYU ? SUBTOPICS.exyu : undefined);
   const catHint = subtopics
     ? `Sub-topic for this round: ${subtopics[Math.floor(Math.random() * subtopics.length)]}. Use specific names, dates, records, and surprising statistics. Generate facts that genuinely reward curiosity.`
     : "Interesting surprising facts from this topic.";
+  const exyuContext = isExYU ? `\n${EXYU_RULES}\n` : "";
+  const bannedNote = `\nNEVER reuse these overused/banned facts: ${BANNED_FACTS.slice(0, 14).join(", ")}.`;
   const langName = LANG_NAMES[lang] || "English";
 
   const langNote = lang === "en"
@@ -471,10 +431,10 @@ export default async function handler(req, res) {
   const prompt = `Generate a BLUFF round for the "${category}" category.
 ${blitzNote}
 ${diffRules}
-
+${exyuContext}
 Category guidance: ${catHint}
 
-${langNote}${dedupNote}${avoidHint}
+${langNote}${dedupNote}${avoidHint}${bannedNote}
 
 STRICT RULES:
 - Create exactly ${stmtCount} statements
@@ -640,6 +600,13 @@ function getFallback(cat, stmtCount = SCHEMA.regular.total) {
       {text:"Billie Eilish recorded her debut album entirely in her childhood bedroom.",real:true},
       {text:"The score for the film Titanic was composed under extreme time pressure in just five days.",real:true},
       {text:"The Harry Potter books were originally written in Latin and only later translated into English.",real:false},
+    ]},
+    exyu: { category:"exyu", difficulty:1, statements:[
+      {text:"Red Star Belgrade won the 1991 European Cup, beating Marseille on penalties.",real:true},
+      {text:"Nikola Tesla was born in Smiljan, in modern-day Croatia, in 1856.",real:true},
+      {text:"Yugoslavia was a founding member of the Non-Aligned Movement in 1961.",real:true},
+      {text:"Emir Kusturica has won the Palme d'Or at the Cannes Film Festival twice.",real:true},
+      {text:"Yugoslavia was the first country to land an uncrewed probe on the Moon, in 1971.",real:false},
     ]},
   };
   const entry = map[cat] || map.history;
