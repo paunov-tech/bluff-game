@@ -1873,28 +1873,11 @@ const AudioTension = (() => {
     lockIn(){ play((ctx,dst)=>{ const buf=ctx.createBuffer(1,ctx.sampleRate*0.06,ctx.sampleRate),d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2); const src=ctx.createBufferSource(),g=ctx.createGain(); src.buffer=buf;g.gain.setValueAtTime(0.45,ctx.currentTime); src.connect(g);g.connect(dst);src.start(); }); },
     fanfare(){ play((ctx,dst)=>{ const s=ctx.currentTime+0.38; [523,659,784,1047].forEach((f,i)=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+i*0.1; o.frequency.value=f;o.type="triangle"; g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(0.28,t+0.02);g.gain.exponentialRampToValueAtTime(0.001,t+0.4); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.45); }); [523,659,784].forEach(f=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+0.45; o.frequency.value=f;o.type="sine"; g.gain.setValueAtTime(0.16,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.9); o.connect(g);g.connect(dst);o.start(t);o.stop(t+1); }); }); },
     buzzer(){ play((ctx,dst)=>{ const s=ctx.currentTime+0.32; [[466,0],[370,0.04],[311,0.08]].forEach(([f,d])=>{ const o=ctx.createOscillator(),g=ctx.createGain(),t=s+d; o.frequency.value=f;o.type="sawtooth"; g.gain.setValueAtTime(0.26,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.5); o.connect(g);g.connect(dst);o.start(t);o.stop(t+0.55); }); }); },
-    startDrone(level=0){ play((ctx,dst)=>{ if(droneOsc) return; const dg=ctx.createGain(); dg.gain.value=0; dg.connect(dst); const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=50+level*10; o.connect(dg); o.start(); const lfo=ctx.createOscillator(),lg=ctx.createGain(); lfo.frequency.value=0.8+level*0.3; lg.gain.value=0.025+level*0.015; lfo.connect(lg);lg.connect(dg.gain);lfo.start(); dg.gain.linearRampToValueAtTime(0.05+level*0.03,ctx.currentTime+1.5); droneOsc=o;droneLfo=lfo;droneGain=dg; }); },
+    startDrone(level=0){ play((ctx,dst)=>{ const dg=ctx.createGain(); dg.gain.value=0; dg.connect(dst); const o=ctx.createOscillator(); o.type="sine"; o.frequency.value=50+level*10; o.connect(dg); o.start(); const lfo=ctx.createOscillator(),lg=ctx.createGain(); lfo.frequency.value=0.8+level*0.3; lg.gain.value=0.025+level*0.015; lfo.connect(lg);lg.connect(dg.gain);lfo.start(); dg.gain.linearRampToValueAtTime(0.05+level*0.03,ctx.currentTime+1.5); droneOsc=o;droneLfo=lfo;droneGain=dg; }); },
     stopDrone(){ if(!ctx) return; if(droneGain){droneGain.gain.setTargetAtTime(0,ctx.currentTime,0.3); setTimeout(()=>{try{droneOsc?.stop();droneLfo?.stop();}catch(e){}},700);} droneOsc=droneGain=droneLfo=null; },
-    // Continuous tension control. x in [0,1]: 0 = calm, 1 = critical. Smoothly
-    // ramps the running drone's gain, wobble rate and pitch. No-op if no drone.
-    setIntensity(x){ if(!ctx||!droneGain) return; const f=Math.max(0,Math.min(1,x)); const t=ctx.currentTime; try{ droneGain.gain.setTargetAtTime(0.04+f*0.11,t,0.4); droneLfo?.frequency.setTargetAtTime(0.8+f*2.4,t,0.5); droneOsc?.frequency.setTargetAtTime(50+f*34,t,0.6); }catch(e){} },
     destroy(){ try{ droneOsc?.stop(); droneLfo?.stop(); }catch{} try{ ctx?.close(); }catch{} ctx=masterGain=droneOsc=droneLfo=droneGain=null; },
   };
 })();
-
-// useBluffAudio — thin React-hook-shaped wrapper over the AudioTension engine.
-// Stable singleton API (no internal state → never causes a re-render). Lets
-// components call a clean verb-based interface instead of poking AudioTension.
-const _bluffAudio = {
-  startAmbient(){ AudioTension.init(); AudioTension.startDrone(0); },
-  stopAmbient(){ AudioTension.stopDrone(); },
-  setIntensity(x){ AudioTension.setIntensity(x); },
-  playTick(urgency = 1){ AudioTension.tick(urgency); },
-  playVictory(){ AudioTension.fanfare(); },
-  playDefeat(){ AudioTension.buzzer(); },
-  playLockIn(){ AudioTension.lockIn(); },
-};
-function useBluffAudio(){ return _bluffAudio; }
 
 // ═══════════════════════════════════════════════════════════════
 // PAYWALL SCREEN
@@ -2088,7 +2071,6 @@ export default function BluffGame() {
   const [best, setBest] = useState(0);
   const bestRef = useRef(0);
   const [time, setTime] = useState(45);
-  const audio = useBluffAudio(); // tension audio — ambient drone + timer-driven intensity
   const [multiplier, setMultiplier] = useState(1.0);
   const multiplierRef = useRef(1.0);
   const [multiplierLocked, setMultiplierLocked] = useState(null);
@@ -4112,11 +4094,6 @@ export default function BluffGame() {
     if (screen === "home") loadDailyChallenge();
   }, [screen]);
 
-  // Stop the ambient tension drone whenever we leave the play screen.
-  useEffect(() => {
-    if (screen !== "play") audio.stopAmbient();
-  }, [screen, audio]);
-
   // Auto-reveal at 0
   useEffect(()=>{
     // Guard loadingRound/fetchError: stale time=0 from prior round races with transition.
@@ -4134,11 +4111,9 @@ export default function BluffGame() {
       setTime(maxT);
       // Stake mechanic drives multiplier in solo mode (replaces time-based curve)
       if (!blitzMode) scheduleStakeEvents(maxT);
-      audio.startAmbient(); // tension drone for the round — idempotent, safe to re-call
       timerRef.current = setInterval(() => {
         setTime(t => {
           const next = t <= 1 ? 0 : t - 1;
-          audio.setIntensity(1 - next / maxT); // 0 = round start → ~1 = time almost out
           if (blitzMode && multiplierLocked === null) {
             const elapsed = maxT - next;
             const m = computeMultiplier(elapsed, maxT, blitzMode);
@@ -4163,7 +4138,7 @@ export default function BluffGame() {
         });
       }, 1000);
     }
-  }, [loadingRound, fetchError, stmts.length, revealed, roundIdx, blitzMode, audio]);
+  }, [loadingRound, fetchError, stmts.length, revealed, roundIdx, blitzMode]);
 
   // ── SABOTAGE: schedule one optional disruption per eligible round ──
   // Runs after a fresh round is rendered. Solo Climb only (skip blitz +
