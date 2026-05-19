@@ -78,8 +78,6 @@ export default {
     ai_fabrication: "🎭 AI FABRICATION",
     actually_real: "✗ This is actually real",
     verified_fact: "✓ Verified fact",
-    the_lie: "THE LIE",
-    lie_caption: "AI fabricated this statement",
     pick_your_bluff: "Pick your bluff",
     lock_in: "Lock in",
     home: "Home",
