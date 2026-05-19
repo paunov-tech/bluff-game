@@ -8,7 +8,8 @@ import { getCurrentIdToken } from "../../auth.js";
 //   ✗ wrong    → no card, turn ends
 //   bust > 21  → lose hand
 // AXIOM auto-plays to 17 with 70% answer accuracy (simulated client-side).
-// Best-of-1 hand. Card values + win-hand bonus feed CLIMB total.
+// 3 hands per session. Card values + win-hand bonus accumulate across every
+// hand and feed the CLIMB total.
 //
 // Reuses existing endpoints ONLY:
 //   GET  /api/swipe-batch?count=20&lang=en
@@ -20,11 +21,13 @@ const POINTS_PER_CARD = 25;     // Each successful draw — points = card value 
 const WIN_BONUS = 400;
 const PUSH_BONUS = 100;
 // Max additional player draws after the initial deal of 2 cards. Caps the
-// hand at 6 cards so a streak doesn't drag the mini-game out indefinitely.
-const MAX_DRAWS = 4;
-// Hold the win/lose card on screen this long before auto-advancing the run.
-// Player can also tap "Continue" to skip the wait.
-const RESULT_HOLD_MS = 4400;
+// hand at 4 cards so a streak doesn't drag the mini-game out indefinitely.
+const MAX_DRAWS = 2;
+// Hold the win/lose card on screen this long before auto-advancing to the
+// next hand (or finishing the run). Player can tap "Continue" to skip the wait.
+const RESULT_HOLD_MS = 2000;
+// Hands played per session — points accumulate across all of them.
+const TOTAL_HANDS = 3;
 
 const T = {
   bg: "#04060f",
@@ -92,11 +95,14 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
   const [feedback, setFeedback] = useState(null); // {kind: "ok"|"miss", text}
   const [pointsEarned, setPointsEarned] = useState(0);
   const [outcome, setOutcome] = useState(null); // "win"|"lose"|"push"|"bust"
+  const [handNumber, setHandNumber] = useState(1); // 1-based, up to TOTAL_HANDS
 
-  const pointsRef = useRef(0); // mirrors pointsEarned for closure-safe reads
+  const pointsRef = useRef(0); // mirrors pointsEarned (this hand) for closure-safe reads
+  const totalPoints = useRef(0); // points banked from hands already completed
   const cardShownAtRef = useRef(Date.now());
   const submittingRef = useRef(false);
   const finishedRef = useRef(false);
+  const advancingRef = useRef(false); // guards the once-per-hand transition
   const advanceRef = useRef(null);
 
   function addPoints(n) {
@@ -270,17 +276,50 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
     if (bonus > 0) addPoints(bonus);
     advanceRef.current = setTimeout(() => {
       if (finishedRef.current) return;
-      finishedRef.current = true;
-      onComplete?.({ pointsEarned: pointsRef.current, outcome: result });
+      advanceAfterHand();
     }, RESULT_HOLD_MS);
   }
 
-  // User can short-circuit the result hold and go straight into BLUFF.
+  // Advance to the next hand, or finish the run after the last one. Banks the
+  // just-finished hand's points into totalPoints before resetting. Guarded so
+  // the auto-advance timeout and a manual "Continue" tap can't both fire.
+  function advanceAfterHand() {
+    if (finishedRef.current || advancingRef.current) return;
+    advancingRef.current = true;
+    if (advanceRef.current) { clearTimeout(advanceRef.current); advanceRef.current = null; }
+    if (handNumber < TOTAL_HANDS) {
+      totalPoints.current += pointsRef.current;
+      setHandNumber(n => n + 1);
+      startNewHand();
+    } else {
+      finishedRef.current = true;
+      onComplete?.({
+        pointsEarned: totalPoints.current + pointsRef.current,
+        outcome: "done",
+      });
+    }
+  }
+
+  // Deal a fresh hand: clear this hand's points, re-deal both sides, hand the
+  // turn back to the player. totalPoints (the running bank) is preserved.
+  function startNewHand() {
+    pointsRef.current = 0;
+    setPointsEarned(0);
+    setPlayerHand([drawCard(), drawCard()]);
+    setAxiomHand([drawCard(), drawCard()]);
+    setOutcome(null);
+    setFeedback(null);
+    setCurrentIdx(i => i + 1);
+    submittingRef.current = false;
+    advancingRef.current = false;
+    cardShownAtRef.current = Date.now();
+    setPhase("player");
+  }
+
+  // User can short-circuit the result hold — advances to the next hand, or
+  // finishes the run if this was the last hand.
   function continueNow() {
-    if (finishedRef.current) return;
-    if (advanceRef.current) clearTimeout(advanceRef.current);
-    finishedRef.current = true;
-    onComplete?.({ pointsEarned: pointsRef.current, outcome });
+    advanceAfterHand();
   }
 
   // ── Render ─────────────────────────────────────────────────
@@ -308,15 +347,16 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
   const stmt = statements[currentIdx];
   const pTot = handTotal(playerHand);
   const aTotShown = phase === "player" ? "?" : handTotal(axiomHand);
+  const shownPoints = totalPoints.current + pointsEarned; // banked + this hand
 
   return (
     <div style={wrap()}>
       <header style={hud()}>
         <span style={{ fontSize: 11, letterSpacing: 3, color: T.warm, fontWeight: 700, textTransform: "uppercase" }}>
-          Warm-up · Blackjack 21
+          Blackjack · Hand {handNumber}/{TOTAL_HANDS}
         </span>
         <span style={{ fontSize: 12, color: T.ok, fontWeight: 700 }}>
-          +{pointsEarned} pts
+          +{shownPoints} pts
         </span>
       </header>
 
@@ -362,7 +402,7 @@ export function ClimbMiniBlackjack({ lang = "en", userId, onComplete }) {
               {outcome === "win" ? "You win" : outcome === "push" ? "Push" : outcome === "bust" ? "Bust" : "AXIOM wins"}
             </div>
             <div style={{ marginTop: 10, color: T.dim, fontSize: 13 }}>
-              +{pointsEarned} → CLIMB
+              +{shownPoints} → CLIMB
             </div>
             <button onClick={continueNow} style={{
               marginTop: 18,
