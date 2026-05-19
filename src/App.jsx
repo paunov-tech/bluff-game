@@ -167,7 +167,6 @@ const CATEGORY_EMOJIS = {
   history:"🏛️", science:"🔬", animals:"🦎", geography:"🌍",
   food:"🍷", culture:"🎭", internet:"💻", popculture:"🎬", sports:"⚽",
   nba:"🏀", premier_league:"⚽", bundesliga:"⚽",
-  exyu:"🇷🇸", exyu_sport:"⚽", exyu_music:"🎵", exyu_history:"🏛️",
 };
 function CategoryIcon({ category, size=26 }) {
   const svgs = {
