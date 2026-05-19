@@ -428,44 +428,70 @@ export default async function handler(req, res) {
     ? `\nBLITZ MODE: Generate exactly ${truthCount} truths + 1 lie (${stmtCount} statements total). Shorter round, same quality bar.\n`
     : "";
 
-  const prompt = `Generate one BLUFF round for BLUFF™ by SIAL Games.
+  const prompt = `Generate a BLUFF round for the "${category}" category.
+${blitzNote}
+${diffRules}
+${exyuContext}
+Category guidance: ${catHint}
 
-Category: ${category}
-Language: ${lang}
-Difficulty: ${difficulty}/5
+${langNote}${dedupNote}${avoidHint}${bannedNote}
 
-${DIFFICULTY_RULES[difficulty]}
+STRICT RULES:
+- Create exactly ${stmtCount} statements
+- Exactly ${truthCount} TRUE — genuinely real, verifiable facts
+- Exactly 1 CONVINCING LIE — same style as truths
+- Lie must have specific details (names, numbers, dates)
 
-RULES FOR THE ${truthCount} TRUE STATEMENTS:
-- Every truth must pass the "NO WAY" test — player says "no way" then learns it's real
-- Mix tones: one funny, one shocking, one "I should have known", one deep obscure
-- Use specific details: real names, real numbers, real dates
-- Never use top-10 Google result facts for this category
-- FORBIDDEN (never use): Cleopatra/Moon landing, Napoleon rabbits, octopus hearts, banana radioactive, honey spoils, Mpemba, goldfish memory, Jupiter diamond, Great Wall visible from space, Tesla invented electricity
+LENGTH — CRITICAL:
+- TARGET: 40-70 characters per statement
+- HARD MAX: 90 characters. Never exceed.
+- VARY length deliberately across statements in the round.
+  Mix some ~30-char punchy ones with some ~80-char complex ones.
+  Uniform length is dull and predictable. Variance creates rhythm.
+- Cut filler. No "during a hunting party organized after signing..."
+- No explanatory context. Trust the player's knowledge.
 
-${category === 'exyu' || category === 'exyu_sport' || category === 'exyu_music' || category === 'exyu_history' ? `
-EX-YU SPECIFIC CONTENT — include from: Đoković/Pančev/Prosinečki/Savićević/Divac obscure facts, Lepa Brena/Bijelo Dugme/Bregović, Tito oddities, SFRY trivia, Kusturica/Makavejev, Tesla real obscure facts (not overused ones), ajvar/ćevapi/rakija origins, Yugoslav Non-Aligned Movement, EXIT festival, Dinaric Alps records.
-` : ''}
+STYLE — HOOK PATTERN:
+- Lead with the surprise. Never bury the lead.
+- "Napoleon once lost a battle to rabbits." ✓ (40 chars)
+- "Napoleon was attacked by a horde of rabbits during a hunting
+   party organized after the Treaty of Tilsit." ✗ (buried, 110 chars)
+- "Octopuses have three hearts and blue blood." ✓ (43)
+- "Wombats produce cube-shaped droppings." ✓ (38)
+- "A teaspoon of neutron star weighs 6 billion tons." ✓ (49)
+- "Honey from Egyptian tombs is still edible." ✓ (42)
 
-POPULAR CULTURE: At least 1 statement must connect to something people actually care about — sports records, famous musicians, movies, world records, celebrity facts.
+CONTENT:
+- Counterintuitive > exhaustive
+- Specific numbers where possible ("11 time zones", not "many")
+- Make truths SURPRISING — reward curiosity
+- Randomize lie position
+- NEVER use profanity or explicit content
+- For sports categories: use SPECIFIC STATISTICS, EXACT YEARS, REAL PLAYER NAMES
+- ALL STARS RULE: At least ${surpriseMin} of the ${truthCount} truths must surprise even hardcore fans
 
-RULES FOR THE 1 LIE:
-- Same length, style, specificity as truths — no tonal difference
-- Contains plausible specific details (real-sounding name, number, date)
-- At difficulty 4-5: the lie must be the most normal-sounding statement
-- Must feel like it belongs — no style red flags
+ROTATION RULES — avoid these overused fact types:
+- DO NOT use: specific player point/goal/score records
+- DO NOT use: birth years, ages, or heights of famous people
+- DO NOT use: capital cities or basic geography facts
+- DO NOT use: founding years of companies
+INSTEAD use:
+- Unexpected consequences of famous events
+- Behind-the-scenes process facts
+- Contradictions between popular belief and reality
+- Surprising connections between unrelated things
 
-Shuffle order — lie must NOT always be last.
-
-Return ONLY valid JSON, no markdown:
+CRITICAL JSON:
+- "real": true or false (boolean, NOT string)
+- Exactly ${truthCount} true, exactly 1 false
+- Return ONLY JSON, no markdown, no explanation
+Format:
 {
   "statements": [
-    {"text": "...", "real": true},
-    {"text": "...", "real": false},
+    {"text": "A true fact.", "real": true},
+    {"text": "The convincing lie.", "real": false},
 ${extraTruthExamples}
-  ],
-  "bluff_explanation": "One sentence: why this lie is convincing and what's actually true",
-  "difficulty_achieved": ${difficulty}
+  ]
 }`
 
   async function attempt() {

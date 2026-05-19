@@ -146,14 +146,14 @@ const LANGUAGES = [
 ];
 
 // 12 rounds total (matching ROUND_DIFFICULTY length).
-// Mix across 12 categories (ExYU is live-gen only — not pre-cached).
-// Max 1 sports round per match. Diverse across history, science, medicine,
-// showbiz, culture, geography, animals, food, technology, life, sports, ExYU.
+// Mix across 11 categories from pre-generate.js SUBTOPICS_PRE.
+// Max 1 sports round per match. Diverse across history, science,
+// medicine, showbiz, culture, geography, animals, food, technology, life, sports.
 const CATEGORIES = [
   "history",    // Q1 warm-up
   "science",    // Q2 warm-up
   "culture",    // Q3 rising
-  "exyu",       // Q4 rising — Ex-Yugoslav
+  "showbiz",    // Q4 rising
   "animals",    // Q5 rising
   "geography",  // Q6 rising
   "medicine",   // Q7 devious
